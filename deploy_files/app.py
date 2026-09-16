@@ -16,7 +16,15 @@ from PIL import Image
 import io
 from process_and_org_chart import render_organization_chart, render_wood_pellet_process_and_die_conditioning
 from schematic_diagram import render_factory_schematic_diagram
-from data_entry import render_data_entry_module, get_current_user, logout_user
+from data_entry import (
+    render_data_entry_module, 
+    get_current_user, 
+    logout_user,
+    check_viewer_authorization,
+    render_viewer_lock_screen,
+    logout_viewer,
+    AUTHORIZED_VIEWER_EMAIL
+)
 
 # Đường dẫn Logo BVN Quảng Bình
 LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo_bvn.png")
@@ -295,6 +303,11 @@ def load_all_factory_data():
         'maint_plan_title': loader.maint_plan_spreadsheet.title if loader.maint_plan_spreadsheet else "Mainternance BVN QB"
     }
 
+# ================= KIỂM TRA KHÓA CHẾ ĐỘ PUBLIC (CHỈ CẤP QUYỀN CHO SANGMCC1@GMAIL.COM) =================
+if not check_viewer_authorization():
+    render_viewer_lock_screen(logo_b64=logo_b64)
+    st.stop()
+
 # Load dữ liệu
 try:
     with st.spinner("Đang kết nối 5 Google Sheets và nạp dữ liệu sản xuất, KPI, bảo trì & quy trình..."):
@@ -411,6 +424,33 @@ with st.sidebar:
     if st.button("🔄 Tải lại dữ liệu (Refresh)", width="stretch"):
         st.cache_data.clear()
         st.rerun()
+
+    # Hiển thị thông tin người xem hoặc Admin được cấp quyền
+    v_auth = st.session_state.get("viewer_authorized_email")
+    if v_auth == "admin":
+        st.markdown(f"""
+        <div style="background: rgba(234, 179, 8, 0.15); border: 1px solid #eab308; border-radius: 8px; padding: 6px 10px; margin-top: 8px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 11px; font-weight: 700; color: #facc15;">
+                <span>👑</span>
+                <span>QUẢN TRỊ VIÊN (ADMIN)</span>
+            </div>
+            <span style="background: #ca8a04; color: white; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 700;">TOÀN QUYỀN</span>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("🔒 Khóa Lại (Đăng Xuất)", key="btn_logout_viewer", use_container_width=True):
+            logout_viewer()
+    elif v_auth == AUTHORIZED_VIEWER_EMAIL:
+        st.markdown(f"""
+        <div style="background: rgba(56, 189, 248, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 10px; margin-top: 8px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 11px; font-weight: 700; color: #38bdf8;">
+                <span>👤</span>
+                <span>{AUTHORIZED_VIEWER_EMAIL}</span>
+            </div>
+            <span style="background: #0284c7; color: white; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 700;">QUYỀN XEM</span>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("🔒 Khóa Lại (Đăng Xuất)", key="btn_logout_viewer", use_container_width=True):
+            logout_viewer()
 
     st.markdown("---")
     st.subheader("👤 Lọc Ca Trưởng")

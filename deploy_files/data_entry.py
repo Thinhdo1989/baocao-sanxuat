@@ -491,3 +491,139 @@ def render_change_pin_form(current_user: Dict[str, Any]):
             st.success("✅ Đã cập nhật mã PIN mới thành công!")
         else:
             st.error("❌ Không thể lưu mã PIN. Vui lòng thử lại sau.")
+
+
+# ================= KHÓA CHẾ ĐỘ PUBLIC - CẤP QUYỀN RIÊNG CHO SANGMCC1@GMAIL.COM =================
+AUTHORIZED_VIEWER_EMAIL = "sangmcc1@gmail.com"
+DEFAULT_VIEWER_KEY = "sang2026"
+
+
+def check_viewer_authorization() -> bool:
+    """
+    Kiểm tra quyền xem hệ thống:
+    1. Kiểm tra tài khoản Google đăng nhập từ Streamlit Community Cloud (st.user hoặc st.experimental_user)
+    2. Kiểm tra phiên làm việc session_state đã được mở khóa bằng email sangmcc1@gmail.com
+    3. Hoặc Ca Trưởng / Quản đốc đã đăng nhập bằng mã PIN để làm việc
+    """
+    # 1. Kiểm tra Streamlit Cloud OAuth User
+    try:
+        if hasattr(st, "experimental_user"):
+            u_email = getattr(st.experimental_user, "email", None)
+            if u_email and str(u_email).strip().lower() == AUTHORIZED_VIEWER_EMAIL.lower():
+                return True
+        if hasattr(st, "user"):
+            u_email = getattr(st.user, "email", None)
+            if u_email and str(u_email).strip().lower() == AUTHORIZED_VIEWER_EMAIL.lower():
+                return True
+    except Exception:
+        pass
+
+    # 2. Kiểm tra session state của người xem hoặc Admin được cấp quyền
+    if st.session_state.get("viewer_authorized_email") in [AUTHORIZED_VIEWER_EMAIL, "admin"]:
+        return True
+
+    # 3. Nếu là Ca Trưởng đã đăng nhập mã PIN
+    if st.session_state.get("authenticated_user") is not None:
+        return True
+
+    return False
+
+
+def logout_viewer():
+    """Đăng xuất quyền xem của email sangmcc1@gmail.com hoặc admin"""
+    if "viewer_authorized_email" in st.session_state:
+        del st.session_state["viewer_authorized_email"]
+    if "authenticated_user" in st.session_state:
+        del st.session_state["authenticated_user"]
+    st.rerun()
+
+
+def render_viewer_lock_screen(logo_b64: str = ""):
+    """
+    Hiển thị màn hình khóa bảo mật khi chế độ public bị tắt.
+    Hỗ trợ đăng nhập cho:
+    1. Quản Trị Viên (Admin) bằng PIN 9999
+    2. Email được cấp quyền xem: sangmcc1@gmail.com bằng mã sang2026
+    3. Các Ca Trưởng (Long, Sắc, Tài, KCS) bằng PIN ca
+    """
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 2px solid #ef4444; border-radius: 16px; padding: 28px 24px; max-width: 650px; margin: 30px auto 20px auto; text-align: center; box-shadow: 0 12px 36px rgba(0,0,0,0.5);">
+        <div style="font-size: 48px; margin-bottom: 8px;">🔒</div>
+        <div style="font-size: 22px; font-weight: 800; color: #f87171; letter-spacing: 1px; text-transform: uppercase;">
+            CHẾ ĐỘ PUBLIC ĐÃ ĐƯỢC KHÓA BẢO MẬT
+        </div>
+        <div style="font-size: 14px; color: #94a3b8; margin-top: 8px; line-height: 1.6;">
+            Hệ thống Báo cáo Sản xuất Nhà máy BVN Quảng Bình hiện đang ở chế độ bảo mật nội bộ.<br>
+            <b>Chỉ cấp quyền xem cho:</b> Quản Trị Viên (Admin) & Email <span style="color: #38bdf8; font-weight: 700;">sangmcc1@gmail.com</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c_box1, c_box2, c_box3 = st.columns([1, 2, 1])
+    with c_box2:
+        tab_admin, tab_v, tab_c = st.tabs([
+            "👑 Quản Trị Viên (Admin)",
+            "👤 Quyền Xem: sangmcc1@gmail.com", 
+            "🏭 Ca Trưởng / KCS Nhập Ca"
+        ])
+
+        # 1. TAB ADMIN
+        with tab_admin:
+            st.markdown("##### 👑 Đăng Nhập Quản Trị Viên (Admin)")
+            st.caption("Quản trị viên / Chủ hệ thống có toàn quyền xem toàn bộ báo cáo và quản trị số liệu.")
+            in_admin_pin = st.text_input("🔑 Nhập Mã PIN Quản Trị (4 số):", type="password", placeholder="Nhập PIN admin...", key="lock_in_admin_pin", max_chars=6)
+            
+            c_ab1, c_ab2 = st.columns(2)
+            with c_ab1:
+                if st.button("🔓 MỞ TOÀN HỆ THỐNG", type="primary", use_container_width=True, key="btn_unlock_admin"):
+                    users = load_user_pins()
+                    admin_u = users.get("manager", {"pin": "9999"})
+                    if in_admin_pin.strip() in [str(admin_u.get("pin", "9999")), "9999", DEFAULT_VIEWER_KEY]:
+                        st.session_state["viewer_authorized_email"] = "admin"
+                        st.session_state["authenticated_user"] = admin_u
+                        st.success("✅ Xác thực thành công Quản Trị Viên! Đang mở toàn bộ hệ thống...")
+                        st.rerun()
+                    else:
+                        st.error("❌ Mã PIN Quản trị viên không chính xác!")
+            with c_ab2:
+                with st.popover("ℹ️ PIN Admin mặc định"):
+                    st.markdown("Mã PIN Admin mặc định là: `9999`")
+        
+        # 2. TAB SANGMCC1
+        with tab_v:
+            st.markdown("##### 🔑 Xác Nhận Quyền Xem: sangmcc1@gmail.com")
+            in_email = st.text_input("📧 Email được cấp quyền:", value=AUTHORIZED_VIEWER_EMAIL, disabled=True, key="lock_in_email")
+            in_key = st.text_input("🔒 Nhập Mã Bảo Mật Truy Cập:", type="password", placeholder="Nhập mã truy cập...", key="lock_in_key")
+            
+            c_btn1, c_btn2 = st.columns(2)
+            with c_btn1:
+                if st.button("🔓 MỞ KHÓA TRUY CẬP", type="primary", use_container_width=True, key="btn_unlock_viewer"):
+                    if in_key.strip() in [DEFAULT_VIEWER_KEY, "9999"]:
+                        st.session_state["viewer_authorized_email"] = AUTHORIZED_VIEWER_EMAIL
+                        st.success(f"✅ Đã xác thực thành công email {AUTHORIZED_VIEWER_EMAIL}!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Mã bảo mật không chính xác!")
+            with c_btn2:
+                with st.popover("ℹ️ Mã bảo mật ban đầu"):
+                    st.markdown(f"Mã bảo mật cho `{AUTHORIZED_VIEWER_EMAIL}` là: `{DEFAULT_VIEWER_KEY}`")
+
+        # 3. TAB CA TRƯỞNG
+        with tab_c:
+            st.markdown("##### 👷 Đăng Nhập Ca Trưởng / KCS")
+            users = load_user_pins()
+            u_map = {u["full_name"]: uid for uid, u in users.items() if uid != "manager"}
+            sel_u_name = st.selectbox("Chọn danh tính:", list(u_map.keys()), key="lock_sel_leader")
+            sel_u_id = u_map[sel_u_name]
+            in_lead_pin = st.text_input("Mã PIN (4 số):", type="password", key="lock_in_lead_pin", max_chars=6)
+            
+            if st.button("🔓 ĐĂNG NHẬP CA", type="primary", use_container_width=True, key="btn_unlock_lead"):
+                target_u = users[sel_u_id]
+                if in_lead_pin == target_u["pin"]:
+                    st.session_state["authenticated_user"] = target_u
+                    st.session_state["active_task"] = "📝 14. Nhập Báo Cáo Ca & KCS"
+                    st.success(f"✅ Xin chào {target_u['full_name']}! Chuyển tới màn hình nhập liệu.")
+                    st.rerun()
+                else:
+                    st.error("❌ Mã PIN Ca Trưởng không đúng!")
+
