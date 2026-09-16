@@ -13,6 +13,7 @@ PRODUCTIVITY_TARGET = 4.0     # tấn/h
 MOISTURE_TARGET_MIN = 8.0     # %
 MOISTURE_TARGET_MAX = 9.5     # %
 ASH_TARGET_MAX = 1.5          # %
+DENSITY_BENCHMARK_MIN = 600.0 # kg/m3 - Chuẩn tỷ trọng xuất khẩu ENplus/ISO 17225-2
 
 # Danh mục thiết bị
 EQUIPMENT_INFO = {
@@ -145,7 +146,56 @@ def evaluate_ash(ash_pct: float) -> Dict[str, Any]:
         return {'status': 'ALERT', 'label': f'Độ tro cao (> {ASH_TARGET_MAX}%)', 'color': '#dc3545', 'icon': '🔴'}
 
 
-def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, target_date: Any = None) -> Dict[str, Any]:
+def evaluate_density(density: float) -> Dict[str, Any]:
+    """
+    Đánh giá tỷ trọng viên nén (chuẩn xuất khẩu ENplus / ISO 17225-2: >= 600 kg/m3)
+    """
+    if density <= 0:
+        return {'status': 'UNKNOWN', 'label': 'Chưa đo', 'color': '#6c757d', 'icon': '⚪'}
+    if density >= DENSITY_BENCHMARK_MIN:
+        return {'status': 'PASS', 'label': f'Đạt chuẩn (≥ {DENSITY_BENCHMARK_MIN:,.0f} kg/m³)', 'color': '#15803d', 'icon': '🟢'}
+    else:
+        return {'status': 'WARN', 'label': f'Thấp (< {DENSITY_BENCHMARK_MIN:,.0f} kg/m³)', 'color': '#b45309', 'icon': '🟠'}
+
+
+def classify_shift_counts(df_subset: pd.DataFrame, num_days: Optional[int] = None, is_single_leader: bool = False) -> Tuple[int, int, int]:
+    """
+    Phân loại và đếm 3 loại ca trong tập dữ liệu:
+    - 🏭 Ca sản xuất (prod_shifts): ca có sản lượng > 0 hoặc giờ ép > 0 và không thuộc ca bảo trì
+    - 🔧 Ca bảo trì (maint_shifts): tên ca trưởng hoặc nội dung chứa 'bảo trì', 'vệ sinh', 'bảo dưỡng'
+    - ☕ Ca nghỉ (off_shifts): số ca còn lại theo định mức chuẩn 3 ca/ngày (hoặc ghi nhận 'Nghĩ')
+    Trả về tuple: (prod_shifts, maint_shifts, off_shifts)
+    """
+    if df_subset is None or df_subset.empty:
+        if num_days and num_days > 0:
+            expected_per_d = 1 if is_single_leader else 3
+            return 0, 0, num_days * expected_per_d
+        return 0, 0, 0
+
+    shift_str = df_subset['shift_leader'].astype(str).str.lower() if 'shift_leader' in df_subset.columns else pd.Series([''] * len(df_subset), index=df_subset.index)
+    maint_mask = shift_str.str.contains('bảo trì|vệ sinh|bảo dưỡng|bảo trì-vs|bảo trì - vs', regex=True, na=False)
+    
+    sl_col = df_subset['san_luong_tan'] if 'san_luong_tan' in df_subset.columns else 0
+    h_col = df_subset['tong_gio_ep'] if 'tong_gio_ep' in df_subset.columns else 0
+    prod_mask = ((sl_col > 0) | (h_col > 0)) & (~maint_mask)
+
+    prod_count = int(prod_mask.sum())
+    maint_count = int(maint_mask.sum())
+
+    if num_days is None:
+        if 'date' in df_subset.columns and not df_subset.empty:
+            num_days = int(df_subset['date'].dt.date.nunique())
+        else:
+            num_days = 1
+
+    expected_per_day = 1 if is_single_leader else 3
+    total_expected = max(len(df_subset), num_days * expected_per_day)
+    off_count = max(0, total_expected - (prod_count + maint_count))
+
+    return prod_count, maint_count, off_count
+
+
+def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, df_kcs: pd.DataFrame = None, target_date: Any = None) -> Dict[str, Any]:
     """
     Tính toán toàn diện chỉ số KPI cho ngày gần nhất hoặc ngày được chọn.
     """
@@ -158,8 +208,8 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
         df_valid = df_shifts
 
     if target_date is None:
-        target_date = df_valid['date'].max()
-    elif isinstance(target_date, str):
+        target_date = df_shifts['date'].max() if 'date' in df_shifts.columns else df_valid['date'].max()
+    else:
         target_date = pd.to_datetime(target_date)
 
     # Lọc dữ liệu của ngày được chọn
@@ -187,7 +237,7 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
     total_nl_dot = float(day_shifts['nl_dot_tan'].sum())
     processing_ratio = (total_nl_tho / total_output) if total_output > 0 and total_nl_tho > 0 else 0.0
 
-    # Nếu có df_daily, đối soát lấy thêm tỷ lệ chế biến và độ ẩm
+    # Nếu có df_daily, đối soát lấy thêm tỷ lệ chế biến, độ ẩm và tỷ trọng viên
     daily_record = {}
     if df_daily is not None and not df_daily.empty:
         daily_match = df_daily[df_daily['date'].dt.date == target_date.date()]
@@ -195,6 +245,23 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
             daily_record = daily_match.iloc[0].to_dict()
             if processing_ratio == 0 and daily_record.get('ty_le_che_bien', 0) > 0:
                 processing_ratio = daily_record.get('ty_le_che_bien', 0)
+
+    # Lấy độ ẩm trung bình và tỷ trọng viên từ df_daily
+    do_am_tb = float(daily_record.get('do_am_tb_pct', 0.0))
+    ty_trong = float(daily_record.get('ty_trong_vien', 0.0))
+
+    # Nếu df_daily chưa có hoặc = 0, đối soát lấy từ df_kcs
+    if (do_am_tb == 0 or ty_trong == 0) and df_kcs is not None and not df_kcs.empty:
+        kcs_day = df_kcs[df_kcs['date'].dt.date == target_date.date()]
+        if not kcs_day.empty:
+            if do_am_tb == 0 and 'am_vien_pct' in kcs_day.columns:
+                m_vals = kcs_day['am_vien_pct'][kcs_day['am_vien_pct'] > 0]
+                if not m_vals.empty:
+                    do_am_tb = float(m_vals.mean())
+            if ty_trong == 0 and 'density_vien' in kcs_day.columns:
+                d_vals = kcs_day['density_vien'][kcs_day['density_vien'] > 0]
+                if not d_vals.empty:
+                    ty_trong = float(d_vals.mean())
 
     # Tính delta so với ngày hôm trước
     prev_output = float(prev_shifts['san_luong_tan'].sum()) if not prev_shifts.empty else 0.0
@@ -249,6 +316,9 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
             'nghien_tho_tan': round(float(row['nghien_tho_tan']), 2),
         })
 
+    # Phân loại 3 loại ca trong ngày: Ca sản xuất, Ca bảo trì, Ca nghỉ
+    prod_shifts, maint_shifts, off_shifts = classify_shift_counts(day_shifts, num_days=1)
+
     return {
         'date': target_date,
         'date_str': target_date.strftime('%d/%m/%Y'),
@@ -266,12 +336,17 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
         'total_nl_tho': round(total_nl_tho, 2),
         'total_nl_dot': round(total_nl_dot, 2),
         'processing_ratio': round(processing_ratio, 2),
-        'do_am_tb_pct': round(daily_record.get('do_am_tb_pct', 0.0), 2),
-        'ty_trong_vien': round(daily_record.get('ty_trong_vien', 0.0), 1),
+        'do_am_tb_pct': round(do_am_tb, 2),
+        'moisture_eval': evaluate_moisture(do_am_tb),
+        'ty_trong_vien': round(ty_trong, 1),
+        'density_eval': evaluate_density(ty_trong),
         'equipment_hours': equipment_hours,
         'group_hours': group_hours,
         'shift_details': shift_details,
         'num_shifts': len(day_shifts),
+        'prod_shifts': prod_shifts,
+        'maint_shifts': maint_shifts,
+        'off_shifts': off_shifts,
     }
 
 
@@ -326,10 +401,10 @@ def get_shift_leader_kpis(df_shifts: pd.DataFrame) -> pd.DataFrame:
     """
     Thống kê và so sánh hiệu suất sản xuất theo từng Ca Trưởng.
     """
-    if df_shifts.empty:
+    if df_shifts.empty or 'shift_leader' not in df_shifts.columns or 'san_luong_tan' not in df_shifts.columns:
         return pd.DataFrame()
 
-    valid = df_shifts[(df_shifts['san_luong_tan'] > 0) & (df_shifts['shift_leader'].str.strip() != '')]
+    valid = df_shifts[(df_shifts['san_luong_tan'] > 0) & (df_shifts['shift_leader'].astype(str).str.strip() != '')]
     if valid.empty:
         return pd.DataFrame()
 
@@ -743,6 +818,417 @@ def get_equipment_incident_alerts(
     severity_order = {'RED': 0, 'YELLOW': 1}
     alerts.sort(key=lambda x: (severity_order.get(x['severity'], 2), -x['count'], -x['total_hours']))
     return alerts
+
+
+def get_all_leaders_dashboard_summary(
+    df_shifts: pd.DataFrame,
+    kpis_tong: Optional[Dict[str, Any]] = None,
+    df_daily: Optional[pd.DataFrame] = None,
+    df_kcs: Optional[pd.DataFrame] = None,
+    df_chart_dien: Optional[pd.DataFrame] = None,
+    df_chart_cap: Optional[pd.DataFrame] = None,
+    df_chart_moist: Optional[pd.DataFrame] = None,
+    leaders_kpi: Optional[Dict[str, pd.DataFrame]] = None,
+    df_wm_weekly: Optional[pd.DataFrame] = None,
+    df_wm_monthly: Optional[pd.DataFrame] = None,
+    df_incidents: Optional[pd.DataFrame] = None,
+    target_date: Any = None,
+    week_num: Optional[int] = None,
+    month_num: Optional[int] = None,
+    date_range: Optional[Tuple[datetime, datetime]] = None,
+    year_num: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Tính toán và chuẩn bị dữ liệu Dashboard hoàn chỉnh cho 3 Ca Trưởng (Long, Sắc, Tài)
+    và lập bảng đối sánh toàn diện với Dashboard Tổng Thể của nhà máy.
+    """
+    leader_configs = {
+        'Long': {
+            'pattern': r'long',
+            'display_name': 'Ca Trưởng Long',
+            'color': '#2563eb',
+            'bg_color': '#eff6ff',
+            'border_color': '#3b82f6',
+            'icon': '🔵',
+            'badge_cls': 'leader-card-long'
+        },
+        'Sắc': {
+            'pattern': r'sắc|sac',
+            'display_name': 'Ca Trưởng Sắc',
+            'color': '#16a34a',
+            'bg_color': '#f0fdf4',
+            'border_color': '#22c55e',
+            'icon': '🟢',
+            'badge_cls': 'leader-card-sac'
+        },
+        'Tài': {
+            'pattern': r'tài|tai',
+            'display_name': 'Ca Trưởng Tài',
+            'color': '#ea580c',
+            'bg_color': '#fff7ed',
+            'border_color': '#f97316',
+            'icon': '🟠',
+            'badge_cls': 'leader-card-tai'
+        }
+    }
+
+    tot_factory_output = float(kpis_tong.get('total_output', 0.0)) if kpis_tong else 0.0
+    leaders_summary = {}
+
+    if df_shifts.empty or 'shift_leader' not in df_shifts.columns:
+        return {'leaders': {}, 'comparison_df': pd.DataFrame()}
+
+    for name, cfg in leader_configs.items():
+        mask_leader = df_shifts['shift_leader'].astype(str).str.contains(cfg['pattern'], case=False, na=False)
+        df_ldr = df_shifts[mask_leader].copy()
+
+        # 1. Lọc theo kỳ được chọn
+        if year_num is not None:
+            p_shifts = df_ldr[df_ldr['date'].dt.year == year_num]
+            period_label = f"Năm {year_num}"
+        elif month_num is not None:
+            p_shifts = df_ldr[df_ldr['date'].dt.month == month_num]
+            period_label = f"Tháng {month_num}/2026"
+        elif week_num is not None:
+            p_shifts = df_ldr[df_ldr['date'].dt.isocalendar().week == week_num]
+            period_label = f"Tuần {week_num}"
+        elif date_range is not None:
+            p_shifts = df_ldr[(df_ldr['date'] >= date_range[0]) & (df_ldr['date'] <= date_range[1])]
+            period_label = "Khoảng thời gian"
+        elif target_date is not None:
+            t_date = pd.to_datetime(target_date).date()
+            p_shifts = df_ldr[df_ldr['date'].dt.date == t_date]
+            period_label = t_date.strftime('%d/%m/%Y')
+        else:
+            p_shifts = df_ldr.tail(1)
+            period_label = "Gần nhất"
+
+        # Tính toán chỉ số trong kỳ
+        active_shifts = p_shifts[p_shifts['san_luong_tan'] > 0]
+        shift_count = len(p_shifts)
+        
+        # Phân loại ca của riêng ca trưởng: ca sản xuất và ca bảo trì
+        shift_ldr_str = p_shifts['shift_leader'].astype(str).str.lower() if not p_shifts.empty else pd.Series([], dtype=str)
+        maint_shifts_ldr = p_shifts[shift_ldr_str.str.contains('bảo trì|vệ sinh|bảo dưỡng|bảo trì-vs|bảo trì - vs', regex=True, na=False)]
+        maint_count = len(maint_shifts_ldr)
+        prod_count = len(active_shifts)
+
+        if prod_count > 0:
+            duty_type = 'PROD'
+            has_active_shift = True
+            status_text = f"Đang trực ca SX ({prod_count} ca)"
+            status_cls = "badge-success"
+            status_icon = "🟢"
+        elif maint_count > 0:
+            duty_type = 'MAINT'
+            has_active_shift = True
+            status_text = f"Trực Bảo Trì - VS ({maint_count} ca)"
+            status_cls = "badge-warning"
+            status_icon = "🔧"
+        else:
+            duty_type = 'OFF'
+            has_active_shift = False
+            status_text = f"Nghỉ ca ngày {period_label}"
+            status_cls = "badge-secondary"
+            status_icon = "⚪"
+        
+        output = float(p_shifts['san_luong_tan'].sum())
+        pellet_hours = float(p_shifts['tong_gio_ep'].sum())
+        elec_kwh = float(p_shifts['dien_kwh'].sum())
+        elec_vnd = float(p_shifts['tien_dien_vnd'].sum()) if 'tien_dien_vnd' in p_shifts.columns else 0.0
+        
+        kwh_ton = (elec_kwh / output) if output > 0 else 0.0
+        tph = (output / pellet_hours) if pellet_hours > 0 else 0.0
+        output_pct = (output / tot_factory_output * 100.0) if tot_factory_output > 0 else 0.0
+        
+        nl_tho = float(p_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in p_shifts.columns else 0.0
+        nl_dot = float(p_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in p_shifts.columns else 0.0
+        ratio = (nl_tho / output) if output > 0 and nl_tho > 0 else 0.0
+
+        # Nếu chưa có điện kwh trong p_shifts nhưng có ở chart_dien
+        if kwh_ton == 0 and df_chart_dien is not None and not df_chart_dien.empty and target_date is not None:
+            t_dt = pd.to_datetime(target_date).date()
+            match_cd = df_chart_dien[df_chart_dien['date'].dt.date == t_dt]
+            if not match_cd.empty and name in match_cd.columns:
+                val_cd = match_cd.iloc[0][name]
+                if pd.notna(val_cd) and float(val_cd) > 0:
+                    kwh_ton = float(val_cd)
+
+        # Nếu chưa có tph nhưng có ở chart_cap
+        if tph == 0 and df_chart_cap is not None and not df_chart_cap.empty and target_date is not None:
+            t_dt = pd.to_datetime(target_date).date()
+            match_cc = df_chart_cap[df_chart_cap['date'].dt.date == t_dt]
+            if not match_cc.empty and name in match_cc.columns:
+                val_cc = match_cc.iloc[0][name]
+                if pd.notna(val_cc) and float(val_cc) > 0:
+                    tph = float(val_cc)
+
+        # Độ ẩm của ca trưởng
+        moist_val = 0.0
+        if df_chart_moist is not None and not df_chart_moist.empty and target_date is not None:
+            t_dt = pd.to_datetime(target_date).date()
+            match_cm = df_chart_moist[df_chart_moist['date'].dt.date == t_dt]
+            if not match_cm.empty and name in match_cm.columns:
+                val_cm = match_cm.iloc[0][name]
+                if pd.notna(val_cm) and float(val_cm) > 0:
+                    moist_val = float(val_cm)
+        
+        if moist_val == 0 and df_kcs is not None and not df_kcs.empty:
+            kcs_ldr = df_kcs[df_kcs['shift_leader'].astype(str).str.contains(cfg['pattern'], case=False, na=False)]
+            if target_date is not None:
+                t_dt = pd.to_datetime(target_date).date()
+                kcs_match = kcs_ldr[kcs_ldr['date'].dt.date == t_dt]
+                if not kcs_match.empty and (kcs_match['am_vien_pct'] > 0).any():
+                    moist_val = float(kcs_match['am_vien_pct'][kcs_match['am_vien_pct'] > 0].mean())
+            if moist_val == 0 and not kcs_ldr.empty and (kcs_ldr['am_vien_pct'] > 0).any():
+                moist_val = float(kcs_ldr['am_vien_pct'][kcs_ldr['am_vien_pct'] > 0].tail(10).mean())
+        
+        if moist_val == 0 and kpis_tong:
+            moist_val = float(kpis_tong.get('do_am_tb_pct', 8.5))
+        if moist_val == 0:
+            moist_val = 8.5
+
+        # Tỷ trọng viên
+        density_val = float(kpis_tong.get('ty_trong_vien', 640.0)) if kpis_tong else 640.0
+
+        # 2. Ca trực gần nhất (nếu ngày này không trực)
+        all_active_shifts = df_ldr[df_ldr['san_luong_tan'] > 0].sort_values('date')
+        latest_shift = all_active_shifts.iloc[-1] if not all_active_shifts.empty else None
+        latest_shift_date = latest_shift['date_str'] if latest_shift is not None else 'N/A'
+        latest_shift_out = float(latest_shift['san_luong_tan']) if latest_shift is not None else 0.0
+        latest_shift_tph = float(latest_shift['nang_suat_tph']) if latest_shift is not None else 0.0
+        latest_shift_kwh = float(latest_shift['dien_tb_kwh_tan']) if latest_shift is not None else 0.0
+        latest_shift_hours = float(latest_shift['tong_gio_ep']) if latest_shift is not None and 'tong_gio_ep' in latest_shift and pd.notna(latest_shift['tong_gio_ep']) else 0.0
+        latest_shift_nl_tho = float(latest_shift['nghien_tho_tan']) if latest_shift is not None and 'nghien_tho_tan' in latest_shift and pd.notna(latest_shift['nghien_tho_tan']) else 0.0
+        latest_shift_nl_dot = float(latest_shift['nl_dot_tan']) if latest_shift is not None and 'nl_dot_tan' in latest_shift and pd.notna(latest_shift['nl_dot_tan']) else 0.0
+        latest_shift_ratio = (latest_shift_nl_tho / latest_shift_out) if latest_shift_out > 0 and latest_shift_nl_tho > 0 else 0.0
+
+        # 3. Tính toán thống kê đa kỳ chuẩn xác: NGÀY / TUẦN / THÁNG của ca trưởng
+        if target_date is not None:
+            ref_d = pd.to_datetime(target_date).date()
+        elif not p_shifts.empty and pd.notna(p_shifts['date'].max()):
+            ref_d = pd.to_datetime(p_shifts['date'].max()).date()
+        elif not df_ldr.empty and pd.notna(df_ldr['date'].max()):
+            ref_d = pd.to_datetime(df_ldr['date'].max()).date()
+        else:
+            ref_d = datetime.now().date()
+
+        ref_w = week_num if week_num is not None else ref_d.isocalendar().week
+        ref_m = month_num if month_num is not None else ref_d.month
+        ref_y = year_num if year_num is not None else ref_d.year
+
+        # A. Kỳ NGÀY của ca trưởng
+        d_shifts = df_ldr[df_ldr['date'].dt.date == ref_d]
+        d_act = d_shifts[d_shifts['san_luong_tan'] > 0]
+        d_out = float(d_shifts['san_luong_tan'].sum())
+        d_hours = float(d_shifts['tong_gio_ep'].sum())
+        d_kwh = float(d_shifts['dien_kwh'].sum())
+        d_kwh_ton = (d_kwh / d_out) if d_out > 0 else 0.0
+        d_tph = (d_out / d_hours) if d_hours > 0 else 0.0
+        d_shifts_cnt = len(d_act) if len(d_act) > 0 else len(d_shifts)
+        d_ratio = float(d_shifts['nghien_tho_tan'].sum() / d_out) if d_out > 0 and 'nghien_tho_tan' in d_shifts.columns else 0.0
+        d_nl_dot = float(d_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in d_shifts.columns else 0.0
+        d_label = ref_d.strftime('%d/%m')
+        d_full_date = ref_d.strftime('%d/%m/%Y')
+
+        # B. Kỳ TUẦN của ca trưởng
+        w_shifts = df_ldr[(df_ldr['date'].dt.isocalendar().week == ref_w) & (df_ldr['date'].dt.year == ref_y)]
+        w_act = w_shifts[w_shifts['san_luong_tan'] > 0]
+        w_out = float(w_shifts['san_luong_tan'].sum())
+        w_hours = float(w_shifts['tong_gio_ep'].sum())
+        w_kwh = float(w_shifts['dien_kwh'].sum())
+        w_kwh_ton = (w_kwh / w_out) if w_out > 0 else 0.0
+        w_tph = (w_out / w_hours) if w_hours > 0 else 0.0
+        w_shifts_cnt = len(w_act)
+        w_ratio = float(w_shifts['nghien_tho_tan'].sum() / w_out) if w_out > 0 and 'nghien_tho_tan' in w_shifts.columns else 0.0
+        w_nl_dot = float(w_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in w_shifts.columns else 0.0
+        w_label = f"W{ref_w}"
+
+        # C. Kỳ THÁNG của ca trưởng
+        m_shifts = df_ldr[(df_ldr['date'].dt.month == ref_m) & (df_ldr['date'].dt.year == ref_y) & (df_ldr['san_luong_tan'] > 0)]
+        m_out = float(m_shifts['san_luong_tan'].sum())
+        m_hours = float(m_shifts['tong_gio_ep'].sum())
+        m_kwh = float(m_shifts['dien_kwh'].sum())
+        m_kwh_ton = (m_kwh / m_out) if m_out > 0 else 0.0
+        m_tph = (m_out / m_hours) if m_hours > 0 else 0.0
+        m_count = len(m_shifts)
+        m_ratio = float(m_shifts['nghien_tho_tan'].sum() / m_out) if m_out > 0 and 'nghien_tho_tan' in m_shifts.columns else 0.0
+        m_nl_dot = float(m_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in m_shifts.columns else 0.0
+        m_label = f"T{ref_m}"
+
+        # 4. Điểm thi đua KPI
+        kpi_score = 0.0
+        kpi_row = None
+        if df_wm_weekly is not None and not df_wm_weekly.empty:
+            if week_num is not None and 'week' in df_wm_weekly.columns:
+                match_w = df_wm_weekly[df_wm_weekly['week'] == week_num]
+                if not match_w.empty:
+                    kpi_row = match_w.iloc[0]
+            if kpi_row is None:
+                kpi_row = df_wm_weekly.iloc[-1]
+            if kpi_row is not None and name in kpi_row and pd.notna(kpi_row[name]):
+                kpi_score = float(kpi_row[name])
+
+        if kpi_score == 0 and df_wm_monthly is not None and not df_wm_monthly.empty:
+            last_m_row = df_wm_monthly.iloc[-1]
+            if name in last_m_row and pd.notna(last_m_row[name]):
+                kpi_score = float(last_m_row[name])
+
+        kpi_eval = evaluate_kpi_score(kpi_score) if kpi_score > 0 else {'rank': 'Chưa xếp hạng', 'badge': 'badge-info', 'color': '#64748b', 'icon': '⚪', 'medal': '🎗️'}
+
+        # 5. Sự cố trong ca
+        inc_count = 0
+        if df_incidents is not None and not df_incidents.empty and 'shift_leader' in df_incidents.columns:
+            inc_match = df_incidents[df_incidents['shift_leader'].astype(str).str.contains(cfg['pattern'], case=False, na=False)]
+            inc_count = len(inc_match)
+
+        leaders_summary[name] = {
+            'name': name,
+            'display_name': cfg['display_name'],
+            'color': cfg['color'],
+            'bg_color': cfg['bg_color'],
+            'border_color': cfg['border_color'],
+            'badge_cls': cfg['badge_cls'],
+            'icon': cfg['icon'],
+            'has_active_shift': has_active_shift,
+            'duty_type': duty_type,
+            'maint_count': maint_count,
+            'prod_count': prod_count,
+            'period_label': period_label,
+            'shift_count': shift_count,
+            'status_text': status_text,
+            'status_cls': status_cls,
+            'status_icon': status_icon,
+            'output': round(output, 2),
+            'output_pct': round(output_pct, 1),
+            'pellet_hours': round(pellet_hours, 1),
+            'elec_kwh': round(elec_kwh, 0),
+            'elec_vnd': round(elec_vnd, 0),
+            'kwh_per_ton': round(kwh_ton, 1),
+            'elec_eval': evaluate_electricity(kwh_ton),
+            'tph': round(tph, 2),
+            'prod_eval': evaluate_productivity(tph),
+            'processing_ratio': round(ratio, 2),
+            'nl_tho': round(nl_tho, 1),
+            'nl_dot': round(nl_dot, 1),
+            'moisture': round(moist_val, 2),
+            'moist_eval': evaluate_moisture(moist_val),
+            'density': round(density_val, 1),
+            'density_eval': evaluate_density(density_val),
+            'latest_shift_date': latest_shift_date,
+            'latest_shift_out': round(latest_shift_out, 1),
+            'latest_shift_tph': round(latest_shift_tph, 2),
+            'latest_shift_kwh': round(latest_shift_kwh, 1),
+            'latest_shift_hours': round(latest_shift_hours, 1),
+            'latest_shift_nl_dot': round(latest_shift_nl_dot, 1),
+            'latest_shift_ratio': round(latest_shift_ratio, 2),
+            
+            # Thống kê chi tiết Ngày
+            'day_out': round(d_out, 1),
+            'day_hours': round(d_hours, 1),
+            'day_kwh_ton': round(d_kwh_ton, 1),
+            'day_tph': round(d_tph, 2),
+            'day_shifts': d_shifts_cnt,
+            'day_ratio': round(d_ratio, 2),
+            'day_nl_dot': round(d_nl_dot, 1),
+            'day_label': d_label,
+            'day_full_date': d_full_date,
+
+            # Thống kê chi tiết Tuần
+            'week_out': round(w_out, 1),
+            'week_hours': round(w_hours, 1),
+            'week_kwh_ton': round(w_kwh_ton, 1),
+            'week_tph': round(w_tph, 2),
+            'week_shifts': w_shifts_cnt,
+            'week_ratio': round(w_ratio, 2),
+            'week_nl_dot': round(w_nl_dot, 1),
+            'week_label': w_label,
+
+            # Thống kê chi tiết Tháng
+            'month_output': round(m_out, 1),
+            'month_hours': round(m_hours, 1),
+            'month_kwh_ton': round(m_kwh_ton, 1),
+            'month_tph': round(m_tph, 2),
+            'month_shifts': m_count,
+            'month_ratio': round(m_ratio, 2),
+            'month_nl_dot': round(m_nl_dot, 1),
+            'month_label': m_label,
+
+            'kpi_score': round(kpi_score, 2),
+            'kpi_eval': kpi_eval,
+            'inc_count': inc_count,
+            'period_label': period_label,
+            'shifts_df': p_shifts
+        }
+
+    # Bảng đối sánh DataFrame
+    long_s = leaders_summary.get('Long', {})
+    sac_s = leaders_summary.get('Sắc', {})
+    tai_s = leaders_summary.get('Tài', {})
+
+    comp_data = [
+        {
+            'Chỉ Số Đo Lường': 'Sản lượng thực tế (tấn)',
+            '🏭 Toàn Nhà Máy': f"{tot_factory_output:,.1f}",
+            '🔵 Ca Long': f"{long_s.get('output', 0):,.1f}" if long_s.get('has_active_shift') else f"0.0 (Lk: {long_s.get('month_output', 0):,.0f})",
+            '🟢 Ca Sắc': f"{sac_s.get('output', 0):,.1f}" if sac_s.get('has_active_shift') else f"0.0 (Lk: {sac_s.get('month_output', 0):,.0f})",
+            '🟠 Ca Tài': f"{tai_s.get('output', 0):,.1f}" if tai_s.get('has_active_shift') else f"0.0 (Lk: {tai_s.get('month_output', 0):,.0f})",
+            'Định Mức Kỹ Thuật': 'Kế hoạch ngày'
+        },
+        {
+            'Chỉ Số Đo Lường': 'Suất tiêu hao điện (kWh/tấn)',
+            '🏭 Toàn Nhà Máy': f"{kpis_tong.get('avg_electricity_kwh_ton', 0):.1f}" if kpis_tong else "-",
+            '🔵 Ca Long': f"{long_s.get('kwh_per_ton', 0):.1f}" if long_s.get('kwh_per_ton', 0) > 0 else f"{long_s.get('month_kwh_ton', 0):.1f} (tháng)",
+            '🟢 Ca Sắc': f"{sac_s.get('kwh_per_ton', 0):.1f}" if sac_s.get('kwh_per_ton', 0) > 0 else f"{sac_s.get('month_kwh_ton', 0):.1f} (tháng)",
+            '🟠 Ca Tài': f"{tai_s.get('kwh_per_ton', 0):.1f}" if tai_s.get('kwh_per_ton', 0) > 0 else f"{tai_s.get('month_kwh_ton', 0):.1f} (tháng)",
+            'Định Mức Kỹ Thuật': '170 - 175 kWh/t'
+        },
+        {
+            'Chỉ Số Đo Lường': 'Năng suất ép trung bình (tấn/h)',
+            '🏭 Toàn Nhà Máy': f"{kpis_tong.get('avg_productivity', 0):.2f}" if kpis_tong else "-",
+            '🔵 Ca Long': f"{long_s.get('tph', 0):.2f}" if long_s.get('tph', 0) > 0 else f"{long_s.get('month_tph', 0):.2f} (tháng)",
+            '🟢 Ca Sắc': f"{sac_s.get('tph', 0):.2f}" if sac_s.get('tph', 0) > 0 else f"{sac_s.get('month_tph', 0):.2f} (tháng)",
+            '🟠 Ca Tài': f"{tai_s.get('tph', 0):.2f}" if tai_s.get('tph', 0) > 0 else f"{tai_s.get('month_tph', 0):.2f} (tháng)",
+            'Định Mức Kỹ Thuật': '≥ 4.0 tấn/h'
+        },
+        {
+            'Chỉ Số Đo Lường': 'Tổng giờ máy ép (giờ)',
+            '🏭 Toàn Nhà Máy': f"{kpis_tong.get('total_pellet_hours', 0):.1f}" if kpis_tong else "-",
+            '🔵 Ca Long': f"{long_s.get('pellet_hours', 0):.1f}",
+            '🟢 Ca Sắc': f"{sac_s.get('pellet_hours', 0):.1f}",
+            '🟠 Ca Tài': f"{tai_s.get('pellet_hours', 0):.1f}",
+            'Định Mức Kỹ Thuật': '8 Máy Ép'
+        },
+        {
+            'Chỉ Số Đo Lường': 'Độ ẩm trung bình viên (%)',
+            '🏭 Toàn Nhà Máy': f"{kpis_tong.get('do_am_tb_pct', 0):.2f}%" if kpis_tong else "-",
+            '🔵 Ca Long': f"{long_s.get('moisture', 0):.2f}%",
+            '🟢 Ca Sắc': f"{sac_s.get('moisture', 0):.2f}%",
+            '🟠 Ca Tài': f"{tai_s.get('moisture', 0):.2f}%",
+            'Định Mức Kỹ Thuật': '8.0 - 9.5%'
+        },
+        {
+            'Chỉ Số Đo Lường': 'Tỷ lệ chế biến (lần)',
+            '🏭 Toàn Nhà Máy': f"{kpis_tong.get('processing_ratio', 0):.2f}" if kpis_tong else "-",
+            '🔵 Ca Long': f"{long_s.get('processing_ratio', 0):.2f}",
+            '🟢 Ca Sắc': f"{sac_s.get('processing_ratio', 0):.2f}",
+            '🟠 Ca Tài': f"{tai_s.get('processing_ratio', 0):.2f}",
+            'Định Mức Kỹ Thuật': '1.8 - 2.1'
+        },
+        {
+            'Chỉ Số Đo Lường': 'Điểm KPI thi đua (/100)',
+            '🏭 Toàn Nhà Máy': '-',
+            '🔵 Ca Long': f"{long_s.get('kpi_score', 0):.1f} ({long_s.get('kpi_eval', {}).get('medal', '')} {long_s.get('kpi_eval', {}).get('rank', '')})",
+            '🟢 Ca Sắc': f"{sac_s.get('kpi_score', 0):.1f} ({sac_s.get('kpi_eval', {}).get('medal', '')} {sac_s.get('kpi_eval', {}).get('rank', '')})",
+            '🟠 Ca Tài': f"{tai_s.get('kpi_score', 0):.1f} ({tai_s.get('kpi_eval', {}).get('medal', '')} {tai_s.get('kpi_eval', {}).get('rank', '')})",
+            'Định Mức Kỹ Thuật': 'Thang 100 điểm'
+        }
+    ]
+
+    return {
+        'leaders': leaders_summary,
+        'comparison_df': pd.DataFrame(comp_data)
+    }
 
 
 

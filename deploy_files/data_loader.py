@@ -4,8 +4,20 @@ Module kết nối và chuẩn hóa dữ liệu từ Google Sheets cho Nhà máy
 import os
 import re
 import json
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
+
+DEFAULT_SHIFT_COLUMNS = [
+    'row_index', 'date', 'date_str', 'month', 'week', 'shift_leader',
+    'nl_dot_spoon', 'nl_dot_tan', 'nghien_tho_spoon', 'nghien_tho_tan',
+    'san_luong_tan', 'chi_tieu_tan', 'xuat_hang_tan', 'ton_kho_tan',
+    'ti_le_nl_dot_pct', 'dien_kwh', 'tien_dien_vnd', 'dien_tb_kwh_tan',
+    'h_HM118', 'h_HM218', 'h_HM318', 'h_DR124', 'h_DR224',
+    'h_HM147', 'h_HM247', 'h_HM347',
+    'h_PE1', 'h_PE2', 'h_PE3', 'h_PE4', 'h_PE5', 'h_PE6', 'h_PE7', 'h_PE8',
+    'tong_gio_ep', 'nang_suat_tph'
+]
 
 import pandas as pd
 import gspread
@@ -15,6 +27,7 @@ DEFAULT_PRODUCTION_SPREADSHEET_ID = "1HH1r7O_eL_iW6spNruAKCM947G79rCyJRFHRVVb9ap
 DEFAULT_KPI_SPREADSHEET_ID = "1M75tg_kZNxItv3VOlAjNi-RF63S_2NtxBMXSAxCRe14"
 DEFAULT_MAINT_LOG_SPREADSHEET_ID = "1hInwQQgN3zXWFEXC1qaFgaXeIiogXUJtm0cPgP3PlX8"
 DEFAULT_MAINT_PLAN_SPREADSHEET_ID = "1d7cmTioaJyRSGxgC7ArPUnmBtTvToby-vNCsgXV1bOQ"
+DEFAULT_PROCESS_SPREADSHEET_ID = "1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw"
 DEFAULT_CREDENTIALS_FILE = "credentials.json"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -91,18 +104,21 @@ class DataLoader:
         spreadsheet_id: str = DEFAULT_PRODUCTION_SPREADSHEET_ID,
         kpi_spreadsheet_id: str = DEFAULT_KPI_SPREADSHEET_ID,
         maint_log_spreadsheet_id: str = DEFAULT_MAINT_LOG_SPREADSHEET_ID,
-        maint_plan_spreadsheet_id: str = DEFAULT_MAINT_PLAN_SPREADSHEET_ID
+        maint_plan_spreadsheet_id: str = DEFAULT_MAINT_PLAN_SPREADSHEET_ID,
+        process_spreadsheet_id: str = DEFAULT_PROCESS_SPREADSHEET_ID
     ):
         self.credentials_path = credentials_path
         self.spreadsheet_id = spreadsheet_id
         self.kpi_spreadsheet_id = kpi_spreadsheet_id
         self.maint_log_spreadsheet_id = maint_log_spreadsheet_id
         self.maint_plan_spreadsheet_id = maint_plan_spreadsheet_id
+        self.process_spreadsheet_id = process_spreadsheet_id
         self.client: Optional[gspread.Client] = None
         self.spreadsheet: Optional[gspread.Spreadsheet] = None
         self.kpi_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.maint_log_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.maint_plan_spreadsheet: Optional[gspread.Spreadsheet] = None
+        self.process_spreadsheet: Optional[gspread.Spreadsheet] = None
         self._ensure_credentials()
 
     def _ensure_credentials(self):
@@ -142,8 +158,8 @@ class DataLoader:
                     else:
                         service_account_info = dict(raw_creds)
                     creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-        except Exception as ex:
-            print(f"[!] Không đọc được từ st.secrets: {ex}")
+        except Exception:
+            pass
 
         # 2. Nếu không có Streamlit Secrets, đọc từ file credentials.json cục bộ
         if creds is None:
@@ -181,35 +197,75 @@ class DataLoader:
             print(f"[-] Không thể mở bảng tính kế hoạch bảo trì & 4M: {e}")
             self.maint_plan_spreadsheet = None
 
+        try:
+            self.process_spreadsheet = self.client.open_by_key(self.process_spreadsheet_id)
+        except Exception as e:
+            try:
+                print(f"[-] Không thể mở bảng tính quy trình chế biến: {e}")
+            except Exception:
+                print(f"[-] Cannot open process spreadsheet: {e}")
+            self.process_spreadsheet = None
+
         return True
 
     def get_sheet_values(self, sheet_name: str) -> List[List[str]]:
-        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính sản xuất"""
-        if not self.spreadsheet:
-            self.connect()
-        if not self.spreadsheet:
-            return []
-        ws = self.spreadsheet.worksheet(sheet_name)
-        return ws.get_all_values()
+        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính sản xuất với retry 3 lần"""
+        for attempt in range(3):
+            try:
+                if not self.spreadsheet:
+                    self.connect()
+                if not self.spreadsheet:
+                    return []
+                ws = self.spreadsheet.worksheet(sheet_name)
+                return ws.get_all_values()
+            except Exception as e:
+                print(f"[-] Lỗi đọc sheet '{sheet_name}' (lần {attempt+1}/3): {e}")
+                if attempt < 2:
+                    time.sleep(0.8 * (attempt + 1))
+        return []
 
     def get_kpi_sheet_values(self, sheet_name: str) -> List[List[str]]:
-        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính đánh giá KPI"""
-        if not self.kpi_spreadsheet:
-            self.connect()
-        if not self.kpi_spreadsheet:
-            return []
-        ws = self.kpi_spreadsheet.worksheet(sheet_name)
-        return ws.get_all_values()
+        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính đánh giá KPI với retry 3 lần"""
+        for attempt in range(3):
+            try:
+                if not self.kpi_spreadsheet:
+                    self.connect()
+                if not self.kpi_spreadsheet:
+                    return []
+                ws = self.kpi_spreadsheet.worksheet(sheet_name)
+                return ws.get_all_values()
+            except Exception as e:
+                print(f"[-] Lỗi đọc KPI sheet '{sheet_name}' (lần {attempt+1}/3): {e}")
+                if attempt < 2:
+                    time.sleep(0.8 * (attempt + 1))
+        return []
 
 
     def load_shift_data(self) -> pd.DataFrame:
         """
         Đọc và chuẩn hóa dữ liệu ca/ngày từ sheet 'Product'.
         Bao gồm: sản lượng, chỉ tiêu, điện năng, giờ chạy các máy nghiền, sấy, ép viên.
+        Tích hợp bộ đệm cục bộ (cache_shifts.parquet) dự phòng khi mất kết nối mạng.
         """
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_shifts.parquet"),
+            os.path.join("assets", "cache_shifts.parquet"),
+            os.path.join("deploy_files", "assets", "cache_shifts.parquet"),
+        ]
+
         raw_rows = self.get_sheet_values('Product')
         if len(raw_rows) < 7:
-            return pd.DataFrame()
+            # Google Sheet tạm thời không tải được -> Đọc từ bộ đệm parquet
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        df_cached = pd.read_parquet(cp)
+                        if not df_cached.empty and 'shift_leader' in df_cached.columns:
+                            print(f"[i] Đã nạp {len(df_cached)} dòng dữ liệu ca từ bộ đệm cục bộ ({cp})")
+                            return df_cached
+                    except Exception as e:
+                        print(f"[-] Lỗi đọc cache {cp}: {e}")
+            return pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
 
         # Dữ liệu bắt đầu từ dòng 7 (index 6)
         records = []
@@ -297,6 +353,25 @@ class DataLoader:
             # Nếu năng suất = 0 nhưng có sản lượng và giờ ép > 0 -> tự tính lại
             mask_ns = (df['nang_suat_tph'] == 0) & (df['san_luong_tan'] > 0) & (df['tong_gio_ep'] > 0)
             df.loc[mask_ns, 'nang_suat_tph'] = df.loc[mask_ns, 'san_luong_tan'] / df.loc[mask_ns, 'tong_gio_ep']
+
+            # Tự động cập nhật cache parquet dự phòng
+            for cp in cache_paths:
+                try:
+                    os.makedirs(os.path.dirname(cp), exist_ok=True)
+                    df.to_parquet(cp, index=False)
+                except Exception:
+                    pass
+        else:
+            # Nếu df rỗng, kiểm tra cache
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        df_cached = pd.read_parquet(cp)
+                        if not df_cached.empty and 'shift_leader' in df_cached.columns:
+                            return df_cached
+                    except Exception:
+                        pass
+            df = pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
 
         return df
 
@@ -958,5 +1033,304 @@ class DataLoader:
             })
 
         return pd.DataFrame(records)
+
+    def load_wood_pellet_process_data(self, force_reload: bool = False) -> Dict[str, Any]:
+        """
+        Nạp dữ liệu quy trình chế biến viên nén gỗ từ Google Sheets hoặc cache cục bộ:
+        https://docs.google.com/spreadsheets/d/1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw/edit
+        Nếu chưa được phân quyền (403), trả về dict chứa thông tin trạng thái để hướng dẫn người dùng cấp quyền.
+        """
+        result = {
+            'status': 'PENDING',
+            'sheet_id': self.process_spreadsheet_id,
+            'sheet_url': f"https://docs.google.com/spreadsheets/d/{self.process_spreadsheet_id}/edit?gid=0#gid=0",
+            'service_email': 'bvn-reporter@boxwood-dynamo-508304-t4.iam.gserviceaccount.com',
+            'title': 'Quy Trình Chế Biến Viên Nén Gỗ BVN',
+            'sheets_data': {},
+            'error_message': ''
+        }
+
+        if force_reload:
+            self.process_spreadsheet = None
+
+        if not self.client:
+            self.connect()
+
+        if not self.client:
+            result['status'] = 'NO_CLIENT'
+            result['error_message'] = 'Chưa khởi tạo được kết nối Google Sheets.'
+            # Thử đọc từ cache cục bộ nếu có
+            local_cache = os.path.join(os.path.dirname(__file__), "assets", "cache_process_sheets.xlsx")
+            if os.path.exists(local_cache):
+                try:
+                    excel_data = pd.read_excel(local_cache, sheet_name=None)
+                    if excel_data:
+                        result['sheets_data'] = excel_data
+                        result['status'] = 'LOCAL_CACHE'
+                        result['title'] = 'Quy Trình Chế Biến Viên Nén Gỗ (Bản Lưu Cục Bộ)'
+                except Exception:
+                    pass
+            return result
+
+        try:
+            if not self.process_spreadsheet:
+                self.process_spreadsheet = self.client.open_by_key(self.process_spreadsheet_id)
+
+            if self.process_spreadsheet:
+                result['title'] = self.process_spreadsheet.title
+                result['status'] = 'CONNECTED'
+                for ws in self.process_spreadsheet.worksheets():
+                    vals = ws.get_all_values()
+                    if vals and len(vals) > 1:
+                        df = pd.DataFrame(vals[1:], columns=vals[0])
+                    elif vals:
+                        df = pd.DataFrame(vals)
+                    else:
+                        df = pd.DataFrame()
+                    result['sheets_data'][ws.title] = df
+        except Exception as e:
+            err_str = str(e)
+            is_perm = ('403' in err_str or 'Permission' in err_str or 'The caller does not have permission' in err_str or isinstance(e, PermissionError))
+            result['status'] = 'PERMISSION_DENIED' if is_perm else 'ERROR'
+            result['error_message'] = err_str
+
+            # Nếu lỗi phân quyền Google API, kiểm tra xem có file cache cục bộ dự phòng không
+            local_cache = os.path.join(os.path.dirname(__file__), "assets", "cache_process_sheets.xlsx")
+            if os.path.exists(local_cache):
+                try:
+                    excel_data = pd.read_excel(local_cache, sheet_name=None)
+                    if excel_data:
+                        result['sheets_data'] = excel_data
+                        result['status'] = 'LOCAL_CACHE'
+                        result['title'] = 'Quy Trình Chế Biến Viên Nén Gỗ (Bản Lưu Cục Bộ)'
+                except Exception:
+                    pass
+
+        return result
+
+    def save_shift_record(self, record: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Ghi dữ liệu báo cáo ca sản xuất vào Google Sheets 'Product' và cập nhật cache cục bộ.
+        - Tìm dòng khớp ngày và ca trưởng (hoặc dòng trống cùng ngày).
+        - Cập nhật dải ô D{row}:AJ{row}.
+        - Nếu chưa có ngày trong bảng tính, thêm dòng mới (append_row).
+        - Tự động cập nhật bộ đệm cache_shifts.parquet để hiển thị ngay trên Dashboard.
+        """
+        if not self.client:
+            self.connect()
+
+        if not self.client or not self.spreadsheet:
+            return False, "Chưa kết nối được với Google Sheets sản xuất."
+
+        try:
+            ws = self.spreadsheet.worksheet('Product')
+            vals = ws.get_all_values()
+
+            date_dt = record.get('date')
+            if isinstance(date_dt, str):
+                date_dt = parse_vn_date(date_dt)
+            if not date_dt:
+                date_dt = datetime.now()
+
+            d_str = date_dt.strftime('%d/%m/%Y')
+            d_short = f"{date_dt.day}/{date_dt.month}/{date_dt.year}"
+            ca_truong = str(record.get('shift_leader', '')).strip()
+
+            month_val = date_dt.month
+            week_val = date_dt.isocalendar()[1]
+
+            # Tính toán các chỉ số phái sinh
+            san_luong = float(record.get('san_luong_tan', 0.0))
+            chi_tieu = float(record.get('chi_tieu_tan', 90.0))
+            dien_kwh = float(record.get('dien_kwh', 0.0))
+            dien_tb = round(dien_kwh / san_luong, 2) if san_luong > 0 else 0.0
+            tien_dien = round(dien_kwh * 2200, 0) # Đơn giá ước tính 2,200đ/kWh
+
+            # Giờ máy chạy
+            pe_hours = [float(record.get(f'h_PE{i}', 0.0)) for i in range(1, 9)]
+            tong_gio_ep = sum(pe_hours)
+            nang_suat = round(san_luong / tong_gio_ep, 2) if tong_gio_ep > 0 else 0.0
+
+            # Dãy giá trị từ cột D đến cột AJ (33 cột)
+            row_vals = [
+                ca_truong,                                          # D: Ca trưởng
+                str(record.get('nl_dot_spoon', 13)),                # E: Muỗng dăm đốt
+                "1,4",                                              # F: Hệ số
+                str(record.get('nl_dot_tan', 18)),                  # G: Dăm đốt tấn
+                str(record.get('nghien_tho_spoon', 105)),           # H: Muỗng nghiền thô
+                "1,8",                                              # I: Hệ số
+                str(record.get('nghien_tho_tan', 189)),             # J: Nghiền thô tấn
+                str(san_luong).replace('.', ','),                   # K: Sản lượng
+                str(chi_tieu).replace('.', ','),                    # L: Chỉ tiêu
+                str(record.get('xuat_hang_tan', '')),               # M: Xuất hàng
+                str(record.get('ton_kho_tan', '')),                 # N: Tồn kho
+                "0%",                                               # O: Tỷ lệ
+                str(int(dien_kwh)),                                 # P: Điện kWh
+                str(int(tien_dien)),                                # Q: Tiền điện
+                str(dien_tb).replace('.', ','),                     # R: Suất điện
+                str(record.get('h_HM118', 0)),                      # S: HM118
+                str(record.get('h_HM218', 0)),                      # T: HM218
+                str(record.get('h_HM318', 0)),                      # U: HM318
+                str(record.get('h_DR124', 0)),                      # V: DR124
+                str(record.get('h_DR224', 0)),                      # W: DR224
+                str(record.get('h_HM147', 0)),                      # X: HM147
+                str(record.get('h_HM247', 0)),                      # Y: HM247
+                str(record.get('h_HM347', 0)),                      # Z: HM347
+                str(pe_hours[0]),                                   # AA: PE1
+                str(pe_hours[1]),                                   # AB: PE2
+                str(pe_hours[2]),                                   # AC: PE3
+                str(pe_hours[3]),                                   # AD: PE4
+                str(pe_hours[4]),                                   # AE: PE5
+                str(pe_hours[5]),                                   # AF: PE6
+                str(pe_hours[6]),                                   # AG: PE7
+                str(pe_hours[7]),                                   # AH: PE8
+                str(tong_gio_ep),                                   # AI: Tổng giờ ép
+                str(nang_suat).replace('.', ',')                    # AJ: Năng suất ép
+            ]
+
+            target_row = None
+            # 1. Tìm dòng có cùng ngày và khớp Ca Trưởng
+            for idx, r in enumerate(vals):
+                if r and (d_str in r[0] or d_short in r[0]):
+                    r_leader = r[3].strip() if len(r) > 3 else ''
+                    if r_leader == ca_truong:
+                        target_row = idx + 1
+                        break
+
+            # 2. Nếu chưa tìm thấy, tìm dòng cùng ngày nhưng chưa có Ca Trưởng (dòng trống)
+            if not target_row:
+                for idx, r in enumerate(vals):
+                    if r and (d_str in r[0] or d_short in r[0]):
+                        r_leader = r[3].strip() if len(r) > 3 else ''
+                        r_sl = r[10].strip() if len(r) > 10 else ''
+                        if r_leader == '' and r_sl == '':
+                            target_row = idx + 1
+                            break
+
+            if target_row:
+                # Cập nhật dải ô D:AJ của dòng đã có sẵn
+                ws.update(range_name=f"D{target_row}:AJ{target_row}", values=[row_vals], value_input_option='USER_ENTERED')
+                msg = f"Đã cập nhật thành công dữ liệu ngày {d_str} cho Ca Trưởng {ca_truong} (Dòng {target_row}) trên Google Sheets!"
+            else:
+                # Nếu chưa có dòng nào của ngày này -> Thêm dòng mới
+                full_row = [d_str, str(month_val), str(week_val)] + row_vals
+                ws.append_row(full_row, value_input_option='USER_ENTERED')
+                msg = f"Đã thêm mới thành công dữ liệu ngày {d_str} cho Ca Trưởng {ca_truong} vào Google Sheets!"
+
+            # 3. Cập nhật bộ đệm cục bộ (cache_shifts.parquet)
+            cache_paths = [
+                os.path.join(os.path.dirname(__file__), "assets", "cache_shifts.parquet"),
+                os.path.join("assets", "cache_shifts.parquet"),
+                os.path.join("deploy_files", "assets", "cache_shifts.parquet"),
+            ]
+            try:
+                for cp in cache_paths:
+                    if os.path.exists(cp):
+                        df_c = pd.read_parquet(cp)
+                        # Tìm và cập nhật hoặc thêm dòng
+                        mask = (df_c['date_str'] == d_str) & (df_c['shift_leader'] == ca_truong)
+                        new_row_dict = {
+                            'date': pd.to_datetime(date_dt),
+                            'date_str': d_str,
+                            'month': month_val,
+                            'week': week_val,
+                            'shift_leader': ca_truong,
+                            'nl_dot_spoon': float(record.get('nl_dot_spoon', 13)),
+                            'nl_dot_tan': float(record.get('nl_dot_tan', 18)),
+                            'nghien_tho_spoon': float(record.get('nghien_tho_spoon', 105)),
+                            'nghien_tho_tan': float(record.get('nghien_tho_tan', 189)),
+                            'san_luong_tan': san_luong,
+                            'chi_tieu_tan': chi_tieu,
+                            'xuat_hang_tan': float(record.get('xuat_hang_tan', 0.0)),
+                            'ton_kho_tan': float(record.get('ton_kho_tan', 0.0)),
+                            'ti_le_nl_dot_pct': 0.0,
+                            'dien_kwh': dien_kwh,
+                            'tien_dien_vnd': tien_dien,
+                            'dien_tb_kwh_tan': dien_tb,
+                            'h_HM118': float(record.get('h_HM118', 0)),
+                            'h_HM218': float(record.get('h_HM218', 0)),
+                            'h_HM318': float(record.get('h_HM318', 0)),
+                            'h_DR124': float(record.get('h_DR124', 0)),
+                            'h_DR224': float(record.get('h_DR224', 0)),
+                            'h_HM147': float(record.get('h_HM147', 0)),
+                            'h_HM247': float(record.get('h_HM247', 0)),
+                            'h_HM347': float(record.get('h_HM347', 0)),
+                            'h_PE1': pe_hours[0],
+                            'h_PE2': pe_hours[1],
+                            'h_PE3': pe_hours[2],
+                            'h_PE4': pe_hours[3],
+                            'h_PE5': pe_hours[4],
+                            'h_PE6': pe_hours[5],
+                            'h_PE7': pe_hours[6],
+                            'h_PE8': pe_hours[7],
+                            'tong_gio_ep': tong_gio_ep,
+                            'nang_suat_tph': nang_suat,
+                        }
+                        if mask.any():
+                            for k, v in new_row_dict.items():
+                                if k in df_c.columns:
+                                    df_c.loc[mask, k] = v
+                        else:
+                            df_c = pd.concat([df_c, pd.DataFrame([new_row_dict])], ignore_index=True)
+                        df_c = df_c.sort_values('date').reset_index(drop=True)
+                        df_c.to_parquet(cp, index=False)
+            except Exception as e_cache:
+                print(f"[-] Lỗi cập nhật cache parquet: {e_cache}")
+
+            return True, msg
+
+        except Exception as e:
+            return False, f"Lỗi ghi dữ liệu Google Sheets: {e}"
+
+    def save_kcs_record(self, record: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Ghi dữ liệu kết quả đo kiểm chất lượng KCS vào Google Sheets 'KCS'.
+        """
+        if not self.client:
+            self.connect()
+
+        if not self.client or not self.spreadsheet:
+            return False, "Chưa kết nối được với Google Sheets sản xuất."
+
+        try:
+            ws = self.spreadsheet.worksheet('KCS')
+            date_dt = record.get('date')
+            if isinstance(date_dt, str):
+                date_dt = parse_vn_date(date_dt)
+            if not date_dt:
+                date_dt = datetime.now()
+
+            d_str = date_dt.strftime('%d/%m/%Y')
+            week_val = date_dt.isocalendar()[1]
+
+            row_vals = [
+                d_str,                                              # 0: Ngày
+                str(week_val),                                      # 1: Tuần
+                str(record.get('time_sample', '08h')),              # 2: Giờ lấy mẫu
+                str(record.get('shift_leader', '')),                # 3: Ca trưởng
+                str(record.get('tester', 'KCS')),                   # 4: Người đo
+                str(record.get('ty_le_nl_dot', '100% Củi')),        # 5: Tỷ lệ NL đốt
+                str(record.get('ty_le_phoi_tron', '8:2')),          # 6: Tỷ lệ phối trộn
+                str(record.get('am_dam_pct', '')).replace('.', ','),        # 7: Ẩm dăm
+                str(record.get('am_truoc_say_pct', '')).replace('.', ','),  # 8: Ẩm trước sấy
+                str(record.get('am_sau_say_1_pct', '')).replace('.', ','),  # 9: Ẩm sau sấy 1
+                str(record.get('am_sau_say_2_pct', '')).replace('.', ','),  # 10: Ẩm sau sấy 2
+                str(record.get('am_vien_pct', '')).replace('.', ','),       # 11: Ẩm viên
+                str(record.get('density_dam', '')).replace('.', ','),       # 12: Tỷ trọng dăm
+                str(record.get('density_nghien_tho', '')).replace('.', ','),# 13: Tỷ trọng nghiền thô
+                str(record.get('density_nghien_tinh', '')).replace('.', ','),# 14: Tỷ trọng nghiền tinh
+                str(record.get('density_vien', '')).replace('.', ','),      # 15: Tỷ trọng viên
+                "", "", "", "", "",                                         # 16-20: Cột trống
+                str(record.get('do_tro_pct', '')).replace('.', ',')         # 21: Độ tro
+            ]
+
+            ws.append_row(row_vals, value_input_option='USER_ENTERED')
+            return True, f"Đã lưu thành công mẫu kiểm nghiệm KCS lúc {record.get('time_sample')} ngày {d_str}!"
+
+        except Exception as e:
+            return False, f"Lỗi ghi dữ liệu KCS lên Google Sheets: {e}"
+
+
+
 
 
