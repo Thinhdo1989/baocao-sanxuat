@@ -587,19 +587,6 @@ with st.sidebar:
         - Đường kính viên: `6 - 8 mm`
         """)
 
-    with st.expander("📱 **Xem trên ĐT / Tablet (Wi-Fi)**", expanded=False):
-        st.markdown("""
-        **Truy cập cùng mạng Wi-Fi:**
-        
-        👉 `http://192.168.1.7:8501`
-        
-        *(Hoặc quét mã QR bên dưới bằng camera điện thoại)*
-        """)
-        st.markdown("""
-        <div style="text-align: center; margin-top: 8px; margin-bottom: 4px;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=http://192.168.1.7:8501" style="width: 130px; height: 130px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; padding: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-        </div>
-        """, unsafe_allow_html=True)
 
 # ================= HEADER & BỘ LỌC THỜI GIAN ĐẦU TRANG =================
 st.title("🏭 PRODUCTION | BÁO CÁO SẢN XUẤT BVN QUẢNG BÌNH")
