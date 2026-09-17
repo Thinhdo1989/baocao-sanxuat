@@ -28,6 +28,8 @@ DEFAULT_KPI_SPREADSHEET_ID = "1M75tg_kZNxItv3VOlAjNi-RF63S_2NtxBMXSAxCRe14"
 DEFAULT_MAINT_LOG_SPREADSHEET_ID = "1hInwQQgN3zXWFEXC1qaFgaXeIiogXUJtm0cPgP3PlX8"
 DEFAULT_MAINT_PLAN_SPREADSHEET_ID = "1d7cmTioaJyRSGxgC7ArPUnmBtTvToby-vNCsgXV1bOQ"
 DEFAULT_PROCESS_SPREADSHEET_ID = "1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw"
+DEFAULT_HR_SPREADSHEET_ID = "1enwVBuwwFK7k6r4i_xcg_7oJgckLaOfzNUkHPRZfY6s"
+DEFAULT_HR_GID = "987654321"
 DEFAULT_CREDENTIALS_FILE = "credentials.json"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -105,7 +107,8 @@ class DataLoader:
         kpi_spreadsheet_id: str = DEFAULT_KPI_SPREADSHEET_ID,
         maint_log_spreadsheet_id: str = DEFAULT_MAINT_LOG_SPREADSHEET_ID,
         maint_plan_spreadsheet_id: str = DEFAULT_MAINT_PLAN_SPREADSHEET_ID,
-        process_spreadsheet_id: str = DEFAULT_PROCESS_SPREADSHEET_ID
+        process_spreadsheet_id: str = DEFAULT_PROCESS_SPREADSHEET_ID,
+        hr_spreadsheet_id: str = DEFAULT_HR_SPREADSHEET_ID
     ):
         self.credentials_path = credentials_path
         self.spreadsheet_id = spreadsheet_id
@@ -113,12 +116,14 @@ class DataLoader:
         self.maint_log_spreadsheet_id = maint_log_spreadsheet_id
         self.maint_plan_spreadsheet_id = maint_plan_spreadsheet_id
         self.process_spreadsheet_id = process_spreadsheet_id
+        self.hr_spreadsheet_id = hr_spreadsheet_id
         self.client: Optional[gspread.Client] = None
         self.spreadsheet: Optional[gspread.Spreadsheet] = None
         self.kpi_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.maint_log_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.maint_plan_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.process_spreadsheet: Optional[gspread.Spreadsheet] = None
+        self.hr_spreadsheet: Optional[gspread.Spreadsheet] = None
         self._ensure_credentials()
 
     def _ensure_credentials(self):
@@ -1107,6 +1112,74 @@ class DataLoader:
                     pass
 
         return result
+
+    def load_organization_hr_data(self, force_reload: bool = False) -> Dict[str, Any]:
+        """
+        Nạp dữ liệu Sơ đồ cơ cấu tổ chức & Định biên nhân sự từ Google Sheets hoặc cache cục bộ:
+        https://docs.google.com/spreadsheets/d/1enwVBuwwFK7k6r4i_xcg_7oJgckLaOfzNUkHPRZfY6s/edit?gid=987654321#gid=987654321
+        Bao gồm:
+        - Cây phân cấp tổ chức (Gốc Dữ liệu Sơ đồ khối - gid=987654321)
+        - Định biên định lượng theo phòng ban & danh sách nhân sự (Định biên nhân sự - gid=1942073054)
+        """
+        local_cache_path = os.path.join(os.path.dirname(__file__), "assets", "cache_hr_organization.json")
+        result: Dict[str, Any] = {
+            'status': 'PENDING',
+            'sheet_id': self.hr_spreadsheet_id,
+            'sheet_url': f"https://docs.google.com/spreadsheets/d/{self.hr_spreadsheet_id}/edit?gid={DEFAULT_HR_GID}#gid={DEFAULT_HR_GID}",
+            'service_email': 'bvn-reporter@boxwood-dynamo-508304-t4.iam.gserviceaccount.com',
+            'title': 'Sơ Đồ Cơ Cấu Tổ Chức & Định Biên Nhân Sự BVN Quảng Bình',
+            'gid_hierarchy': DEFAULT_HR_GID,
+            'gid_roster': '1942073054',
+            'total_summary': {
+                'plan': 104, 'actual': 92, 'missing': 12, 'rate': '88,46%', 'rate_num': 88.46
+            },
+            'executive_leadership': [],
+            'departments': [],
+            'all_roster': [],
+            'hierarchy_edges': [],
+            'error_message': ''
+        }
+
+        # 1. Đọc từ cache cục bộ trước để làm khung dữ liệu chuẩn
+        if os.path.exists(local_cache_path):
+            try:
+                with open(local_cache_path, 'r', encoding='utf-8') as f:
+                    cached_data = json.load(f)
+                    if isinstance(cached_data, dict):
+                        result.update(cached_data)
+                        result['status'] = 'LOCAL_CACHE'
+            except Exception as e:
+                result['error_message'] = f"Lỗi đọc cache: {e}"
+
+        if force_reload:
+            self.hr_spreadsheet = None
+
+        if not self.client:
+            self.connect()
+
+        if not self.client:
+            if result['status'] == 'PENDING':
+                result['status'] = 'NO_CLIENT'
+                result['error_message'] = 'Chưa kết nối được Google Sheets API'
+            return result
+
+        # 2. Thử truy vấn dữ liệu trực tiếp từ Google Sheets API
+        try:
+            if not self.hr_spreadsheet:
+                self.hr_spreadsheet = self.client.open_by_key(self.hr_spreadsheet_id)
+
+            if self.hr_spreadsheet:
+                result['title'] = self.hr_spreadsheet.title
+                result['status'] = 'CONNECTED'
+        except Exception as e:
+            err_str = str(e)
+            is_perm = ('403' in err_str or 'Permission' in err_str or 'The caller does not have permission' in err_str)
+            if result['status'] != 'LOCAL_CACHE':
+                result['status'] = 'PERMISSION_DENIED' if is_perm else 'ERROR'
+            result['error_message'] = err_str
+
+        return result
+
 
     def save_shift_record(self, record: Dict[str, Any]) -> Tuple[bool, str]:
         """

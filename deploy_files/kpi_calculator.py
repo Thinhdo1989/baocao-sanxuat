@@ -319,6 +319,21 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
     # Phân loại 3 loại ca trong ngày: Ca sản xuất, Ca bảo trì, Ca nghỉ
     prod_shifts, maint_shifts, off_shifts = classify_shift_counts(day_shifts, num_days=1)
 
+    # Tồn kho viên nén tại thời điểm ngày này (lấy ca cuối cùng trong ngày có tồn kho > 0 hoặc tìm ngày gần nhất)
+    ton_kho_day = 0.0
+    if not day_shifts.empty and 'ton_kho_tan' in day_shifts.columns:
+        valid_tk = day_shifts[day_shifts['ton_kho_tan'] > 0]
+        if not valid_tk.empty:
+            ton_kho_day = float(valid_tk.iloc[-1]['ton_kho_tan'])
+    if ton_kho_day == 0 and not df_shifts.empty and 'ton_kho_tan' in df_shifts.columns:
+        sub_tk = df_shifts[(df_shifts['date'].dt.date <= target_date.date()) & (df_shifts['ton_kho_tan'] > 0)]
+        if not sub_tk.empty:
+            ton_kho_day = float(sub_tk.iloc[-1]['ton_kho_tan'])
+        elif (df_shifts['ton_kho_tan'] > 0).any():
+            ton_kho_day = float(df_shifts[df_shifts['ton_kho_tan'] > 0].iloc[-1]['ton_kho_tan'])
+
+    tot_xuat_day = float(day_shifts['xuat_hang_tan'].sum()) if (not day_shifts.empty and 'xuat_hang_tan' in day_shifts.columns) else 0.0
+
     return {
         'date': target_date,
         'date_str': target_date.strftime('%d/%m/%Y'),
@@ -340,6 +355,8 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
         'moisture_eval': evaluate_moisture(do_am_tb),
         'ty_trong_vien': round(ty_trong, 1),
         'density_eval': evaluate_density(ty_trong),
+        'ton_kho_tan': round(ton_kho_day, 2),
+        'xuat_hang_tan': round(tot_xuat_day, 2),
         'equipment_hours': equipment_hours,
         'group_hours': group_hours,
         'shift_details': shift_details,

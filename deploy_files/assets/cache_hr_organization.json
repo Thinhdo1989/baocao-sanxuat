@@ -1,0 +1,1757 @@
+{
+  "sheet_id": "1enwVBuwwFK7k6r4i_xcg_7oJgckLaOfzNUkHPRZfY6s",
+  "sheet_url": "https://docs.google.com/spreadsheets/d/1enwVBuwwFK7k6r4i_xcg_7oJgckLaOfzNUkHPRZfY6s/edit?gid=987654321#gid=987654321",
+  "gid_hierarchy": "987654321",
+  "gid_roster": "1942073054",
+  "title": "Sơ Đồ Tổ Chức & Định Biên Nhân Sự BVN Quảng Bình",
+  "total_summary": {
+    "plan": 104,
+    "actual": 92,
+    "missing": 12,
+    "rate": "88,46%",
+    "rate_num": 88.46
+  },
+  "executive_leadership": [
+    {
+      "level": "Cấp 1 - Lãnh Đạo Tối Cao",
+      "title": "Hội Đồng Quản Trị (HĐQT)",
+      "name": "Ban Lãnh Đạo Cấp Cao",
+      "role": "Định hướng chiến lược, đầu tư & quyết sách phát triển toàn diện nhà máy",
+      "headcount": "Đại hội Cổ đông",
+      "parent": null,
+      "color": "#1e3a8a"
+    },
+    {
+      "level": "Cấp Giám Sát",
+      "title": "Ban Giám Sát / Ban Kiểm Soát",
+      "name": "Ban Kiểm Soát Độc Lập",
+      "role": "Giám sát tuân thủ điều lệ, tài chính, kiểm toán nội bộ & vận hành",
+      "headcount": "Trực thuộc HĐQT",
+      "parent": "HĐQT",
+      "color": "#b45309"
+    },
+    {
+      "level": "Cấp 2 - Ban Điều Hành",
+      "title": "Giám Đốc Nhà Máy (Plant Director)",
+      "name": "Vũ Quang Sáng",
+      "role": "Điều hành toàn diện hoạt động sản xuất, kỹ thuật, nhân sự & tài chính",
+      "headcount": "1 Giám đốc",
+      "parent": "HĐQT",
+      "color": "#1d4ed8"
+    },
+    {
+      "level": "Cấp 3 - Phó Ban / Khối Trưởng",
+      "title": "Phó Giám Đốc Kinh Doanh",
+      "name": "Đang kiện toàn",
+      "role": "Quản lý phụ trách Ban FSC (7 NS) và Phòng Kinh Doanh (5 NS)",
+      "headcount": "1 PGĐ",
+      "parent": "Giám Đốc",
+      "color": "#0284c7"
+    },
+    {
+      "level": "Cấp 3 - Phó Ban / Khối Trưởng",
+      "title": "Tài Chính - Kế Toán (Kế Toán Trưởng)",
+      "name": "Phan Văn Tuấn",
+      "role": "Quản lý dòng tiền, kế toán giá thành viên nén, trạm cân xe & định mức vật tư",
+      "headcount": "8 NS (Kế toán + Trạm cân)",
+      "parent": "Giám Đốc",
+      "color": "#d97706"
+    },
+    {
+      "level": "Cấp 3 - Phó Ban / Khối Trưởng",
+      "title": "Hành Chính - Nhân Sự (Trưởng Phòng)",
+      "name": "Hoàng Thanh Bình",
+      "role": "Quản lý công tác tuyển dụng, tiền lương, hậu cần bếp ăn, bảo vệ an ninh & xe đưa đón",
+      "headcount": "11 NS (HC-NS, BV, Bếp, Lái xe)",
+      "parent": "Giám Đốc",
+      "color": "#7c3aed"
+    },
+    {
+      "level": "Cấp 3 - Phó Ban / Khối Trưởng",
+      "title": "Phó Giám Đốc Sản Xuất (PGĐSX)",
+      "name": "Đỗ Công Thịnh",
+      "role": "Chỉ đạo toàn diện phân xưởng băm dăm, ép thành phẩm 3 ca 24/7, kỹ thuật & cơ khí",
+      "headcount": "1 PGĐSX",
+      "parent": "Giám Đốc",
+      "color": "#059669"
+    },
+    {
+      "level": "Cấp 4 - Quản Lý Phân Xưởng",
+      "title": "Quản Lý Đội Băm Dăm",
+      "name": "Phạm Văn Cường",
+      "role": "Chỉ huy vận hành bãi dăm nguyên liệu, hệ thống robot & máy băm Ca 1 & Ca 2",
+      "headcount": "24 NS (2 Ca x 12 NS)",
+      "parent": "PGĐSX",
+      "color": "#ea580c"
+    }
+  ],
+  "departments": [
+    {
+      "department": "Ban FSC",
+      "plan": 7,
+      "actual": 7,
+      "missing": 0,
+      "rate": "100,00%",
+      "rate_num": 100.0,
+      "icon": "🌲",
+      "color": "#059669",
+      "parent": "Phó giám đốc kinh doanh",
+      "manager": "Trần Đặng Hiếu (Trưởng ban)",
+      "members": [
+        {
+          "department": "Ban FSC",
+          "position": "Trưởng ban FSC",
+          "name": "Trần Đặng Hiếu",
+          "status": "Đã có",
+          "raw": "Trưởng ban FSC | \"Trần Đặng Hiếu\""
+        },
+        {
+          "department": "Ban FSC",
+          "position": "Nhân viên FSC 1",
+          "name": "Lê Hữu Hoàn",
+          "status": "Đã có",
+          "raw": "Nhân viên FSC 1 | \"Lê Hữu Hoàn\""
+        },
+        {
+          "department": "Ban FSC",
+          "position": "Nhân viên FSC 2",
+          "name": "Nguyễn Văn Long",
+          "status": "Đã có",
+          "raw": "Nhân viên FSC 2 | \"Nguyễn Văn Long\""
+        },
+        {
+          "department": "Ban FSC",
+          "position": "Nhân viên FSC 3",
+          "name": "Phan Văn Hùng",
+          "status": "Đã có",
+          "raw": "Nhân viên FSC 3 | \"Phan Văn Hùng\""
+        },
+        {
+          "department": "Ban FSC",
+          "position": "Nhân viên FSC 4",
+          "name": "Lê Thuận Trung",
+          "status": "Đã có",
+          "raw": "Nhân viên FSC 4 | \"Lê Thuận Trung\""
+        },
+        {
+          "department": "Ban FSC",
+          "position": "Nhân viên FSC 5",
+          "name": "Lê Công Tình",
+          "status": "Đã có",
+          "raw": "Nhân viên FSC 5 | \"Lê Công Tình\""
+        },
+        {
+          "department": "Ban FSC",
+          "position": "Nhân viên COC",
+          "name": "Nguyễn Thị Diệu Thu",
+          "status": "Đã có",
+          "raw": "Nhân viên COC | \"Nguyễn Thị Diệu Thu\""
+        }
+      ]
+    },
+    {
+      "department": "Phòng Kinh doanh",
+      "plan": 5,
+      "actual": 4,
+      "missing": 1,
+      "rate": "80,00%",
+      "rate_num": 80.0,
+      "icon": "📈",
+      "color": "#2563eb",
+      "parent": "Phó giám đốc kinh doanh",
+      "manager": "Nguyễn Trọng Đại (TP Kinh doanh)",
+      "members": [
+        {
+          "department": "Phòng Kinh doanh",
+          "position": "PGĐ Kinh Doanh",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "PGĐ Kinh Doanh"
+        },
+        {
+          "department": "Phòng Kinh doanh",
+          "position": "TP kinh doanh",
+          "name": "Nguyễn Trọng Đại",
+          "status": "Đã có",
+          "raw": "TP kinh doanh | \"Nguyễn Trọng Đại\""
+        },
+        {
+          "department": "Phòng Kinh doanh",
+          "position": "Logistics",
+          "name": "Nguyễn Anh Tuấn",
+          "status": "Đã có",
+          "raw": "Logistics | \"Nguyễn Anh Tuấn\""
+        },
+        {
+          "department": "Phòng Kinh doanh",
+          "position": "Nhân viên thu mua 1",
+          "name": "Lê Minh Hiển",
+          "status": "Đã có",
+          "raw": "Nhân viên thu mua 1 | \"Lê Minh Hiển\""
+        },
+        {
+          "department": "Phòng Kinh doanh",
+          "position": "Nhân viên thu mua 2",
+          "name": "Lê Thanh",
+          "status": "Đã có",
+          "raw": "Nhân viên thu mua 2 | \"Lê Thanh\""
+        }
+      ]
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "plan": 8,
+      "actual": 8,
+      "missing": 0,
+      "rate": "100,00%",
+      "rate_num": 100.0,
+      "icon": "💰",
+      "color": "#d97706",
+      "parent": "Giám đốc",
+      "manager": "Phan Văn Tuấn (Kế toán trưởng)",
+      "members": [
+        {
+          "department": "P.Tài Chính -Kế Toán",
+          "position": "Kế toán trưởng",
+          "name": "Phan Văn Tuấn",
+          "status": "Đã có",
+          "raw": "Kế toán trưởng | \"Phan Văn Tuấn\""
+        },
+        {
+          "department": "P.Tài Chính -Kế Toán",
+          "position": "Kế toán tổng hợp 1",
+          "name": "Nguyễn Thị Lệ Thuần",
+          "status": "Đã có",
+          "raw": "Kế toán tổng hợp 1 | \"Nguyễn Thị Lệ Thuần\""
+        },
+        {
+          "department": "P.Tài Chính -Kế Toán",
+          "position": "Kế toán tổng hợp 2",
+          "name": "Phan Hải Yến",
+          "status": "Đã có",
+          "raw": "Kế toán tổng hợp 2 | \"Phan Hải Yến\""
+        },
+        {
+          "department": "P.Tài Chính -Kế Toán",
+          "position": "Kế toán LNLT",
+          "name": "Hồ Thị Huyền Trang",
+          "status": "Đã có",
+          "raw": "Kế toán LNLT | Hồ Thị Huyền Trang\""
+        },
+        {
+          "department": "P.Tài Chính -Kế Toán",
+          "position": "Kế toán LNBT",
+          "name": "Dương Thị Ánh Tuyết",
+          "status": "Đã có",
+          "raw": "Kế toán LNBT | \"Dương Thị Ánh Tuyết\""
+        },
+        {
+          "department": "P.Tài Chính -Kế Toán",
+          "position": "NV trạm cân 1",
+          "name": "Trần Thị Hòa",
+          "status": "Đã có",
+          "raw": "NV trạm cân 1 | \"Trần Thị Hòa\""
+        },
+        {
+          "department": "P.Tài Chính -Kế Toán",
+          "position": "NV trạm cân 2",
+          "name": "Trương Quang Sinh",
+          "status": "Đã có",
+          "raw": "NV trạm cân 2 | \"Trương Quang Sinh\""
+        },
+        {
+          "department": "P.Tài Chính -Kế Toán",
+          "position": "NV trạm cân",
+          "name": "Dương Hoàng",
+          "status": "Đã có",
+          "raw": "NV trạm cân  | \"Dương Hoàng\""
+        }
+      ]
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "plan": 11,
+      "actual": 11,
+      "missing": 0,
+      "rate": "100,00%",
+      "rate_num": 100.0,
+      "icon": "👥",
+      "color": "#7c3aed",
+      "parent": "Giám đốc",
+      "manager": "Hoàng Thanh Bình (Trưởng phòng)",
+      "members": [
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Trưởng phòng",
+          "name": "Hoàng Thanh Bình",
+          "status": "Đã có",
+          "raw": "Trưởng phòng | \"Hoàng Thanh Bình\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Nhân viên HC-NS",
+          "name": "Phan Thị Linh Hằng",
+          "status": "Đã có",
+          "raw": "Nhân viên HC-NS | \"Phan Thị Linh Hằng\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Bảo vệ 1",
+          "name": "Phạm Huy Bình",
+          "status": "Đã có",
+          "raw": "Bảo vệ 1 | \"Phạm Huy Bình\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Bảo vệ 2",
+          "name": "Trần Tiến Dũng",
+          "status": "Đã có",
+          "raw": "Bảo vệ 2 | \"Trần Tiến Dũng\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Bảo vệ 3",
+          "name": "Hoàng Xuân Khương",
+          "status": "Đã có",
+          "raw": "Bảo vệ 3 | \"Hoàng Xuân Khương\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Cấp dưỡng 1",
+          "name": "Vũ Văn Hiếu",
+          "status": "Đã có",
+          "raw": "Cấp dưỡng 1 | \"Vũ Văn Hiếu\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Cấp dưỡng 2",
+          "name": "Nguyễn Thị Hiện",
+          "status": "Đã có",
+          "raw": "Cấp dưỡng 2 | \"Nguyễn Thị Hiện\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Cấp dưỡng 3",
+          "name": "Trần Thị Minh",
+          "status": "Đã có",
+          "raw": "Cấp dưỡng 3 | \"Trần Thị Minh\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Tạp vụ",
+          "name": "Nguyễn Thị Hồng Nhung",
+          "status": "Đã có",
+          "raw": "Tạp vụ | \"Nguyễn Thị Hồng Nhung\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Lao công",
+          "name": "Dương Thị Thu Hần",
+          "status": "Đã có",
+          "raw": "Lao công | \"Dương Thị Thu Hần\""
+        },
+        {
+          "department": "P. Hành Chính-Nhân Sự",
+          "position": "Lái xe",
+          "name": "Võ Chí Thanh",
+          "status": "Đã có",
+          "raw": "Lái xe | \"Võ Chí Thanh\""
+        }
+      ]
+    },
+    {
+      "department": "Đội băm 1",
+      "plan": 12,
+      "actual": 11,
+      "missing": 1,
+      "rate": "91,67%",
+      "rate_num": 91.67,
+      "icon": "🪵",
+      "color": "#ea580c",
+      "parent": "Quản lí Đội băm",
+      "manager": "Trần Văn Quảng (Tổ trưởng ca 1)",
+      "members": [
+        {
+          "department": "Đội băm 1",
+          "position": "Tổ trưởng băm ca 1",
+          "name": "Trần Văn Quảng",
+          "status": "Đã có",
+          "raw": "Tổ trưởng băm ca 1 | \"Trần Văn Quảng\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "Robot 1",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Robot 1"
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "Robot 2",
+          "name": "Nguyễn Xuân Năm",
+          "status": "Đã có",
+          "raw": "Robot 2 | \"Nguyễn Xuân Năm\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "Vận hành 1",
+          "name": "Cao Đức Trung",
+          "status": "Đã có",
+          "raw": "Vận hành 1 | \"Cao Đức Trung\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "Vận hành 2",
+          "name": "Đoàn Trọng Hòa",
+          "status": "Đã có",
+          "raw": "Vận hành 2 | \"Đoàn Trọng Hòa\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "Xe gắp 1",
+          "name": "Ngô Xuân Thằng",
+          "status": "Đã có",
+          "raw": "Xe gắp 1 | \"Ngô Xuân Thằng\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "Xe gắp 2",
+          "name": "Lê Văn Trung",
+          "status": "Đã có",
+          "raw": "Xe gắp 2 | \"Lê Văn Trung\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "Xe cạp 1",
+          "name": "Hoàng Huỳnh Đức",
+          "status": "Đã có",
+          "raw": "Xe cạp 1 | \"Hoàng Huỳnh Đức\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "Xe cạp 2",
+          "name": "Ngyễn Quốc Duy Bình",
+          "status": "Đã có",
+          "raw": "Xe cạp 2 | \"Ngyễn Quốc Duy Bình\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "LĐPT 1",
+          "name": "Cao Tiến Nam",
+          "status": "Đã có",
+          "raw": "LĐPT 1 | \"Cao Tiến Nam\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "LĐPT 2",
+          "name": "Trần Trung Kiên",
+          "status": "Đã có",
+          "raw": "LĐPT 2 | \"Trần Trung Kiên\""
+        },
+        {
+          "department": "Đội băm 1",
+          "position": "LĐPT3",
+          "name": "Nguyễn Thị Thương",
+          "status": "Đã có",
+          "raw": "LĐPT3 | \"Nguyễn Thị Thương\""
+        }
+      ]
+    },
+    {
+      "department": "Đội băm 2",
+      "plan": 12,
+      "actual": 11,
+      "missing": 1,
+      "rate": "91,67%",
+      "rate_num": 91.67,
+      "icon": "🪵",
+      "color": "#c2410c",
+      "parent": "Quản lí Đội băm",
+      "manager": "Trần Mạnh Hà (Tổ trưởng ca 2)",
+      "members": [
+        {
+          "department": "Đội băm 2",
+          "position": "Tổ trưởng băm ca 2",
+          "name": "Trần Mạnh Hà",
+          "status": "Đã có",
+          "raw": "Tổ trưởng băm ca 2 | \"Trần Mạnh Hà\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "Robot 1",
+          "name": "Nguyễn Đức Cảnh",
+          "status": "Đã có",
+          "raw": "Robot 1 | \"Nguyễn Đức Cảnh\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "Robot 2",
+          "name": "Bùi Ngọc Hải",
+          "status": "Đã có",
+          "raw": "Robot 2 | \"Bùi Ngọc Hải\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "Vận hành 1",
+          "name": "Nguyễn Ngọc Thành",
+          "status": "Đã có",
+          "raw": "Vận hành 1 | \"Nguyễn Ngọc Thành\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "Vận hành 2",
+          "name": "Mai Xuân Quý",
+          "status": "Đã có",
+          "raw": "Vận hành 2 | \"Mai Xuân Quý\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "Xe gắp 1",
+          "name": "Đỗ Ngọc Linh",
+          "status": "Đã có",
+          "raw": "Xe gắp 1 | \"Đỗ Ngọc Linh\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "Xe gắp 2",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Xe gắp 2"
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "Xe cạp 1",
+          "name": "Hoàng Tiến Đạt",
+          "status": "Đã có",
+          "raw": "Xe cạp 1 | \"Hoàng Tiến Đạt\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "Xe cạp 2",
+          "name": "Nguyễn Phóng",
+          "status": "Đã có",
+          "raw": "Xe cạp 2 | \"Nguyễn Phóng\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "LĐPT 1",
+          "name": "Nguyễn Đức Toàn",
+          "status": "Đã có",
+          "raw": "LĐPT 1 | \"Nguyễn Đức Toàn\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "LĐPT 2",
+          "name": "Hoàng Văn Đấu",
+          "status": "Đã có",
+          "raw": "LĐPT 2 | \"Hoàng Văn Đấu\""
+        },
+        {
+          "department": "Đội băm 2",
+          "position": "LĐPT3",
+          "name": "Lê Thị Loan",
+          "status": "Đã có",
+          "raw": "LĐPT3 | \"Lê Thị Loan\""
+        }
+      ]
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "plan": 11,
+      "actual": 9,
+      "missing": 2,
+      "rate": "81,82%",
+      "rate_num": 81.82,
+      "icon": "⚙️",
+      "color": "#0284c7",
+      "parent": "PGĐSX",
+      "manager": "Lê Chiến Sắc (Trưởng ca 1)",
+      "members": [
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Trưởng ca 1",
+          "name": "Lê Chiến Sắc",
+          "status": "Đã có",
+          "raw": "Trưởng ca 1 | \"Lê Chiến Sắc\""
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Vận hành trung tâm 1",
+          "name": "Phan Phùng Định",
+          "status": "Đã có",
+          "raw": "Vận hành trung tâm 1 | \"Phan Phùng Định\""
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Vận hành trung tâm 2",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Vận hành trung tâm 2"
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Vận hành ép 1",
+          "name": "Trần Hữu Trường",
+          "status": "Đã có",
+          "raw": "Vận hành ép 1 | \"Trần Hữu Trường\""
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Vận hành ép 2",
+          "name": "Nguyễn văn Toàn",
+          "status": "Đã có",
+          "raw": "Vận hành ép 2 | \"Nguyễn văn Toàn\""
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Vận hành ép 3",
+          "name": "Dương Đình Sử",
+          "status": "Đã có",
+          "raw": "Vận hành ép 3 | \"Dương Đình Sử\""
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Bảo trì điện",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Bảo trì điện"
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Cơ khí 1",
+          "name": "Phạm Văn Công",
+          "status": "Đã có",
+          "raw": "Cơ khí 1 | \"Phạm Văn Công\""
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Cơ khí 2",
+          "name": "Huỳnh Tuấn Nhật",
+          "status": "Đã có",
+          "raw": "Cơ khí 2 | \"Huỳnh Tuấn Nhật\""
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "Xe xúc",
+          "name": "Hoàng Ngọc Anh",
+          "status": "Đã có",
+          "raw": "Xe xúc  | \"Hoàng Ngọc Anh\""
+        },
+        {
+          "department": "Thành Phẩm 1",
+          "position": "LĐPT",
+          "name": "Nguyễn Xuân Hòa",
+          "status": "Đã có",
+          "raw": "LĐPT | \"Nguyễn Xuân Hòa\""
+        }
+      ]
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "plan": 11,
+      "actual": 10,
+      "missing": 1,
+      "rate": "90,91%",
+      "rate_num": 90.91,
+      "icon": "⚙️",
+      "color": "#0369a1",
+      "parent": "PGĐSX",
+      "manager": "Hoàng Phúc Tài (Trưởng ca 2)",
+      "members": [
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Trưởng ca 2",
+          "name": "Hoàn Phúc Tài",
+          "status": "Đã có",
+          "raw": "Trưởng ca 2 | \"Hoàn Phúc Tài\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Vận hành trung tâm 1",
+          "name": "Lê Văn Hùng",
+          "status": "Đã có",
+          "raw": "Vận hành trung tâm 1 | \"Lê Văn Hùng\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Vận hành trung tâm 2",
+          "name": "Nguyễn Văn Đại",
+          "status": "Đã có",
+          "raw": "Vận hành trung tâm 2 | \"Nguyễn Văn Đại\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Vận hành ép 1",
+          "name": "Cao Văn Sơn",
+          "status": "Đã có",
+          "raw": "Vận hành ép 1 | \"Cao Văn Sơn\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Vận hành ép 2",
+          "name": "Dương ĐÌnh Bằng",
+          "status": "Đã có",
+          "raw": "Vận hành ép 2 | \"Dương ĐÌnh Bằng\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Vận hành ép 3",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Vận hành ép 3"
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Bảo trì điện",
+          "name": "Hồ Đức Phú",
+          "status": "Đã có",
+          "raw": "Bảo trì điện | 'Hồ Đức Phú\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Cơ khí 1",
+          "name": "Trần Thế Hoài",
+          "status": "Đã có",
+          "raw": "Cơ khí 1 | \"Trần Thế Hoài\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Cơ khí 2",
+          "name": "Hoàng Ngọc Ý",
+          "status": "Đã có",
+          "raw": "Cơ khí 2 | \"Hoàng Ngọc Ý\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "Xe xúc",
+          "name": "Lê Trung Đức",
+          "status": "Đã có",
+          "raw": "Xe xúc  | \"Lê Trung Đức\""
+        },
+        {
+          "department": "Thành Phẩm 2",
+          "position": "LĐPT",
+          "name": "Đặng Quang Ngự",
+          "status": "Đã có",
+          "raw": "LĐPT | \"Đặng Quang Ngự\""
+        }
+      ]
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "plan": 11,
+      "actual": 10,
+      "missing": 1,
+      "rate": "90,91%",
+      "rate_num": 90.91,
+      "icon": "⚙️",
+      "color": "#075985",
+      "parent": "PGĐSX",
+      "manager": "Nguyễn Long (Trưởng ca 3)",
+      "members": [
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Trưởng ca 3",
+          "name": "Nguyễn Long",
+          "status": "Đã có",
+          "raw": "Trưởng ca 3 | 'Nguyễn Long\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Vận hành trung tâm 1",
+          "name": "Nguyễn Đình Tứ",
+          "status": "Đã có",
+          "raw": "Vận hành trung tâm 1 | \"Nguyễn Đình Tứ\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Vận hành trung tâm 2",
+          "name": "Lê Chí Bảo",
+          "status": "Đã có",
+          "raw": "Vận hành trung tâm 2 | \"Lê Chí Bảo\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Vận hành ép 1",
+          "name": "Nguyễn Văn Quý",
+          "status": "Đã có",
+          "raw": "Vận hành ép 1 | \"Nguyễn Văn Quý\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Vận hành ép 2",
+          "name": "Hồ Xuân An",
+          "status": "Đã có",
+          "raw": "Vận hành ép 2 | \"Hồ Xuân An\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Vận hành ép 3",
+          "name": "Phan Vũ Phương Anh",
+          "status": "Đã có",
+          "raw": "Vận hành ép 3 | \"Phan Vũ Phương Anh\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Bảo trì điện",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Bảo trì điện"
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Cơ khí 1",
+          "name": "Dương văn Cửu",
+          "status": "Đã có",
+          "raw": "Cơ khí 1 | \"Dương văn Cửu\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Cơ khí 2",
+          "name": "Dương Văn Tư",
+          "status": "Đã có",
+          "raw": "Cơ khí 2 | \"Dương Văn Tư\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "Xe xúc",
+          "name": "Nguyễn Quốc Duy Tình",
+          "status": "Đã có",
+          "raw": "Xe xúc  | \"Nguyễn Quốc Duy Tình\""
+        },
+        {
+          "department": "Thành Phẩm 3",
+          "position": "LĐPT",
+          "name": "Lê văn Đăng",
+          "status": "Đã có",
+          "raw": "LĐPT | \"Lê văn Đăng\""
+        }
+      ]
+    },
+    {
+      "department": "Kỹ thuật - Vật tư",
+      "plan": 7,
+      "actual": 5,
+      "missing": 2,
+      "rate": "71,43%",
+      "rate_num": 71.43,
+      "icon": "🛠️",
+      "color": "#4f46e5",
+      "parent": "PGĐSX",
+      "manager": "Nguyễn Đăng Thành (Phó phòng)",
+      "members": [
+        {
+          "department": "Kỹ thuật - Vật tư",
+          "position": "Phó phòng kỹ thuật",
+          "name": "Nguyễn Đăng Thành",
+          "status": "Đã có",
+          "raw": "Phó phòng kỹ thuật | \"Nguyễn Đăng Thành\""
+        },
+        {
+          "department": "Kỹ thuật - Vật tư",
+          "position": "Quản lí vật tư+pccc",
+          "name": "Cái Viết Thành Lâm",
+          "status": "Đã có",
+          "raw": "Quản lí vật tư+pccc | \"Cái Viết Thành Lâm\""
+        },
+        {
+          "department": "Kỹ thuật - Vật tư",
+          "position": "Thu mua + thủ kho",
+          "name": "Nguyễn Quốc Khánh",
+          "status": "Đã có",
+          "raw": "Thu mua + thủ kho | \"Nguyễn Quốc Khánh\""
+        },
+        {
+          "department": "Kỹ thuật - Vật tư",
+          "position": "Kỹ sư CME",
+          "name": "Nguyễn Xuân Dương",
+          "status": "Đã có",
+          "raw": "Kỹ sư CME | \"Nguyễn Xuân Dương\""
+        },
+        {
+          "department": "Kỹ thuật - Vật tư",
+          "position": "KCS thành phẩm",
+          "name": "Cao Thị Kim Dung",
+          "status": "Đã có",
+          "raw": "KCS thành phẩm | \"Cao Thị Kim Dung\""
+        },
+        {
+          "department": "Kỹ thuật - Vật tư",
+          "position": "ATLĐ",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "ATLĐ"
+        },
+        {
+          "department": "Kỹ thuật - Vật tư",
+          "position": "Quản lí xe cơ giới",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Quản lí xe cơ giới"
+        }
+      ]
+    },
+    {
+      "department": "Cơ khí",
+      "plan": 6,
+      "actual": 3,
+      "missing": 3,
+      "rate": "50,00%",
+      "rate_num": 50.0,
+      "icon": "🔩",
+      "color": "#e11d48",
+      "parent": "PGĐSX",
+      "manager": "Phan Nhớ (Tổ trưởng)",
+      "members": [
+        {
+          "department": "Cơ khí",
+          "position": "Tổ trưởng",
+          "name": "Phan Nhớ",
+          "status": "Đã có",
+          "raw": "Tổ trưởng | \"Phan Nhớ\""
+        },
+        {
+          "department": "Cơ khí",
+          "position": "Cơ khí 1",
+          "name": "Trần Mạnh Tuấn",
+          "status": "Đã có",
+          "raw": "Cơ khí 1 | \"Trần Mạnh Tuấn\""
+        },
+        {
+          "department": "Cơ khí",
+          "position": "Cơ khí 2",
+          "name": "Nguyễn Văn Huy",
+          "status": "Đã có",
+          "raw": "Cơ khí 2 | \"Nguyễn Văn Huy\""
+        },
+        {
+          "department": "Cơ khí",
+          "position": "Cơ khí 3",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Cơ khí 3"
+        },
+        {
+          "department": "Cơ khí",
+          "position": "Cơ khí 4",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Cơ khí 4"
+        },
+        {
+          "department": "Cơ khí",
+          "position": "Cơ khí 5",
+          "name": "Vị trí còn trống (Cần tuyển)",
+          "status": "Còn trống",
+          "raw": "Cơ khí 5"
+        }
+      ]
+    }
+  ],
+  "all_roster": [
+    {
+      "department": "Ban FSC",
+      "position": "Trưởng ban FSC",
+      "name": "Trần Đặng Hiếu",
+      "status": "Đã có",
+      "raw": "Trưởng ban FSC | \"Trần Đặng Hiếu\""
+    },
+    {
+      "department": "Ban FSC",
+      "position": "Nhân viên FSC 1",
+      "name": "Lê Hữu Hoàn",
+      "status": "Đã có",
+      "raw": "Nhân viên FSC 1 | \"Lê Hữu Hoàn\""
+    },
+    {
+      "department": "Ban FSC",
+      "position": "Nhân viên FSC 2",
+      "name": "Nguyễn Văn Long",
+      "status": "Đã có",
+      "raw": "Nhân viên FSC 2 | \"Nguyễn Văn Long\""
+    },
+    {
+      "department": "Ban FSC",
+      "position": "Nhân viên FSC 3",
+      "name": "Phan Văn Hùng",
+      "status": "Đã có",
+      "raw": "Nhân viên FSC 3 | \"Phan Văn Hùng\""
+    },
+    {
+      "department": "Ban FSC",
+      "position": "Nhân viên FSC 4",
+      "name": "Lê Thuận Trung",
+      "status": "Đã có",
+      "raw": "Nhân viên FSC 4 | \"Lê Thuận Trung\""
+    },
+    {
+      "department": "Ban FSC",
+      "position": "Nhân viên FSC 5",
+      "name": "Lê Công Tình",
+      "status": "Đã có",
+      "raw": "Nhân viên FSC 5 | \"Lê Công Tình\""
+    },
+    {
+      "department": "Ban FSC",
+      "position": "Nhân viên COC",
+      "name": "Nguyễn Thị Diệu Thu",
+      "status": "Đã có",
+      "raw": "Nhân viên COC | \"Nguyễn Thị Diệu Thu\""
+    },
+    {
+      "department": "Phòng Kinh doanh",
+      "position": "PGĐ Kinh Doanh",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "PGĐ Kinh Doanh"
+    },
+    {
+      "department": "Phòng Kinh doanh",
+      "position": "TP kinh doanh",
+      "name": "Nguyễn Trọng Đại",
+      "status": "Đã có",
+      "raw": "TP kinh doanh | \"Nguyễn Trọng Đại\""
+    },
+    {
+      "department": "Phòng Kinh doanh",
+      "position": "Logistics",
+      "name": "Nguyễn Anh Tuấn",
+      "status": "Đã có",
+      "raw": "Logistics | \"Nguyễn Anh Tuấn\""
+    },
+    {
+      "department": "Phòng Kinh doanh",
+      "position": "Nhân viên thu mua 1",
+      "name": "Lê Minh Hiển",
+      "status": "Đã có",
+      "raw": "Nhân viên thu mua 1 | \"Lê Minh Hiển\""
+    },
+    {
+      "department": "Phòng Kinh doanh",
+      "position": "Nhân viên thu mua 2",
+      "name": "Lê Thanh",
+      "status": "Đã có",
+      "raw": "Nhân viên thu mua 2 | \"Lê Thanh\""
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "position": "Kế toán trưởng",
+      "name": "Phan Văn Tuấn",
+      "status": "Đã có",
+      "raw": "Kế toán trưởng | \"Phan Văn Tuấn\""
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "position": "Kế toán tổng hợp 1",
+      "name": "Nguyễn Thị Lệ Thuần",
+      "status": "Đã có",
+      "raw": "Kế toán tổng hợp 1 | \"Nguyễn Thị Lệ Thuần\""
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "position": "Kế toán tổng hợp 2",
+      "name": "Phan Hải Yến",
+      "status": "Đã có",
+      "raw": "Kế toán tổng hợp 2 | \"Phan Hải Yến\""
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "position": "Kế toán LNLT",
+      "name": "Hồ Thị Huyền Trang",
+      "status": "Đã có",
+      "raw": "Kế toán LNLT | Hồ Thị Huyền Trang\""
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "position": "Kế toán LNBT",
+      "name": "Dương Thị Ánh Tuyết",
+      "status": "Đã có",
+      "raw": "Kế toán LNBT | \"Dương Thị Ánh Tuyết\""
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "position": "NV trạm cân 1",
+      "name": "Trần Thị Hòa",
+      "status": "Đã có",
+      "raw": "NV trạm cân 1 | \"Trần Thị Hòa\""
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "position": "NV trạm cân 2",
+      "name": "Trương Quang Sinh",
+      "status": "Đã có",
+      "raw": "NV trạm cân 2 | \"Trương Quang Sinh\""
+    },
+    {
+      "department": "P.Tài Chính -Kế Toán",
+      "position": "NV trạm cân",
+      "name": "Dương Hoàng",
+      "status": "Đã có",
+      "raw": "NV trạm cân  | \"Dương Hoàng\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Trưởng phòng",
+      "name": "Hoàng Thanh Bình",
+      "status": "Đã có",
+      "raw": "Trưởng phòng | \"Hoàng Thanh Bình\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Nhân viên HC-NS",
+      "name": "Phan Thị Linh Hằng",
+      "status": "Đã có",
+      "raw": "Nhân viên HC-NS | \"Phan Thị Linh Hằng\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Bảo vệ 1",
+      "name": "Phạm Huy Bình",
+      "status": "Đã có",
+      "raw": "Bảo vệ 1 | \"Phạm Huy Bình\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Bảo vệ 2",
+      "name": "Trần Tiến Dũng",
+      "status": "Đã có",
+      "raw": "Bảo vệ 2 | \"Trần Tiến Dũng\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Bảo vệ 3",
+      "name": "Hoàng Xuân Khương",
+      "status": "Đã có",
+      "raw": "Bảo vệ 3 | \"Hoàng Xuân Khương\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Cấp dưỡng 1",
+      "name": "Vũ Văn Hiếu",
+      "status": "Đã có",
+      "raw": "Cấp dưỡng 1 | \"Vũ Văn Hiếu\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Cấp dưỡng 2",
+      "name": "Nguyễn Thị Hiện",
+      "status": "Đã có",
+      "raw": "Cấp dưỡng 2 | \"Nguyễn Thị Hiện\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Cấp dưỡng 3",
+      "name": "Trần Thị Minh",
+      "status": "Đã có",
+      "raw": "Cấp dưỡng 3 | \"Trần Thị Minh\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Tạp vụ",
+      "name": "Nguyễn Thị Hồng Nhung",
+      "status": "Đã có",
+      "raw": "Tạp vụ | \"Nguyễn Thị Hồng Nhung\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Lao công",
+      "name": "Dương Thị Thu Hần",
+      "status": "Đã có",
+      "raw": "Lao công | \"Dương Thị Thu Hần\""
+    },
+    {
+      "department": "P. Hành Chính-Nhân Sự",
+      "position": "Lái xe",
+      "name": "Võ Chí Thanh",
+      "status": "Đã có",
+      "raw": "Lái xe | \"Võ Chí Thanh\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Tổ trưởng băm ca 1",
+      "name": "Trần Văn Quảng",
+      "status": "Đã có",
+      "raw": "Tổ trưởng băm ca 1 | \"Trần Văn Quảng\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Robot 1",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Robot 1"
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Robot 2",
+      "name": "Nguyễn Xuân Năm",
+      "status": "Đã có",
+      "raw": "Robot 2 | \"Nguyễn Xuân Năm\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Vận hành 1",
+      "name": "Cao Đức Trung",
+      "status": "Đã có",
+      "raw": "Vận hành 1 | \"Cao Đức Trung\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Vận hành 2",
+      "name": "Đoàn Trọng Hòa",
+      "status": "Đã có",
+      "raw": "Vận hành 2 | \"Đoàn Trọng Hòa\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Xe gắp 1",
+      "name": "Ngô Xuân Thằng",
+      "status": "Đã có",
+      "raw": "Xe gắp 1 | \"Ngô Xuân Thằng\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Xe gắp 2",
+      "name": "Lê Văn Trung",
+      "status": "Đã có",
+      "raw": "Xe gắp 2 | \"Lê Văn Trung\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Xe cạp 1",
+      "name": "Hoàng Huỳnh Đức",
+      "status": "Đã có",
+      "raw": "Xe cạp 1 | \"Hoàng Huỳnh Đức\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "Xe cạp 2",
+      "name": "Ngyễn Quốc Duy Bình",
+      "status": "Đã có",
+      "raw": "Xe cạp 2 | \"Ngyễn Quốc Duy Bình\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "LĐPT 1",
+      "name": "Cao Tiến Nam",
+      "status": "Đã có",
+      "raw": "LĐPT 1 | \"Cao Tiến Nam\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "LĐPT 2",
+      "name": "Trần Trung Kiên",
+      "status": "Đã có",
+      "raw": "LĐPT 2 | \"Trần Trung Kiên\""
+    },
+    {
+      "department": "Đội băm 1",
+      "position": "LĐPT3",
+      "name": "Nguyễn Thị Thương",
+      "status": "Đã có",
+      "raw": "LĐPT3 | \"Nguyễn Thị Thương\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Tổ trưởng băm ca 2",
+      "name": "Trần Mạnh Hà",
+      "status": "Đã có",
+      "raw": "Tổ trưởng băm ca 2 | \"Trần Mạnh Hà\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Robot 1",
+      "name": "Nguyễn Đức Cảnh",
+      "status": "Đã có",
+      "raw": "Robot 1 | \"Nguyễn Đức Cảnh\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Robot 2",
+      "name": "Bùi Ngọc Hải",
+      "status": "Đã có",
+      "raw": "Robot 2 | \"Bùi Ngọc Hải\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Vận hành 1",
+      "name": "Nguyễn Ngọc Thành",
+      "status": "Đã có",
+      "raw": "Vận hành 1 | \"Nguyễn Ngọc Thành\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Vận hành 2",
+      "name": "Mai Xuân Quý",
+      "status": "Đã có",
+      "raw": "Vận hành 2 | \"Mai Xuân Quý\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Xe gắp 1",
+      "name": "Đỗ Ngọc Linh",
+      "status": "Đã có",
+      "raw": "Xe gắp 1 | \"Đỗ Ngọc Linh\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Xe gắp 2",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Xe gắp 2"
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Xe cạp 1",
+      "name": "Hoàng Tiến Đạt",
+      "status": "Đã có",
+      "raw": "Xe cạp 1 | \"Hoàng Tiến Đạt\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "Xe cạp 2",
+      "name": "Nguyễn Phóng",
+      "status": "Đã có",
+      "raw": "Xe cạp 2 | \"Nguyễn Phóng\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "LĐPT 1",
+      "name": "Nguyễn Đức Toàn",
+      "status": "Đã có",
+      "raw": "LĐPT 1 | \"Nguyễn Đức Toàn\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "LĐPT 2",
+      "name": "Hoàng Văn Đấu",
+      "status": "Đã có",
+      "raw": "LĐPT 2 | \"Hoàng Văn Đấu\""
+    },
+    {
+      "department": "Đội băm 2",
+      "position": "LĐPT3",
+      "name": "Lê Thị Loan",
+      "status": "Đã có",
+      "raw": "LĐPT3 | \"Lê Thị Loan\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Trưởng ca 1",
+      "name": "Lê Chiến Sắc",
+      "status": "Đã có",
+      "raw": "Trưởng ca 1 | \"Lê Chiến Sắc\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Vận hành trung tâm 1",
+      "name": "Phan Phùng Định",
+      "status": "Đã có",
+      "raw": "Vận hành trung tâm 1 | \"Phan Phùng Định\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Vận hành trung tâm 2",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Vận hành trung tâm 2"
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Vận hành ép 1",
+      "name": "Trần Hữu Trường",
+      "status": "Đã có",
+      "raw": "Vận hành ép 1 | \"Trần Hữu Trường\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Vận hành ép 2",
+      "name": "Nguyễn văn Toàn",
+      "status": "Đã có",
+      "raw": "Vận hành ép 2 | \"Nguyễn văn Toàn\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Vận hành ép 3",
+      "name": "Dương Đình Sử",
+      "status": "Đã có",
+      "raw": "Vận hành ép 3 | \"Dương Đình Sử\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Bảo trì điện",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Bảo trì điện"
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Cơ khí 1",
+      "name": "Phạm Văn Công",
+      "status": "Đã có",
+      "raw": "Cơ khí 1 | \"Phạm Văn Công\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Cơ khí 2",
+      "name": "Huỳnh Tuấn Nhật",
+      "status": "Đã có",
+      "raw": "Cơ khí 2 | \"Huỳnh Tuấn Nhật\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "Xe xúc",
+      "name": "Hoàng Ngọc Anh",
+      "status": "Đã có",
+      "raw": "Xe xúc  | \"Hoàng Ngọc Anh\""
+    },
+    {
+      "department": "Thành Phẩm 1",
+      "position": "LĐPT",
+      "name": "Nguyễn Xuân Hòa",
+      "status": "Đã có",
+      "raw": "LĐPT | \"Nguyễn Xuân Hòa\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Trưởng ca 2",
+      "name": "Hoàn Phúc Tài",
+      "status": "Đã có",
+      "raw": "Trưởng ca 2 | \"Hoàn Phúc Tài\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Vận hành trung tâm 1",
+      "name": "Lê Văn Hùng",
+      "status": "Đã có",
+      "raw": "Vận hành trung tâm 1 | \"Lê Văn Hùng\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Vận hành trung tâm 2",
+      "name": "Nguyễn Văn Đại",
+      "status": "Đã có",
+      "raw": "Vận hành trung tâm 2 | \"Nguyễn Văn Đại\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Vận hành ép 1",
+      "name": "Cao Văn Sơn",
+      "status": "Đã có",
+      "raw": "Vận hành ép 1 | \"Cao Văn Sơn\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Vận hành ép 2",
+      "name": "Dương ĐÌnh Bằng",
+      "status": "Đã có",
+      "raw": "Vận hành ép 2 | \"Dương ĐÌnh Bằng\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Vận hành ép 3",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Vận hành ép 3"
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Bảo trì điện",
+      "name": "Hồ Đức Phú",
+      "status": "Đã có",
+      "raw": "Bảo trì điện | 'Hồ Đức Phú\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Cơ khí 1",
+      "name": "Trần Thế Hoài",
+      "status": "Đã có",
+      "raw": "Cơ khí 1 | \"Trần Thế Hoài\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Cơ khí 2",
+      "name": "Hoàng Ngọc Ý",
+      "status": "Đã có",
+      "raw": "Cơ khí 2 | \"Hoàng Ngọc Ý\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "Xe xúc",
+      "name": "Lê Trung Đức",
+      "status": "Đã có",
+      "raw": "Xe xúc  | \"Lê Trung Đức\""
+    },
+    {
+      "department": "Thành Phẩm 2",
+      "position": "LĐPT",
+      "name": "Đặng Quang Ngự",
+      "status": "Đã có",
+      "raw": "LĐPT | \"Đặng Quang Ngự\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Trưởng ca 3",
+      "name": "Nguyễn Long",
+      "status": "Đã có",
+      "raw": "Trưởng ca 3 | 'Nguyễn Long\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Vận hành trung tâm 1",
+      "name": "Nguyễn Đình Tứ",
+      "status": "Đã có",
+      "raw": "Vận hành trung tâm 1 | \"Nguyễn Đình Tứ\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Vận hành trung tâm 2",
+      "name": "Lê Chí Bảo",
+      "status": "Đã có",
+      "raw": "Vận hành trung tâm 2 | \"Lê Chí Bảo\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Vận hành ép 1",
+      "name": "Nguyễn Văn Quý",
+      "status": "Đã có",
+      "raw": "Vận hành ép 1 | \"Nguyễn Văn Quý\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Vận hành ép 2",
+      "name": "Hồ Xuân An",
+      "status": "Đã có",
+      "raw": "Vận hành ép 2 | \"Hồ Xuân An\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Vận hành ép 3",
+      "name": "Phan Vũ Phương Anh",
+      "status": "Đã có",
+      "raw": "Vận hành ép 3 | \"Phan Vũ Phương Anh\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Bảo trì điện",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Bảo trì điện"
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Cơ khí 1",
+      "name": "Dương văn Cửu",
+      "status": "Đã có",
+      "raw": "Cơ khí 1 | \"Dương văn Cửu\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Cơ khí 2",
+      "name": "Dương Văn Tư",
+      "status": "Đã có",
+      "raw": "Cơ khí 2 | \"Dương Văn Tư\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "Xe xúc",
+      "name": "Nguyễn Quốc Duy Tình",
+      "status": "Đã có",
+      "raw": "Xe xúc  | \"Nguyễn Quốc Duy Tình\""
+    },
+    {
+      "department": "Thành Phẩm 3",
+      "position": "LĐPT",
+      "name": "Lê văn Đăng",
+      "status": "Đã có",
+      "raw": "LĐPT | \"Lê văn Đăng\""
+    },
+    {
+      "department": "Kỹ thuật - Vật tư",
+      "position": "Phó phòng kỹ thuật",
+      "name": "Nguyễn Đăng Thành",
+      "status": "Đã có",
+      "raw": "Phó phòng kỹ thuật | \"Nguyễn Đăng Thành\""
+    },
+    {
+      "department": "Kỹ thuật - Vật tư",
+      "position": "Quản lí vật tư+pccc",
+      "name": "Cái Viết Thành Lâm",
+      "status": "Đã có",
+      "raw": "Quản lí vật tư+pccc | \"Cái Viết Thành Lâm\""
+    },
+    {
+      "department": "Kỹ thuật - Vật tư",
+      "position": "Thu mua + thủ kho",
+      "name": "Nguyễn Quốc Khánh",
+      "status": "Đã có",
+      "raw": "Thu mua + thủ kho | \"Nguyễn Quốc Khánh\""
+    },
+    {
+      "department": "Kỹ thuật - Vật tư",
+      "position": "Kỹ sư CME",
+      "name": "Nguyễn Xuân Dương",
+      "status": "Đã có",
+      "raw": "Kỹ sư CME | \"Nguyễn Xuân Dương\""
+    },
+    {
+      "department": "Kỹ thuật - Vật tư",
+      "position": "KCS thành phẩm",
+      "name": "Cao Thị Kim Dung",
+      "status": "Đã có",
+      "raw": "KCS thành phẩm | \"Cao Thị Kim Dung\""
+    },
+    {
+      "department": "Kỹ thuật - Vật tư",
+      "position": "ATLĐ",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "ATLĐ"
+    },
+    {
+      "department": "Kỹ thuật - Vật tư",
+      "position": "Quản lí xe cơ giới",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Quản lí xe cơ giới"
+    },
+    {
+      "department": "Cơ khí",
+      "position": "Tổ trưởng",
+      "name": "Phan Nhớ",
+      "status": "Đã có",
+      "raw": "Tổ trưởng | \"Phan Nhớ\""
+    },
+    {
+      "department": "Cơ khí",
+      "position": "Cơ khí 1",
+      "name": "Trần Mạnh Tuấn",
+      "status": "Đã có",
+      "raw": "Cơ khí 1 | \"Trần Mạnh Tuấn\""
+    },
+    {
+      "department": "Cơ khí",
+      "position": "Cơ khí 2",
+      "name": "Nguyễn Văn Huy",
+      "status": "Đã có",
+      "raw": "Cơ khí 2 | \"Nguyễn Văn Huy\""
+    },
+    {
+      "department": "Cơ khí",
+      "position": "Cơ khí 3",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Cơ khí 3"
+    },
+    {
+      "department": "Cơ khí",
+      "position": "Cơ khí 4",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Cơ khí 4"
+    },
+    {
+      "department": "Cơ khí",
+      "position": "Cơ khí 5",
+      "name": "Vị trí còn trống (Cần tuyển)",
+      "status": "Còn trống",
+      "raw": "Cơ khí 5"
+    }
+  ],
+  "hierarchy_edges": [
+    {
+      "node": "HĐQT",
+      "parent": "",
+      "note": ""
+    },
+    {
+      "node": "Ban Giám Sát",
+      "parent": "HĐQT",
+      "note": ""
+    },
+    {
+      "node": "Giám đốc",
+      "parent": "HĐQT",
+      "note": ""
+    },
+    {
+      "node": "Phó giám đốc kinh doanh",
+      "parent": "Giám đốc",
+      "note": ""
+    },
+    {
+      "node": "Tài chính- Kế toán",
+      "parent": "Giám đốc",
+      "note": ""
+    },
+    {
+      "node": "Hành chính-Nhân sự",
+      "parent": "Giám đốc",
+      "note": ""
+    },
+    {
+      "node": "PGĐSX",
+      "parent": "Giám đốc",
+      "note": ""
+    },
+    {
+      "node": "Quản lí Đội băm",
+      "parent": "PGĐSX",
+      "note": ""
+    },
+    {
+      "node": "Ban FSC",
+      "parent": "Phó giám đốc kinh doanh",
+      "note": "7"
+    },
+    {
+      "node": "Phòng Kinh doanh",
+      "parent": "Phó giám đốc kinh doanh",
+      "note": "5"
+    },
+    {
+      "node": "P.Tài Chính -Kế Toán",
+      "parent": "Tài chính- Kế toán",
+      "note": "7"
+    },
+    {
+      "node": "P. Hành Chính-Nhân Sự",
+      "parent": "Hành chính-Nhân sự",
+      "note": "11"
+    },
+    {
+      "node": "Đội băm ca 1",
+      "parent": "Quản lí Đội băm",
+      "note": "12"
+    },
+    {
+      "node": "Đội băm ca 2",
+      "parent": "Quản lí Đội băm",
+      "note": "12"
+    },
+    {
+      "node": "Thành Phẩm 1",
+      "parent": "PGĐSX",
+      "note": "11"
+    },
+    {
+      "node": "Thành Phẩm 2",
+      "parent": "PGĐSX",
+      "note": "11"
+    },
+    {
+      "node": "Thành Phẩm 3",
+      "parent": "PGĐSX",
+      "note": "11"
+    },
+    {
+      "node": "Kỹ thuật - vật tư",
+      "parent": "PGĐSX",
+      "note": "9"
+    },
+    {
+      "node": "Cơ khí",
+      "parent": "PGĐSX",
+      "note": "6"
+    }
+  ]
+}

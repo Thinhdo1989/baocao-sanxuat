@@ -7,6 +7,7 @@ import sys
 import re
 import base64
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any, Union
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -223,6 +224,36 @@ st.markdown("""
     div[data-testid="stSidebar"] div[data-testid="stRadio"]:has(input[name*="sidebar_entry_radio"]) div[role="radiogroup"] > label:has(input:checked) p {
         color: #34d399 !important;
         font-weight: 700 !important;
+    }
+    /* Tối ưu hiển thị Responsive cho Thiết Bị Di Động (Mobile) & Tablet */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: 0.8rem !important;
+            padding-right: 0.8rem !important;
+            padding-top: 1rem !important;
+        }
+        .kpi-card {
+            padding: 10px 14px !important;
+            margin-bottom: 8px !important;
+        }
+        .kpi-value {
+            font-size: 20px !important;
+        }
+        .leader-card {
+            min-height: auto !important;
+            padding: 12px 14px !important;
+            margin-bottom: 12px !important;
+        }
+        .section-title {
+            font-size: 15px !important;
+            margin-top: 12px !important;
+            margin-bottom: 8px !important;
+        }
+    }
+    @media (max-width: 1024px) {
+        .leader-card {
+            min-height: 380px;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -556,6 +587,20 @@ with st.sidebar:
         - Đường kính viên: `6 - 8 mm`
         """)
 
+    with st.expander("📱 **Xem trên ĐT / Tablet (Wi-Fi)**", expanded=False):
+        st.markdown("""
+        **Truy cập cùng mạng Wi-Fi:**
+        
+        👉 `http://192.168.1.7:8501`
+        
+        *(Hoặc quét mã QR bên dưới bằng camera điện thoại)*
+        """)
+        st.markdown("""
+        <div style="text-align: center; margin-top: 8px; margin-bottom: 4px;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=http://192.168.1.7:8501" style="width: 130px; height: 130px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; padding: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+        </div>
+        """, unsafe_allow_html=True)
+
 # ================= HEADER & BỘ LỌC THỜI GIAN ĐẦU TRANG =================
 st.title("🏭 PRODUCTION | BÁO CÁO SẢN XUẤT BVN QUẢNG BÌNH")
 
@@ -589,6 +634,29 @@ for i, tm in enumerate(time_modes):
         default_idx = i
         break
 
+# ================= HÀM TRỢ GIÚP TÍNH CHỈ SỐ TỒN KHO VIÊN NÉN THEO KỲ =================
+def get_inventory_for_period(df_all_shifts: pd.DataFrame, target_end_date: Any = None, period_shifts: pd.DataFrame = None) -> float:
+    """
+    Tính chỉ số tồn kho viên nén (tấn) tại thời điểm kết thúc kỳ lọc (cuối ngày/tuần/tháng/năm/khoảng ngày).
+    Tồn kho là chỉ số thời điểm (stock metric) của kho thành phẩm nhà máy.
+    """
+    if period_shifts is not None and not period_shifts.empty and 'ton_kho_tan' in period_shifts.columns:
+        valid_p = period_shifts[period_shifts['ton_kho_tan'] > 0]
+        if not valid_p.empty:
+            return float(valid_p.iloc[-1]['ton_kho_tan'])
+            
+    if df_all_shifts is not None and not df_all_shifts.empty and 'ton_kho_tan' in df_all_shifts.columns:
+        if target_end_date is not None:
+            t_dt = pd.to_datetime(target_end_date).date()
+            sub = df_all_shifts[(df_all_shifts['date'].dt.date <= t_dt) & (df_all_shifts['ton_kho_tan'] > 0)]
+            if not sub.empty:
+                return float(sub.iloc[-1]['ton_kho_tan'])
+        sub_all = df_all_shifts[df_all_shifts['ton_kho_tan'] > 0]
+        if not sub_all.empty:
+            return float(sub_all.iloc[-1]['ton_kho_tan'])
+            
+    return 0.0
+
 # ================= BỘ LỌC THỜI GIAN SẢN XUẤT (FULL WIDTH NHƯ HÌNH 2) =================
 st.markdown("""<div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-left: 5px solid #38bdf8; border-radius: 10px; padding: 10px 16px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
 <div style="font-size: 14px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px; display: flex; align-items: center; justify-content: space-between;">
@@ -613,7 +681,7 @@ selected_month_sidebar = None
 selected_year_sidebar = None
 
 if view_mode == "☀️ Theo Ngày":
-    c_d1, c_d2 = st.columns([7, 3])
+    c_d1, c_d2, c_d3 = st.columns([5, 2.5, 2.5])
     with c_d1:
         avail_dates = sorted(df_shifts['date'].dt.date.unique(), reverse=True) if ('date' in df_shifts.columns and not df_shifts.empty) else [max_date.date()]
         default_d = st.session_state.get('top_target_date', max_date.date())
@@ -634,34 +702,87 @@ if view_mode == "☀️ Theo Ngày":
             st.session_state['top_view_mode'] = "☀️ Theo Ngày"
             st.session_state['top_target_date'] = datetime(2026, 9, 13).date()
             st.rerun()
+    with c_d3:
+        inv_val_peek = get_inventory_for_period(df_shifts, selected_date)
+        st.markdown(f"""
+        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 TỒN KHO VIÊN NÉN</div>
+            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_val_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">tấn</span></div>
+        </div>
+        """, unsafe_allow_html=True)
 
 elif view_mode == "📅 Theo Tuần":
-    selected_week_sidebar = st.selectbox("Chọn tuần trong năm 2026:", ALL_WEEKS_52, index=default_w_idx, key="main_week_select")
-    selected_date = None
+    c_w1, c_w2 = st.columns([7, 3])
+    with c_w1:
+        selected_week_sidebar = st.selectbox("Chọn tuần trong năm 2026:", ALL_WEEKS_52, index=default_w_idx, key="main_week_select")
+        selected_date = None
+    with c_w2:
+        w_num_peek = int(selected_week_sidebar.replace("Tuần ", "")) if selected_week_sidebar else None
+        w_peek = df_shifts[df_shifts['date'].dt.isocalendar().week == w_num_peek] if (w_num_peek and 'date' in df_shifts.columns) else None
+        inv_w_peek = get_inventory_for_period(df_shifts, w_peek['date'].max() if (w_peek is not None and not w_peek.empty) else None, w_peek)
+        st.markdown(f"""
+        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 TỒN KHO CUỐI TUẦN</div>
+            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_w_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">tấn</span></div>
+        </div>
+        """, unsafe_allow_html=True)
 
 elif view_mode == "📆 Theo Tháng":
-    selected_month_sidebar = st.selectbox("Chọn tháng trong năm 2026:", ALL_MONTHS_CODE_12, index=default_m_code_idx, key="main_month_select")
-    selected_date = None
+    c_m1, c_m2 = st.columns([7, 3])
+    with c_m1:
+        selected_month_sidebar = st.selectbox("Chọn tháng trong năm 2026:", ALL_MONTHS_CODE_12, index=default_m_code_idx, key="main_month_select")
+        selected_date = None
+    with c_m2:
+        m_num_peek, y_num_peek = map(int, selected_month_sidebar.split('/')) if selected_month_sidebar else (9, 2026)
+        m_peek = df_shifts[(df_shifts['date'].dt.month == m_num_peek) & (df_shifts['date'].dt.year == y_num_peek)] if 'date' in df_shifts.columns else None
+        inv_m_peek = get_inventory_for_period(df_shifts, m_peek['date'].max() if (m_peek is not None and not m_peek.empty) else None, m_peek)
+        st.markdown(f"""
+        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 TỒN KHO CUỐI THÁNG</div>
+            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_m_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">tấn</span></div>
+        </div>
+        """, unsafe_allow_html=True)
 
 elif view_mode == "🏛️ Theo Năm":
-    selected_year_sidebar = 2026
-    st.selectbox("Chọn năm vận hành:", ["Năm 2026 (Toàn bộ 229 ngày làm việc)"], index=0, key="main_year_select")
-    selected_date = None
+    c_y1, c_y2 = st.columns([7, 3])
+    with c_y1:
+        selected_year_sidebar = 2026
+        st.selectbox("Chọn năm vận hành:", ["Năm 2026 (Toàn bộ 229 ngày làm việc)"], index=0, key="main_year_select")
+        selected_date = None
+    with c_y2:
+        inv_y_peek = get_inventory_for_period(df_shifts, df_shifts['date'].max() if not df_shifts.empty else None, df_shifts)
+        st.markdown(f"""
+        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 TỒN KHO NĂM 2026</div>
+            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_y_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">tấn</span></div>
+        </div>
+        """, unsafe_allow_html=True)
 
 elif view_mode == "⏱️ Khoảng ngày":
-    date_range_input = st.date_input(
-        "Chọn khoảng ngày:",
-        value=(max_date.date() - timedelta(days=14), max_date.date()),
-        min_value=min_date.date(),
-        max_value=max_date.date(),
-        key="main_range_picker"
-    )
-    if isinstance(date_range_input, tuple) and len(date_range_input) == 2:
-        date_range = (
-            datetime.combine(date_range_input[0], datetime.min.time()),
-            datetime.combine(date_range_input[1], datetime.max.time())
+    c_r1, c_r2 = st.columns([7, 3])
+    with c_r1:
+        date_range_input = st.date_input(
+            "Chọn khoảng ngày:",
+            value=(max_date.date() - timedelta(days=14), max_date.date()),
+            min_value=min_date.date(),
+            max_value=max_date.date(),
+            key="main_range_picker"
         )
-        selected_date = None
+        if isinstance(date_range_input, tuple) and len(date_range_input) == 2:
+            date_range = (
+                datetime.combine(date_range_input[0], datetime.min.time()),
+                datetime.combine(date_range_input[1], datetime.max.time())
+            )
+            selected_date = None
+    with c_r2:
+        end_d_peek = date_range[1] if (isinstance(date_range_input, tuple) and len(date_range_input) == 2) else max_date
+        inv_r_peek = get_inventory_for_period(df_shifts, end_d_peek)
+        st.markdown(f"""
+        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
+            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 TỒN KHO CUỐI KỲ</div>
+            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_r_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">tấn</span></div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # Lọc dữ liệu theo ca trưởng nếu có
 df_filtered_shifts = df_shifts.copy()
@@ -723,6 +844,8 @@ if view_mode == "📅 Theo Tuần" and selected_week_sidebar:
     num_days_w = int(w_shifts['date'].dt.date.nunique()) if not w_shifts.empty and 'date' in w_shifts.columns else 0
     is_single_ldr = (selected_leader != "Tất cả")
     prod_w, maint_w, off_w = classify_shift_counts(w_shifts, num_days=num_days_w, is_single_leader=is_single_ldr)
+    ton_kho_w = get_inventory_for_period(df_shifts, w_shifts['date'].max() if not w_shifts.empty else None, w_shifts)
+    tot_xuat_w = float(w_shifts['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in w_shifts.columns else 0.0
 
     kpis = {
         'date_str': f"{selected_week_sidebar} (Năm 2026)",
@@ -730,6 +853,8 @@ if view_mode == "📅 Theo Tuần" and selected_week_sidebar:
         'prod_shifts': prod_w,
         'maint_shifts': maint_w,
         'off_shifts': off_w,
+        'ton_kho_tan': ton_kho_w,
+        'xuat_hang_tan': tot_xuat_w,
         'total_output': tot_out,
         'delta_output': 0.0,
         'avg_electricity_kwh_ton': avg_e,
@@ -800,6 +925,8 @@ elif view_mode == "📆 Theo Tháng" and selected_month_sidebar:
     num_days_m = int(m_shifts['date'].dt.date.nunique()) if not m_shifts.empty and 'date' in m_shifts.columns else 0
     is_single_ldr = (selected_leader != "Tất cả")
     prod_m, maint_m, off_m = classify_shift_counts(m_shifts, num_days=num_days_m, is_single_leader=is_single_ldr)
+    ton_kho_m = get_inventory_for_period(df_shifts, m_shifts['date'].max() if not m_shifts.empty else None, m_shifts)
+    tot_xuat_m = float(m_shifts['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in m_shifts.columns else 0.0
 
     kpis = {
         'date_str': f"Tháng {selected_month_sidebar}",
@@ -807,6 +934,8 @@ elif view_mode == "📆 Theo Tháng" and selected_month_sidebar:
         'prod_shifts': prod_m,
         'maint_shifts': maint_m,
         'off_shifts': off_m,
+        'ton_kho_tan': ton_kho_m,
+        'xuat_hang_tan': tot_xuat_m,
         'total_output': tot_out,
         'delta_output': 0.0,
         'avg_electricity_kwh_ton': avg_e,
@@ -877,6 +1006,8 @@ elif view_mode == "🏛️ Theo Năm":
     num_days_y = int(y_shifts['date'].dt.date.nunique()) if not y_shifts.empty and 'date' in y_shifts.columns else 0
     is_single_ldr = (selected_leader != "Tất cả")
     prod_y, maint_y, off_y = classify_shift_counts(y_shifts, num_days=num_days_y, is_single_leader=is_single_ldr)
+    ton_kho_y = get_inventory_for_period(df_shifts, y_shifts['date'].max() if not y_shifts.empty else None, y_shifts)
+    tot_xuat_y = float(y_shifts['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in y_shifts.columns else 0.0
 
     kpis = {
         'date_str': f"Năm {y_num}",
@@ -884,6 +1015,8 @@ elif view_mode == "🏛️ Theo Năm":
         'prod_shifts': prod_y,
         'maint_shifts': maint_y,
         'off_shifts': off_y,
+        'ton_kho_tan': ton_kho_y,
+        'xuat_hang_tan': tot_xuat_y,
         'total_output': tot_out,
         'delta_output': 0.0,
         'avg_electricity_kwh_ton': avg_e,
@@ -956,6 +1089,8 @@ elif view_mode == "⏱️ Khoảng ngày" and date_range:
     num_days_r = int(r_shifts['date'].dt.date.nunique()) if not r_shifts.empty and 'date' in r_shifts.columns else 0
     is_single_ldr = (selected_leader != "Tất cả")
     prod_r, maint_r, off_r = classify_shift_counts(r_shifts, num_days=num_days_r, is_single_leader=is_single_ldr)
+    ton_kho_r = get_inventory_for_period(df_shifts, r_end, r_shifts)
+    tot_xuat_r = float(r_shifts['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in r_shifts.columns else 0.0
 
     kpis = {
         'date_str': f"{r_start.strftime('%d/%m/%Y')} - {r_end.strftime('%d/%m/%Y')}",
@@ -963,6 +1098,8 @@ elif view_mode == "⏱️ Khoảng ngày" and date_range:
         'prod_shifts': prod_r,
         'maint_shifts': maint_r,
         'off_shifts': off_r,
+        'ton_kho_tan': ton_kho_r,
+        'xuat_hang_tan': tot_xuat_r,
         'total_output': tot_out,
         'delta_output': 0.0,
         'avg_electricity_kwh_ton': avg_e,
@@ -987,12 +1124,15 @@ else:
         kpis['prod_shifts'] = p_c
         kpis['maint_shifts'] = m_c
         kpis['off_shifts'] = o_c
+    if 'ton_kho_tan' not in kpis or kpis.get('ton_kho_tan', 0) == 0:
+        kpis['ton_kho_tan'] = get_inventory_for_period(df_shifts, selected_date)
 
 # ================= THANH TRẠNG THÁI CA HOẠT ĐỘNG (GỌN GÀNG, KHÔNG BỊ TRÙNG LẶP) =================
 sb_date = kpis.get('date_str', 'N/A')
 sb_prod = int(kpis.get('prod_shifts', 0))
 sb_maint = int(kpis.get('maint_shifts', 0))
 sb_off = int(kpis.get('off_shifts', 0))
+sb_ton_kho = float(kpis.get('ton_kho_tan', 0.0))
 tot_s = sb_prod + sb_maint + sb_off
 tot_denom = tot_s if tot_s > 0 else 1
 pct_prod = (sb_prod / tot_denom) * 100.0
@@ -1001,13 +1141,17 @@ pct_off = (sb_off / tot_denom) * 100.0
 
 st.markdown(f"""
 <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-left: 5px solid #22c55e; border-radius: 8px; padding: 8px 16px; margin: 6px 0 14px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
-    <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; flex-wrap: wrap;">
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap;">
         <span style="color: #94a3b8; font-weight: 600;">⏱️ Trạng thái ca kỳ:</span>
         <code style="background: #0f172a; border: 1px solid #475569; padding: 2px 8px; border-radius: 6px; color: #38bdf8; font-weight: 700; font-family: monospace; font-size: 11.5px;">{sb_date}</code>
         <span style="color: #475569;">|</span>
         <span style="color: #86efac; font-weight: 700; background: rgba(34, 197, 94, 0.15); border: 1px solid #22c55e; padding: 2px 10px; border-radius: 12px; font-size: 11.5px;">🏭 {sb_prod} ca sản xuất ({pct_prod:.0f}%)</span>
         <span style="color: #fde68a; font-weight: 700; background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; padding: 2px 10px; border-radius: 12px; font-size: 11.5px;">🔧 {sb_maint} ca bảo trì ({pct_maint:.0f}%)</span>
         <span style="color: #cbd5e1; font-weight: 700; background: rgba(148, 163, 184, 0.15); border: 1px solid #94a3b8; padding: 2px 10px; border-radius: 12px; font-size: 11.5px;">☕ {sb_off} ca nghỉ ({pct_off:.0f}%)</span>
+        <span style="color: #475569;">|</span>
+        <span style="color: #38bdf8; font-weight: 800; background: rgba(14, 165, 233, 0.18); border: 1px solid #0284c7; padding: 2px 12px; border-radius: 12px; font-size: 11.5px; box-shadow: 0 0 10px rgba(56,189,248,0.2); display: inline-flex; align-items: center; gap: 5px;">
+            <span>📦</span> <span>Tồn kho viên nén:</span> <strong style="color: #ffffff; font-size: 12.5px;">{sb_ton_kho:,.1f}</strong> <span>tấn</span>
+        </span>
     </div>
     <div style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #94a3b8;">
         <div>📊 <strong>Tổng số:</strong> <span style="color: #ffffff; font-weight: 700;">{tot_s} ca</span></div>
@@ -1109,6 +1253,17 @@ def render_factory_dashboard_cards(kpis_data, df_weekly_data):
         lat_dz = df_weekly_data.iloc[-1]['diezen_lit'] if not df_weekly_data.empty else 0.0
         lat_dz_r = df_weekly_data.iloc[-1]['diezen_tb_lit_tan'] if not df_weekly_data.empty else 0.0
         st.markdown(render_kpi_card_html("Dầu Diezen Tiêu Thụ", f"{lat_dz_r:.1f}", "Lít/tấn", f"{lat_dz:,.0f} Lít/tuần", "badge-info"), unsafe_allow_html=True)
+
+    # Hàng 3: Tồn Kho & Xuất Hàng Kho Thành Phẩm (Kho BVN Quảng Bình)
+    tk_val = float(kpis_data.get('ton_kho_tan', 0.0))
+    xh_val = float(kpis_data.get('xuat_hang_tan', 0.0))
+    r3_c1, r3_c2 = st.columns(2)
+    with r3_c1:
+        st.markdown(render_kpi_card_html("Tồn Kho Viên Nén (Cuối Kỳ)", f"{tk_val:,.1f}", "Tấn", "📦 Kho Thành Phẩm BVN Quảng Bình", "badge-info"), unsafe_allow_html=True)
+    with r3_c2:
+        xh_badge = f"🚛 {xh_val:,.1f} Tấn xuất kho" if xh_val > 0 else "Chưa phát sinh xuất hàng trong kỳ"
+        xh_cls = "badge-success" if xh_val > 0 else "badge-info"
+        st.markdown(render_kpi_card_html("Lũy Kế Xuất Hàng (Trong Kỳ)", f"{xh_val:,.1f}", "Tấn", xh_badge, xh_cls), unsafe_allow_html=True)
 
     # Cảnh báo nổi bật
     e_eval = kpis_data.get('electricity_eval', {})
@@ -1728,7 +1883,7 @@ task_num = int(m_task.group(1)) if m_task else 1
 # ----------------- TAB 1: NHẬT KÝ CA & THIẾT BỊ NGÀY -----------------
 if task_num == 1:
     st.markdown('<div class="section-title">📊 Chi Tiết Các Ca Sản Xuất Trong Ngày</div>', unsafe_allow_html=True)
-    st.info(f"🧪 **Chỉ số chất lượng & chế biến thành phẩm ngày ({kpis.get('date_str', 'N/A')}):** Độ ẩm viên TB: **{am_val:.2f}%** ({moist_eval.get('label', '')}) | Tỷ trọng viên nén: **{ty_trong_val:,.1f} kg/m³** ({dens_eval.get('label', '')}) | Tỷ lệ chế biến: **{kpis.get('processing_ratio', 0):.2f} lần**")
+    st.info(f"🧪 **Chỉ số chất lượng & chế biến thành phẩm ngày ({kpis.get('date_str', 'N/A')}):** Độ ẩm viên TB: **{am_val:.2f}%** ({moist_eval.get('label', '')}) | Tỷ trọng viên nén: **{ty_trong_val:,.1f} kg/m³** ({dens_eval.get('label', '')}) | Tỷ lệ chế biến: **{kpis.get('processing_ratio', 0):.2f} lần** | 📦 Tồn kho viên nén: **{kpis.get('ton_kho_tan', 0):,.1f} tấn**")
     
     col_t1_left, col_t1_right = st.columns([3, 2])
     
@@ -3036,7 +3191,7 @@ elif task_num == 10:
 
 # ----------------- TAB 11: SƠ ĐỒ CƠ CẤU NHÂN SỰ -----------------
 elif task_num == 11:
-    render_organization_chart()
+    render_organization_chart(app_loader)
 
 # ----------------- TAB 12: QUY TRÌNH CHẾ BIẾN & KỸ THUẬT -----------------
 elif task_num == 12:
