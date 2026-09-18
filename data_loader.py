@@ -1487,63 +1487,122 @@ class DataLoader:
     def load_oil_change_data(self) -> Dict[str, Any]:
         """
         Nạp dữ liệu Lịch thay nhớt hộp số máy ép PE1 - PE8 (Mobil Glygoyle 460).
+        Sử dụng values_batch_get để đọc toàn bộ 8 máy và danh mục trong 1 request API duy nhất,
+        tránh lỗi 429 quota và tăng tốc độ tải trang tối đa.
         Trả về:
           - 'summary': DataFrame tổng hợp 8 máy ép
           - 'details': Dict[str, DataFrame] chi tiết 10 chu kỳ của từng máy PE1-PE8
           - 'title': Tên bảng tính
         """
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_oil_summary.parquet"),
+            os.path.join("assets", "cache_oil_summary.parquet"),
+            os.path.join("deploy_files", "assets", "cache_oil_summary.parquet")
+        ]
+
         if not self.oil_spreadsheet:
             self.connect()
+
         if not self.oil_spreadsheet:
+            # Nếu mất kết nối, nạp từ cache parquet dự phòng
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        df_cached = pd.read_parquet(cp)
+                        if not df_cached.empty:
+                            return {'summary': df_cached, 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép (Cache)"}
+                    except Exception:
+                        pass
             return {'summary': pd.DataFrame(), 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép"}
 
         title = getattr(self.oil_spreadsheet, "title", "Lịch thay nhớt hộp số máy ép")
+        pe_list = [f"PE{i}" for i in range(1, 9)]
+        ranges = ["'Danh muc'!A1:H10"] + [f"'{pe}'!A1:M15" for pe in pe_list]
+
         try:
-            ws_dm = self.oil_spreadsheet.worksheet('Danh muc')
-            df_dm = pd.DataFrame(ws_dm.get_all_records(numericise_ignore=['all']))
-        except Exception:
-            df_dm = pd.DataFrame()
+            batch_res = self.oil_spreadsheet.values_batch_get(ranges)
+            vrs = batch_res.get('valueRanges', [])
+        except Exception as e:
+            print(f"[-] Lỗi batch get dữ liệu thay nhớt: {e}")
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        df_cached = pd.read_parquet(cp)
+                        if not df_cached.empty:
+                            return {'summary': df_cached, 'details': {}, 'title': f"{title} (Cache)"}
+                    except Exception:
+                        pass
+            return {'summary': pd.DataFrame(), 'details': {}, 'title': title}
+
+        dm_vals = vrs[0].get('values', []) if len(vrs) > 0 else []
+        df_dm = pd.DataFrame(dm_vals[1:], columns=dm_vals[0]) if len(dm_vals) > 1 else pd.DataFrame()
 
         summary_rows = []
         details = {}
 
-        for i in range(1, 9):
-            pe = f"PE{i}"
-            try:
-                ws_pe = self.oil_spreadsheet.worksheet(pe)
-                records = ws_pe.get_all_records(numericise_ignore=['all'])
+        for idx, pe in enumerate(pe_list):
+            vr_vals = vrs[idx + 1].get('values', []) if len(vrs) > idx + 1 else []
+            records = []
+            if len(vr_vals) > 1:
+                headers = [c.strip() for c in vr_vals[0]]
+                for r in vr_vals[1:]:
+                    rec = {headers[k]: (r[k].strip() if k < len(r) else '') for k in range(len(headers))}
+                    records.append(rec)
                 df_pe = pd.DataFrame(records)
-                details[pe] = df_pe
+            else:
+                df_pe = pd.DataFrame()
+            details[pe] = df_pe
 
-                row1 = records[0] if len(records) > 0 else {}
-                row2 = records[1] if len(records) > 1 else {}
+            row1 = records[0] if len(records) > 0 else {}
+            row2 = records[1] if len(records) > 1 else {}
 
-                h1_str = str(row1.get('So h', row1.get('So h hoạt dọng', '0'))).strip()
-                h2_str = str(row2.get('So h', row2.get('So h hoạt dọng', '0'))).strip()
-                dinh_muc_str = str(row1.get('Dinh muc', '4000')).strip()
+            h1_str = str(row1.get('So h', row1.get('So h hoạt dọng', '0'))).strip()
+            h2_str = str(row2.get('So h', row2.get('So h hoạt dọng', '0'))).strip()
+            dinh_muc_str = str(row1.get('Dinh muc (h)', row1.get('Dinh muc', '4000'))).strip()
 
-                m_name = f"Máy ép viên Andritz PM30-{5+i}"
-                if not df_dm.empty and 'Ma may' in df_dm.columns:
-                    m_match = df_dm.loc[df_dm['Ma may'] == pe, 'Ten']
-                    if len(m_match) > 0:
-                        m_name = str(m_match.values[0])
+            m_name = f"Máy ép viên Andritz PM30-{5+idx+1}"
+            if not df_dm.empty and 'Ma may' in df_dm.columns and 'Ten' in df_dm.columns:
+                m_match = df_dm.loc[df_dm['Ma may'] == pe, 'Ten']
+                if len(m_match) > 0:
+                    m_name = str(m_match.values[0])
 
-                summary_rows.append({
-                    'machine_code': pe,
-                    'machine_name': m_name,
-                    'oil_type': 'Mobil Glygoyle 460',
-                    'oil_capacity_l': 208,
-                    'standard_hours': clean_number(dinh_muc_str) if clean_number(dinh_muc_str) > 0 else 4000.0,
-                    'run_hours_c1': clean_number(h1_str),
-                    'change_date_c1': str(row1.get('Ngày thay nhớt', '18/09/2026')),
-                    'change_status_c1': str(row1.get('Trạng thái thay nhớt', 'Đã thay')),
-                    'run_hours_c2': clean_number(h2_str),
-                    'alert_status_c2': str(row2.get('Trạng thái nhắc nhở', 'Bình thường'))
-                })
-            except Exception as e:
-                print(f"[-] Lỗi đọc sheet {pe}: {e}")
+            std_h = clean_number(dinh_muc_str) if clean_number(dinh_muc_str) > 0 else 4000.0
+            h1_num = clean_number(h1_str)
+            h2_num = clean_number(h2_str)
+
+            alert_c2 = str(row2.get('Trạng thái nhắc nhở', '')).strip()
+            if not alert_c2:
+                if h2_num >= std_h:
+                    alert_c2 = 'Cần thay nhớt'
+                elif h2_num >= std_h * 0.95:
+                    alert_c2 = 'Sắp đến hạn (≥95%)'
+                else:
+                    alert_c2 = 'Bình thường'
+
+            summary_rows.append({
+                'machine_code': pe,
+                'machine_name': m_name,
+                'oil_type': 'Mobil Glygoyle 460',
+                'oil_capacity_l': 208,
+                'standard_hours': std_h,
+                'run_hours_c1': h1_num,
+                'change_date_c1': str(row1.get('Ngày thay nhớt', '18/09/2026')),
+                'change_status_c1': str(row1.get('Trạng thái thay nhớt', 'Đã thay')),
+                'run_hours_c2': h2_num,
+                'alert_status_c2': alert_c2
+            })
 
         df_summary = pd.DataFrame(summary_rows)
+
+        # Lưu cache parquet dự phòng
+        if not df_summary.empty:
+            for cp in cache_paths:
+                try:
+                    os.makedirs(os.path.dirname(cp), exist_ok=True)
+                    df_summary.to_parquet(cp, index=False)
+                except Exception:
+                    pass
+
         return {
             'summary': df_summary,
             'details': details,
