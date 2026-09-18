@@ -239,7 +239,8 @@ class DataLoader:
             except Exception as e:
                 print(f"[-] Lỗi đọc sheet '{sheet_name}' (lần {attempt+1}/3): {e}")
                 if attempt < 2:
-                    time.sleep(0.8 * (attempt + 1))
+                    wait_sec = 2.5 * (attempt + 1) if '429' in str(e) else 0.8 * (attempt + 1)
+                    time.sleep(wait_sec)
         return []
 
     def get_kpi_sheet_values(self, sheet_name: str) -> List[List[str]]:
@@ -255,13 +256,14 @@ class DataLoader:
             except Exception as e:
                 print(f"[-] Lỗi đọc KPI sheet '{sheet_name}' (lần {attempt+1}/3): {e}")
                 if attempt < 2:
-                    time.sleep(0.8 * (attempt + 1))
+                    wait_sec = 2.5 * (attempt + 1) if '429' in str(e) else 0.8 * (attempt + 1)
+                    time.sleep(wait_sec)
         return []
 
 
     def load_shift_data(self) -> pd.DataFrame:
         """
-        Đọc và chuẩn hóa dữ liệu ca/ngày từ sheet 'Product'.
+        Đọc và chuẩn hóa dữ liệu ca/ngày từ sheet 'Product_Data' (ưu tiên) hoặc 'Product' (dự phòng).
         Bao gồm: sản lượng, chỉ tiêu, điện năng, giờ chạy các máy nghiền, sấy, ép viên.
         Tích hợp bộ đệm cục bộ (cache_shifts.parquet) dự phòng khi mất kết nối mạng.
         """
@@ -271,8 +273,12 @@ class DataLoader:
             os.path.join("deploy_files", "assets", "cache_shifts.parquet"),
         ]
 
-        raw_rows = self.get_sheet_values('Product')
-        if len(raw_rows) < 7:
+        # Ưu tiên nạp từ sheet mới 'Product_Data', nếu không có hoặc rỗng thì nạp 'Product'
+        raw_rows = self.get_sheet_values('Product_Data')
+        if not raw_rows or len(raw_rows) < 3:
+            raw_rows = self.get_sheet_values('Product')
+
+        if len(raw_rows) < 3:
             # Google Sheet tạm thời không tải được -> Đọc từ bộ đệm parquet
             for cp in cache_paths:
                 if os.path.exists(cp):
@@ -285,9 +291,15 @@ class DataLoader:
                         print(f"[-] Lỗi đọc cache {cp}: {e}")
             return pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
 
-        # Dữ liệu bắt đầu từ dòng 7 (index 6)
+        # Tự động nhận diện dòng bắt đầu dữ liệu (Product_Data bắt đầu từ dòng 3, Product cũ bắt đầu từ dòng 7)
+        start_idx = 2
+        for idx in range(min(10, len(raw_rows))):
+            if raw_rows[idx] and len(raw_rows[idx]) > 0 and parse_vn_date(raw_rows[idx][0].strip()):
+                start_idx = idx
+                break
+
         records = []
-        for r_idx, r in enumerate(raw_rows[6:], start=7):
+        for r_idx, r in enumerate(raw_rows[start_idx:], start=start_idx + 1):
             if not r or not r[0].strip():
                 continue
             
@@ -790,6 +802,39 @@ class DataLoader:
             df = df.sort_values('date').reset_index(drop=True)
         return df
 
+    def load_kpi_sl_chart_data(self) -> pd.DataFrame:
+        """
+        Đọc dữ liệu so sánh sản lượng thực tế và chỉ tiêu của 3 ca trưởng theo ngày từ sheet 'Chart sl'.
+        """
+        rows = self.get_kpi_sheet_values('Chart sl')
+        if not rows or len(rows) < 4:
+            return pd.DataFrame()
+
+        records = []
+        for r in rows[3:]:
+            if not r or not r[0].strip():
+                continue
+            dt = parse_vn_date(r[0])
+            if not dt:
+                continue
+            item = {
+                'date': dt,
+                'date_str': dt.strftime('%d/%m/%Y'),
+                'Long_target': clean_number(r[1]) if len(r) > 1 and r[1].strip() not in ['', '-'] else None,
+                'Long_actual': clean_number(r[2]) if len(r) > 2 and r[2].strip() not in ['', '-'] else None,
+                'Sac_target': clean_number(r[3]) if len(r) > 3 and r[3].strip() not in ['', '-'] else None,
+                'Sac_actual': clean_number(r[4]) if len(r) > 4 and r[4].strip() not in ['', '-'] else None,
+                'Tai_target': clean_number(r[5]) if len(r) > 5 and r[5].strip() not in ['', '-'] else None,
+                'Tai_actual': clean_number(r[6]) if len(r) > 6 and r[6].strip() not in ['', '-'] else None,
+            }
+            if any(item[k] is not None for k in ['Long_actual', 'Sac_actual', 'Tai_actual']):
+                records.append(item)
+
+        df = pd.DataFrame(records)
+        if not df.empty:
+            df = df.sort_values('date').reset_index(drop=True)
+        return df
+
     def load_kpi_daily_shifts(self) -> pd.DataFrame:
         """
         Đọc dữ liệu nhật ký ca từ sheet 'Data' của file KPI.
@@ -1209,7 +1254,11 @@ class DataLoader:
             return False, "Chưa kết nối được với Google Sheets sản xuất."
 
         try:
-            ws = self.spreadsheet.worksheet('Product')
+            # Ưu tiên ghi vào sheet mới 'Product_Data', nếu không có thì ghi 'Product'
+            try:
+                ws = self.spreadsheet.worksheet('Product_Data')
+            except Exception:
+                ws = self.spreadsheet.worksheet('Product')
             vals = ws.get_all_values()
 
             date_dt = record.get('date')
@@ -1218,6 +1267,7 @@ class DataLoader:
             if not date_dt:
                 date_dt = datetime.now()
 
+            d_iso = date_dt.strftime('%Y-%m-%d')
             d_str = date_dt.strftime('%d/%m/%Y')
             d_short = f"{date_dt.day}/{date_dt.month}/{date_dt.year}"
             ca_truong = str(record.get('shift_leader', '')).strip()
@@ -1275,9 +1325,9 @@ class DataLoader:
             ]
 
             target_row = None
-            # 1. Tìm dòng có cùng ngày và khớp Ca Trưởng
+            # 1. Tìm dòng có cùng ngày và khớp Ca Trưởng (hỗ trợ cả YYYY-MM-DD và DD/MM/YYYY)
             for idx, r in enumerate(vals):
-                if r and (d_str in r[0] or d_short in r[0]):
+                if r and (d_iso in r[0] or d_str in r[0] or d_short in r[0]):
                     r_leader = r[3].strip() if len(r) > 3 else ''
                     if r_leader == ca_truong:
                         target_row = idx + 1
@@ -1286,22 +1336,40 @@ class DataLoader:
             # 2. Nếu chưa tìm thấy, tìm dòng cùng ngày nhưng chưa có Ca Trưởng (dòng trống)
             if not target_row:
                 for idx, r in enumerate(vals):
-                    if r and (d_str in r[0] or d_short in r[0]):
+                    if r and (d_iso in r[0] or d_str in r[0] or d_short in r[0]):
                         r_leader = r[3].strip() if len(r) > 3 else ''
                         r_sl = r[10].strip() if len(r) > 10 else ''
                         if r_leader == '' and r_sl == '':
                             target_row = idx + 1
                             break
 
+            date_col_val = d_iso if ws.title == 'Product_Data' else d_str
             if target_row:
                 # Cập nhật dải ô D:AJ của dòng đã có sẵn
                 ws.update(range_name=f"D{target_row}:AJ{target_row}", values=[row_vals], value_input_option='USER_ENTERED')
-                msg = f"Đã cập nhật thành công dữ liệu ngày {d_str} cho Ca Trưởng {ca_truong} (Dòng {target_row}) trên Google Sheets!"
+                msg = f"Đã cập nhật thành công dữ liệu ngày {d_str} cho Ca Trưởng {ca_truong} (Dòng {target_row}) trên Google Sheets '{ws.title}'!"
             else:
                 # Nếu chưa có dòng nào của ngày này -> Thêm dòng mới
-                full_row = [d_str, str(month_val), str(week_val)] + row_vals
+                full_row = [date_col_val, str(month_val), str(week_val)] + row_vals
                 ws.append_row(full_row, value_input_option='USER_ENTERED')
-                msg = f"Đã thêm mới thành công dữ liệu ngày {d_str} cho Ca Trưởng {ca_truong} vào Google Sheets!"
+                msg = f"Đã thêm mới thành công dữ liệu ngày {d_str} cho Ca Trưởng {ca_truong} vào Google Sheets '{ws.title}'!"
+
+            # Nếu cả sheet Product cũ vẫn còn tồn tại, đồng bộ luôn để các công thức ở Daily/Weekly report không bị gián đoạn
+            try:
+                if ws.title == 'Product_Data':
+                    ws_old = self.spreadsheet.worksheet('Product')
+                    vals_old = ws_old.get_all_values()
+                    target_old_row = None
+                    for idx, r in enumerate(vals_old):
+                        if r and (d_str in r[0] or d_short in r[0] or d_iso in r[0]):
+                            r_l = r[3].strip() if len(r) > 3 else ''
+                            if r_l == ca_truong:
+                                target_old_row = idx + 1
+                                break
+                    if target_old_row:
+                        ws_old.update(range_name=f"D{target_old_row}:AJ{target_old_row}", values=[row_vals], value_input_option='USER_ENTERED')
+            except Exception:
+                pass
 
             # 3. Cập nhật bộ đệm cục bộ (cache_shifts.parquet)
             cache_paths = [

@@ -5,7 +5,7 @@ Hỗ trợ:
 2. Form nhập số liệu ca sản xuất (Sản lượng, điện năng, giờ máy chạy 8 máy ép, nghiền, sấy, dăm đốt).
 3. Form nhập kết quả đo kiểm chất lượng KCS (Độ ẩm dăm, sau sấy, ẩm viên, tỷ trọng, độ tro).
 4. Tính toán thời gian thực các chỉ số KPI: Suất điện (kWh/tấn), Năng suất ép (tấn/h), cảnh báo định mức.
-5. Ghi tự động vào Google Sheets 'Product' & 'KCS' và đồng bộ bộ đệm cache cục bộ.
+5. Ghi tự động vào Google Sheets 'Product_Data' & 'KCS' và đồng bộ bộ đệm cache cục bộ.
 """
 
 import os
@@ -213,7 +213,7 @@ def render_data_entry_module(dl):
 def render_shift_production_form(dl, current_user: Dict[str, Any]):
     """Form nhập báo cáo sản xuất ca dành cho Ca Trưởng & Quản Đốc"""
     st.markdown("#### 📝 NHẬP BÁO CÁO KẾT QUẢ SẢN XUẤT CA")
-    st.caption("Số liệu nhập tại đây sẽ được tự động đồng bộ lên Google Sheets (Sheet `Product`) và làm mới Dashboard tức thì.")
+    st.caption("Số liệu nhập tại đây sẽ được tự động đồng bộ lên Google Sheets (Sheet `Product_Data`) và làm mới Dashboard tức thì.")
 
     with st.form("form_shift_entry", clear_on_submit=False):
         # 1. Thông tin chung

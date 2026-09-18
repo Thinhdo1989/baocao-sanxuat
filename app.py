@@ -299,6 +299,7 @@ def load_all_factory_data():
     df_chart_moist = loader.load_kpi_chart_data('Chart moisture')
     df_chart_dien = loader.load_kpi_chart_data('Chart dien')
     df_chart_cap = loader.load_kpi_chart_data('Chart capacity')
+    df_chart_sl = loader.load_kpi_sl_chart_data()
 
     # Dữ liệu Sự Cố và Bảo Trì mới
     df_incidents = loader.load_incident_data()
@@ -306,7 +307,6 @@ def load_all_factory_data():
     df_maint_plan = loader.load_maintenance_plan_monthly()
     df_4m = loader.load_4m_management()
 
-    # Dữ liệu Quy Trình Chế Biến & Kỹ Thuật (ID: 1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw)
     # Dữ liệu Quy Trình Chế Biến & Kỹ Thuật (ID: 1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw)
     process_data = loader.load_wood_pellet_process_data()
 
@@ -326,6 +326,7 @@ def load_all_factory_data():
         'chart_moist': df_chart_moist,
         'chart_dien': df_chart_dien,
         'chart_cap': df_chart_cap,
+        'chart_sl': df_chart_sl,
         'incidents': df_incidents,
         'maint_log': df_maint_log,
         'maint_plan': df_maint_plan,
@@ -361,6 +362,7 @@ try:
         df_chart_moist = data['chart_moist']
         df_chart_dien = data['chart_dien']
         df_chart_cap = data['chart_cap']
+        df_chart_sl = data.get('chart_sl', pd.DataFrame())
         df_incidents = data.get('incidents', pd.DataFrame())
         df_maint_log = data.get('maint_log', pd.DataFrame())
         df_maint_plan = data.get('maint_plan', pd.DataFrame())
@@ -2145,7 +2147,9 @@ elif task_num == 2:
 
         if not df_wm_weekly.empty:
             st.markdown("---")
-            st.markdown("#### 📈 Diễn Biến Tổng Điểm KPI Ca Trưởng Qua Các Tuần (Tuần 31 - 38)")
+            min_w_label = df_wm_weekly['week_label'].iloc[0] if not df_wm_weekly.empty else "Tuần 32"
+            max_w_label = df_wm_weekly['week_label'].iloc[-1] if not df_wm_weekly.empty else "Tuần 38"
+            st.markdown(f"#### 📈 Diễn Biến Tổng Điểm KPI Ca Trưởng Qua Các Tuần ({min_w_label} - {max_w_label})")
             fig_trend_w = go.Figure()
             colors_l = {'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
             for name in ['Long', 'Sắc', 'Tài']:
@@ -2212,7 +2216,8 @@ elif task_num == 2:
 
         if not df_wm_monthly.empty:
             st.markdown("---")
-            st.markdown("#### 📈 So Sánh Tổng Điểm KPI Qua Các Tháng (Tháng 8 vs Tháng 9)")
+            all_m_labels = " vs ".join(df_wm_monthly['month_label'].tolist()) if not df_wm_monthly.empty else "Tháng 8 vs Tháng 9"
+            st.markdown(f"#### 📈 So Sánh Tổng Điểm KPI Qua Các Tháng ({all_m_labels})")
             fig_trend_m = go.Figure()
             colors_l = {'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
             for name in ['Long', 'Sắc', 'Tài']:
@@ -2299,7 +2304,12 @@ elif task_num == 2:
     # 3. Biểu đồ so sánh 3 ca trưởng theo ngày
     st.markdown('<div class="section-title">📈 Xu Hướng Đối Sánh Trực Tiếp 3 Ca Trưởng Theo Ngày</div>', unsafe_allow_html=True)
     
-    tab_c1, tab_c2, tab_c3 = st.tabs(["⚡ Suất Điện Năng (kWh/tấn)", "🚀 Năng Suất Ép (tấn/h)", "💧 Độ Ẩm Viên Nén (%)"])
+    tab_c1, tab_c2, tab_c3, tab_c4 = st.tabs([
+        "⚡ Suất Điện Năng (kWh/tấn)", 
+        "🚀 Năng Suất Ép (tấn/h)", 
+        "💧 Độ Ẩm Viên Nén (%)",
+        "📦 Sản Lượng & Chỉ Tiêu (Tấn)"
+    ])
 
     with tab_c1:
         if not df_chart_dien.empty:
@@ -2361,6 +2371,35 @@ elif task_num == 2:
             st.plotly_chart(fig_cm, use_container_width=True)
         else:
             st.info("Chưa có dữ liệu biểu đồ độ ẩm ca.")
+
+    with tab_c4:
+        if not df_chart_sl.empty:
+            fig_csl = go.Figure()
+            colors_actual = {'Long': '#2563eb', 'Sac': '#16a34a', 'Tai': '#ea580c'}
+            colors_target = {'Long': '#93c5fd', 'Sac': '#86efac', 'Tai': '#fdba74'}
+            for code, name in [('Long', 'Long'), ('Sac', 'Sắc'), ('Tai', 'Tài')]:
+                act_col = f'{code}_actual'
+                tgt_col = f'{code}_target'
+                if act_col in df_chart_sl.columns:
+                    fig_csl.add_trace(go.Bar(
+                        x=df_chart_sl['date_str'], y=df_chart_sl[act_col],
+                        name=f'SL Thực Tế - Ca {name}',
+                        marker_color=colors_actual[code]
+                    ))
+                if tgt_col in df_chart_sl.columns:
+                    fig_csl.add_trace(go.Scatter(
+                        x=df_chart_sl['date_str'], y=df_chart_sl[tgt_col],
+                        mode='lines', name=f'Chỉ Tiêu - Ca {name}',
+                        line=dict(color=colors_target[code], dash='dot', width=2)
+                    ))
+            fig_csl.update_layout(
+                title="Sản Lượng Thực Tế vs Chỉ Tiêu Từng Ca (Từ Sheet Chart SL)",
+                xaxis_title="Ngày", yaxis_title="Tấn", height=380, hovermode="x unified",
+                barmode='group'
+            )
+            st.plotly_chart(fig_csl, use_container_width=True)
+        else:
+            st.info("Chưa có dữ liệu biểu đồ sản lượng ca.")
 
     # 4. Bảng tổng hợp điểm các tuần
     st.markdown('<div class="section-title">📋 Bảng Tổng Hợp Điểm Thi Đua Các Tuần & Tháng (W-M KPI)</div>', unsafe_allow_html=True)
