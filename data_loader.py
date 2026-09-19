@@ -641,8 +641,26 @@ class DataLoader:
         """
         Đọc bảng điểm KPI theo tuần và theo tháng từ sheet 'W-M KPI' của file 2026 Nhat ky KPI.
         """
+        cache_w_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_wm_weekly.parquet"),
+            os.path.join("assets", "cache_kpi_wm_weekly.parquet"),
+            os.path.join("deploy_files", "assets", "cache_kpi_wm_weekly.parquet"),
+        ]
+        cache_m_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_wm_monthly.parquet"),
+            os.path.join("assets", "cache_kpi_wm_monthly.parquet"),
+            os.path.join("deploy_files", "assets", "cache_kpi_wm_monthly.parquet"),
+        ]
+
         rows = self.get_kpi_sheet_values('W-M KPI')
         if not rows or len(rows) < 2:
+            # Dự phòng đọc từ cache
+            for cw, cm in zip(cache_w_paths, cache_m_paths):
+                if os.path.exists(cw) and os.path.exists(cm):
+                    try:
+                        return pd.read_parquet(cw), pd.read_parquet(cm)
+                    except Exception:
+                        pass
             return pd.DataFrame(), pd.DataFrame()
 
         weekly_records = []
@@ -680,11 +698,35 @@ class DataLoader:
 
         df_w = pd.DataFrame(weekly_records)
         df_m = pd.DataFrame(monthly_records)
+
+        # Cập nhật cache
+        if not df_w.empty:
+            for cw in cache_w_paths:
+                try:
+                    os.makedirs(os.path.dirname(cw), exist_ok=True)
+                    df_w.to_parquet(cw, index=False)
+                except Exception:
+                    pass
+        if not df_m.empty:
+            for cm in cache_m_paths:
+                try:
+                    os.makedirs(os.path.dirname(cm), exist_ok=True)
+                    df_m.to_parquet(cm, index=False)
+                except Exception:
+                    pass
+
         return df_w, df_m
 
     def load_leader_kpi_sheet(self, leader_name: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Đọc chi tiết các tiêu chí điểm KPI theo tuần và tháng của từng ca trưởng ('Long', 'Sắc', 'Tài').
+        Cấu trúc cột:
+        Tuần: Col 0: Tuần, Col 1: Ca trưởng, Col 2: Số ca, Col 3: Chỉ tiêu SL, Col 4: SL Thực tế,
+              Col 5: Điểm SL (/50), Col 6: Độ ẩm TB, Col 7: Điểm ẩm (/30), Col 8: Điện năng TB,
+              Col 9: Năng suất TB, Col 10: Điểm năng suất (/20), Col 11: Điểm KPI (/100)
+        Tháng: Col 13: Tháng, Col 14: Ca trưởng, Col 15: Số ca, Col 16: Chỉ tiêu SL, Col 17: SL Thực tế,
+               Col 18: Điểm SL (/50), Col 19: Độ ẩm TB, Col 20: Điểm ẩm (/30), Col 21: Điện năng TB,
+               Col 22: Năng suất TB, Col 23: Điểm năng suất (/20), Col 24: Điểm KPI (/100)
         """
         rows = self.get_kpi_sheet_values(leader_name)
         if not rows or len(rows) < 2:
@@ -694,9 +736,9 @@ class DataLoader:
         monthly_records = []
 
         for r in rows[1:]:
-            # Phần Tuần: Col 0-12
-            if len(r) > 12 and r[0].strip() and r[0].strip().isdigit():
-                kpi_score = clean_number(r[12])
+            # Phần Tuần: Col 0-11
+            if len(r) > 11 and r[0].strip() and r[0].strip().isdigit():
+                kpi_score = clean_number(r[11])
                 sl_actual = clean_number(r[4])
                 if kpi_score > 0 or sl_actual > 0:
                     weekly_records.append({
@@ -710,30 +752,30 @@ class DataLoader:
                         'do_am_tb': clean_number(r[6]),
                         'diem_am': clean_number(r[7]),
                         'dien_tb': clean_number(r[8]),
-                        'diem_dien': clean_number(r[9]),
-                        'nang_suat_tb': clean_number(r[10]),
-                        'diem_nang_suat': clean_number(r[11]),
+                        'diem_dien': 0.0,
+                        'nang_suat_tb': clean_number(r[9]),
+                        'diem_nang_suat': clean_number(r[10]),
                         'diem_kpi': kpi_score,
                     })
 
-            # Phần Tháng: Col 14-26
-            if len(r) > 26 and r[14].strip() and 'tháng' in r[14].strip().lower():
-                kpi_m = clean_number(r[26])
-                sl_m = clean_number(r[18])
+            # Phần Tháng: Col 13-24
+            if len(r) > 24 and r[13].strip() and 'tháng' in r[13].strip().lower():
+                kpi_m = clean_number(r[24])
+                sl_m = clean_number(r[17])
                 if kpi_m > 0 or sl_m > 0:
                     monthly_records.append({
-                        'month_label': r[14].strip(),
+                        'month_label': r[13].strip(),
                         'ca_truong': leader_name,
-                        'so_ca': clean_number(r[16]),
-                        'chi_tieu_sl': clean_number(r[17]),
+                        'so_ca': clean_number(r[15]),
+                        'chi_tieu_sl': clean_number(r[16]),
                         'sl_thuc_te': sl_m,
-                        'diem_sl': clean_number(r[19]),
-                        'do_am_tb': clean_number(r[20]),
-                        'diem_am': clean_number(r[21]),
-                        'dien_tb': clean_number(r[22]),
-                        'diem_dien': clean_number(r[23]),
-                        'nang_suat_tb': clean_number(r[24]),
-                        'diem_nang_suat': clean_number(r[25]),
+                        'diem_sl': clean_number(r[18]),
+                        'do_am_tb': clean_number(r[19]),
+                        'diem_am': clean_number(r[20]),
+                        'dien_tb': clean_number(r[21]),
+                        'diem_dien': 0.0,
+                        'nang_suat_tb': clean_number(r[22]),
+                        'diem_nang_suat': clean_number(r[23]),
                         'diem_kpi': kpi_m,
                     })
 
@@ -745,6 +787,17 @@ class DataLoader:
         """
         Tổng hợp chi tiết điểm KPI của cả 3 Ca Trưởng (Long, Sắc, Tài).
         """
+        cache_w_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_leaders_weekly.parquet"),
+            os.path.join("assets", "cache_kpi_leaders_weekly.parquet"),
+            os.path.join("deploy_files", "assets", "cache_kpi_leaders_weekly.parquet"),
+        ]
+        cache_m_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_leaders_monthly.parquet"),
+            os.path.join("assets", "cache_kpi_leaders_monthly.parquet"),
+            os.path.join("deploy_files", "assets", "cache_kpi_leaders_monthly.parquet"),
+        ]
+
         all_weekly = []
         all_monthly = []
         for name in ['Long', 'Sắc', 'Tài']:
@@ -759,8 +812,41 @@ class DataLoader:
 
         df_all_w = pd.concat(all_weekly, ignore_index=True) if all_weekly else pd.DataFrame()
         df_all_m = pd.concat(all_monthly, ignore_index=True) if all_monthly else pd.DataFrame()
+
         if not df_all_w.empty:
             df_all_w = df_all_w.sort_values(['week', 'diem_kpi'], ascending=[True, False]).reset_index(drop=True)
+            for cw in cache_w_paths:
+                try:
+                    os.makedirs(os.path.dirname(cw), exist_ok=True)
+                    df_all_w.to_parquet(cw, index=False)
+                except Exception:
+                    pass
+        else:
+            for cw in cache_w_paths:
+                if os.path.exists(cw):
+                    try:
+                        df_all_w = pd.read_parquet(cw)
+                        break
+                    except Exception:
+                        pass
+
+        if not df_all_m.empty:
+            df_all_m = df_all_m.sort_values(['month_label', 'diem_kpi'], ascending=[True, False]).reset_index(drop=True)
+            for cm in cache_m_paths:
+                try:
+                    os.makedirs(os.path.dirname(cm), exist_ok=True)
+                    df_all_m.to_parquet(cm, index=False)
+                except Exception:
+                    pass
+        else:
+            for cm in cache_m_paths:
+                if os.path.exists(cm):
+                    try:
+                        df_all_m = pd.read_parquet(cm)
+                        break
+                    except Exception:
+                        pass
+
         return {'weekly': df_all_w, 'monthly': df_all_m}
 
     def load_kpi_chart_data(self, sheet_name: str) -> pd.DataFrame:
