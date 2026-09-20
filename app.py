@@ -27,7 +27,7 @@ from data_entry import (
     AUTHORIZED_VIEWER_EMAIL
 )
 from i18n import (
-    get_lang, set_lang, is_en, t, translate_eval, strip_accents, format_person_name,
+    get_lang, set_lang, apply_language_change, is_en, t, translate_eval, strip_accents, format_person_name,
     translate_comparison_df, translate_wm_weekly, translate_wm_monthly, translate_shift_leader_kpis,
     get_op_tasks, get_static_tasks, get_entry_tasks, get_all_tasks,
     map_task_name, get_time_modes, map_time_mode,
@@ -450,29 +450,8 @@ with st.sidebar:
     def on_lang_change():
         chosen_val = st.session_state.get('lang_radio_select', '')
         new_lang = 'en' if 'English' in chosen_val else 'vi'
-        old_lang = get_lang()
-        if new_lang != old_lang:
-            set_lang(new_lang)
-            if 'active_task' in st.session_state:
-                st.session_state['active_task'] = map_task_name(st.session_state['active_task'], new_lang)
-            if 'main_task_dropdown' in st.session_state:
-                st.session_state['main_task_dropdown'] = map_task_name(st.session_state['main_task_dropdown'], new_lang)
-            if 'main_view_mode_radio' in st.session_state:
-                st.session_state['main_view_mode_radio'] = map_time_mode(st.session_state['main_view_mode_radio'], new_lang)
-            if 'top_view_mode' in st.session_state:
-                st.session_state['top_view_mode'] = map_time_mode(st.session_state['top_view_mode'], new_lang)
-            if 'main_db_view_radio' in st.session_state:
-                st.session_state['main_db_view_radio'] = map_dashboard_choice(st.session_state['main_db_view_radio'], new_lang)
-            if 'main_db_view_choice' in st.session_state:
-                st.session_state['main_db_view_choice'] = map_dashboard_choice(st.session_state['main_db_view_choice'], new_lang)
-            if 'leader_kpi_time_view_segmented' in st.session_state:
-                cur_k = st.session_state['leader_kpi_time_view_segmented']
-                if 'tuần' in str(cur_k).lower() or 'week' in str(cur_k).lower():
-                    st.session_state['leader_kpi_time_view_segmented'] = "📅 Weekly" if new_lang == 'en' else "📅 Theo Tuần"
-                elif 'tháng' in str(cur_k).lower() or 'month' in str(cur_k).lower():
-                    st.session_state['leader_kpi_time_view_segmented'] = "📆 Monthly" if new_lang == 'en' else "📆 Theo Tháng"
-                else:
-                    st.session_state['leader_kpi_time_view_segmented'] = "☀️ Daily" if new_lang == 'en' else "☀️ Theo Ngày"
+        if new_lang != get_lang():
+            apply_language_change(new_lang)
 
     st.radio(
         "🌐 Ngôn ngữ / Language:",
@@ -653,6 +632,28 @@ with st.sidebar:
 
 
 # ================= HEADER & BỘ LỌC THỜI GIAN ĐẦU TRANG =================
+# 🌐 THANH CHUYỂN ĐỔI NGÔN NGỮ ĐẦU TRANG (HIỂN THỊ TRỰC DIỆN TRÊN IPHONE & MOBILE KHÔNG CẦN MỞ SIDEBAR)
+top_badge_col, top_lang_col = st.columns([6, 4])
+with top_badge_col:
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; gap: 8px; padding-top: 6px; margin-bottom: 2px;">
+        <span style="background: linear-gradient(135deg, #16a34a, #15803d); color: white; padding: 3px 10px; border-radius: 6px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;">BVN QUẢNG BÌNH</span>
+        <span style="font-size: 12px; font-weight: 700; color: #64748b;">{t("DÂY CHUYỀN VIÊN NÉN GỖ XUẤT KHẨU", "WOOD PELLET EXPORT PRODUCTION LINE")}</span>
+    </div>
+    """, unsafe_allow_html=True)
+with top_lang_col:
+    btn_vi_col, btn_en_col = st.columns(2)
+    with btn_vi_col:
+        if st.button("🇻🇳 Tiếng Việt", type="primary" if curr_lang == 'vi' else "secondary", use_container_width=True, key="btn_top_lang_vi"):
+            if curr_lang != 'vi':
+                apply_language_change('vi')
+                st.rerun()
+    with btn_en_col:
+        if st.button("🇬🇧 English", type="primary" if curr_lang == 'en' else "secondary", use_container_width=True, key="btn_top_lang_en"):
+            if curr_lang != 'en':
+                apply_language_change('en')
+                st.rerun()
+
 st.title(t("🏭 PRODUCTION | BÁO CÁO SẢN XUẤT BVN QUẢNG BÌNH", "🏭 PRODUCTION | BVN QUANG BINH WOOD PELLET PRODUCTION REPORT"))
 
 # Xác định ngày có dữ liệu gần nhất và danh sách các ngày

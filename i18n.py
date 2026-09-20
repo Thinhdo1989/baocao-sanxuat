@@ -72,19 +72,19 @@ TIME_MODES_EN = [
 ]
 
 DASHBOARD_CHOICES_VI = [
-    "Tất Cả (1 Dashboard Tổng + 3 Dashboard Ca Trưởng Long, Sắc, Tài)",
+    "Tất Cả (1 Dashboard Tổng + 3 Dashboard Ca Trưởng)",
     "Chỉ Dashboard Tổng Thể",
-    "Dashboard Ca Trưởng Long",
-    "Dashboard Ca Trưởng Sắc",
-    "Dashboard Ca Trưởng Tài"
+    "Dashboard Ca Trưởng Long (Ca A)",
+    "Dashboard Ca Trưởng Sắc (Ca B)",
+    "Dashboard Ca Trưởng Tài (Ca C)"
 ]
 
 DASHBOARD_CHOICES_EN = [
-    "All (1 Plant Overview + 3 Shift Dashboards: Long, Sac, Tai)",
+    "All (1 Plant Overview + 3 Shift Dashboards)",
     "Plant Overview Only",
-    "Shift Leader Long Dashboard",
-    "Shift Leader Sac Dashboard",
-    "Shift Leader Tai Dashboard"
+    "Shift Leader Long (Shift A) Dashboard",
+    "Shift Leader Sac (Shift B) Dashboard",
+    "Shift Leader Tai (Shift C) Dashboard"
 ]
 
 # Từ điển ánh xạ đánh giá kỹ thuật & trạng thái
@@ -127,14 +127,84 @@ EVAL_DICT = {
 
 
 def get_lang() -> str:
-    """Lấy mã ngôn ngữ hiện tại ('vi' hoặc 'en') từ st.session_state"""
-    return st.session_state.get(APP_LANG_KEY, 'vi')
+    """
+    Lấy mã ngôn ngữ hiện tại ('vi' hoặc 'en').
+    Ưu tiên:
+    1. st.session_state[APP_LANG_KEY]
+    2. URL query parameters: ?lang=en hoặc ?locale=en (đặc biệt quan trọng trên iPhone/Safari/PWA)
+    3. Mặc định 'vi'
+    """
+    if APP_LANG_KEY in st.session_state:
+        return st.session_state[APP_LANG_KEY]
+
+    # Kiểm tra URL query parameter nếu có
+    try:
+        qp = st.query_params
+        lang_param = qp.get('lang') or qp.get('locale')
+        if lang_param:
+            l_str = str(lang_param).lower().strip()
+            if l_str in ('en', 'vi'):
+                st.session_state[APP_LANG_KEY] = l_str
+                return l_str
+    except Exception:
+        pass
+
+    return 'vi'
 
 
 def set_lang(lang: str):
-    """Đặt mã ngôn ngữ hiện tại"""
+    """
+    Đặt mã ngôn ngữ hiện tại ('vi' hoặc 'en') vào st.session_state 
+    và đồng bộ vào URL query parameters (?lang=...) 
+    để trên iPhone không bị mất phiên khi tải lại trang hoặc mở lại từ màn hình chính.
+    """
     if lang in ('vi', 'en'):
         st.session_state[APP_LANG_KEY] = lang
+        try:
+            st.query_params['lang'] = lang
+        except Exception:
+            pass
+
+
+def apply_language_change(new_lang: str):
+    """
+    Chuyển đổi và đồng bộ toàn diện trạng thái ứng dụng khi đổi ngôn ngữ ('vi' <-> 'en').
+    Cập nhật st.session_state, URL query params, và dịch chuyển các widget điều hướng.
+    """
+    if new_lang not in ('vi', 'en'):
+        return
+    set_lang(new_lang)
+
+    # Đồng bộ widget radio trong sidebar
+    st.session_state['lang_radio_select'] = "🇬🇧 English" if new_lang == 'en' else "🇻🇳 Tiếng Việt"
+
+    # Đồng bộ tên tác vụ hiện tại sang ngôn ngữ mới
+    if 'active_task' in st.session_state:
+        st.session_state['active_task'] = map_task_name(st.session_state['active_task'], new_lang)
+    if 'main_task_dropdown' in st.session_state:
+        st.session_state['main_task_dropdown'] = map_task_name(st.session_state['main_task_dropdown'], new_lang)
+
+    # Đồng bộ chế độ xem thời gian
+    if 'main_view_mode_radio' in st.session_state:
+        st.session_state['main_view_mode_radio'] = map_time_mode(st.session_state['main_view_mode_radio'], new_lang)
+    if 'top_view_mode' in st.session_state:
+        st.session_state['top_view_mode'] = map_time_mode(st.session_state['top_view_mode'], new_lang)
+
+    # Đồng bộ lựa chọn Dashboard
+    if 'main_db_view_radio' in st.session_state:
+        st.session_state['main_db_view_radio'] = map_dashboard_choice(st.session_state['main_db_view_radio'], new_lang)
+    if 'main_db_view_choice' in st.session_state:
+        st.session_state['main_db_view_choice'] = map_dashboard_choice(st.session_state['main_db_view_choice'], new_lang)
+
+    # Đồng bộ chế độ xem thi đua ca trưởng
+    if 'leader_kpi_time_view_segmented' in st.session_state:
+        cur_k = st.session_state['leader_kpi_time_view_segmented']
+        if 'tuần' in str(cur_k).lower() or 'week' in str(cur_k).lower():
+            st.session_state['leader_kpi_time_view_segmented'] = "📅 Weekly" if new_lang == 'en' else "📅 Theo Tuần"
+        elif 'tháng' in str(cur_k).lower() or 'month' in str(cur_k).lower():
+            st.session_state['leader_kpi_time_view_segmented'] = "📆 Monthly" if new_lang == 'en' else "📆 Theo Tháng"
+        else:
+            st.session_state['leader_kpi_time_view_segmented'] = "☀️ Daily" if new_lang == 'en' else "☀️ Theo Ngày"
 
 
 def is_en() -> bool:
@@ -232,11 +302,11 @@ def map_dashboard_choice(choice_str: str, target_lang: Optional[str] = None) -> 
         return target_choices[0]
     if 'chỉ dashboard tổng' in choice_str_low or 'overview only' in choice_str_low:
         return target_choices[1]
-    if 'long' in choice_str_low:
+    if 'long' in choice_str_low or 'ca a' in choice_str_low or 'shift a' in choice_str_low:
         return target_choices[2]
-    if 'sắc' in choice_str_low or 'sac' in choice_str_low:
+    if 'sắc' in choice_str_low or 'sac' in choice_str_low or 'ca b' in choice_str_low or 'shift b' in choice_str_low:
         return target_choices[3]
-    if 'tài' in choice_str_low or 'tai' in choice_str_low:
+    if 'tài' in choice_str_low or 'tai' in choice_str_low or 'ca c' in choice_str_low or 'shift c' in choice_str_low:
         return target_choices[4]
     return target_choices[0]
 
@@ -279,9 +349,12 @@ def translate_comparison_df(df: Any) -> Any:
     col_map = {
         'Chỉ Số Đo Lường': 'Metric',
         '🏭 Toàn Nhà Máy': '🏭 Plant-Wide',
-        '🔵 Ca Long': '🔵 Shift Long',
-        '🟢 Ca Sắc': '🟢 Shift Sac',
-        '🟠 Ca Tài': '🟠 Shift Tai',
+        '🔵 Ca Long': '🔵 Shift Long (A)',
+        '🟢 Ca Sắc': '🟢 Shift Sac (B)',
+        '🟠 Ca Tài': '🟠 Shift Tai (C)',
+        '🔵 Ca A': '🔵 Shift A',
+        '🟢 Ca B': '🟢 Shift B',
+        '🟠 Ca C': '🟠 Shift C',
         'Định Mức Kỹ Thuật': 'Technical Standard'
     }
     df_res.rename(columns=col_map, inplace=True)
@@ -310,7 +383,7 @@ def translate_comparison_df(df: Any) -> Any:
     if 'Technical Standard' in df_res.columns:
         df_res['Technical Standard'] = df_res['Technical Standard'].replace(std_map)
 
-    for col in ['🔵 Shift Long', '🟢 Shift Sac', '🟠 Shift Tai']:
+    for col in ['🔵 Shift Long (A)', '🟢 Shift Sac (B)', '🟠 Shift Tai (C)', '🔵 Shift Long', '🟢 Shift Sac', '🟠 Shift Tai', '🔵 Shift A', '🟢 Shift B', '🟠 Shift C']:
         if col in df_res.columns:
             df_res[col] = df_res[col].astype(str).str.replace('(tháng)', '(month)', regex=False)
             df_res[col] = df_res[col].str.replace('(Lk:', '(Acc:', regex=False)
@@ -336,7 +409,10 @@ def translate_wm_weekly(df: Any) -> Any:
         'week_label': 'Week Label',
         'Long': 'Long',
         'Sắc': 'Sac',
-        'Tài': 'Tai'
+        'Tài': 'Tai',
+        'Ca A': 'Shift A',
+        'Ca B': 'Shift B',
+        'Ca C': 'Shift C'
     }
     df_res.rename(columns=col_map, inplace=True)
     if 'Week Label' in df_res.columns:
@@ -353,7 +429,10 @@ def translate_wm_monthly(df: Any) -> Any:
         'month_label': 'Month',
         'Long': 'Long',
         'Sắc': 'Sac',
-        'Tài': 'Tai'
+        'Tài': 'Tai',
+        'Ca A': 'Shift A',
+        'Ca B': 'Shift B',
+        'Ca C': 'Shift C'
     }
     df_res.rename(columns=col_map, inplace=True)
     if 'Month' in df_res.columns:
