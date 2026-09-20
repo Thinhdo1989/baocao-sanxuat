@@ -490,7 +490,10 @@ def get_kpi_leaderboard(
             week_row = match_w.iloc[0]
             prev_week_row = df_wm_weekly.iloc[week_idx - 1] if week_idx > 0 else None
             w_label = week_row['week_label']
-            leaders = ['Long', 'Sắc', 'Tài']
+            if any(c in week_row.index for c in ['Ca A', 'Ca B', 'Ca C']):
+                leaders = [c for c in ['Ca A', 'Ca B', 'Ca C'] if c in week_row.index]
+            else:
+                leaders = ['Long', 'Sắc', 'Tài']
             scores = []
             for name in leaders:
                 val = week_row.get(name)
@@ -523,7 +526,10 @@ def get_kpi_leaderboard(
         week_row = df_wm_weekly.iloc[-1]
         prev_week_row = df_wm_weekly.iloc[week_idx - 1] if week_idx > 0 else None
         w_label = week_row['week_label']
-        leaders = ['Long', 'Sắc', 'Tài']
+        if any(c in week_row.index for c in ['Ca A', 'Ca B', 'Ca C']):
+            leaders = [c for c in ['Ca A', 'Ca B', 'Ca C'] if c in week_row.index]
+        else:
+            leaders = ['Long', 'Sắc', 'Tài']
         scores = []
         for name in leaders:
             val = week_row.get(name)
@@ -555,7 +561,10 @@ def get_kpi_leaderboard(
             month_row = match_m.iloc[0]
             prev_month_row = df_wm_monthly.iloc[month_idx - 1] if month_idx > 0 else None
             m_label = month_row['month_label']
-            leaders = ['Long', 'Sắc', 'Tài']
+            if any(c in month_row.index for c in ['Ca A', 'Ca B', 'Ca C']):
+                leaders = [c for c in ['Ca A', 'Ca B', 'Ca C'] if c in month_row.index]
+            else:
+                leaders = ['Long', 'Sắc', 'Tài']
             scores = []
             for name in leaders:
                 val = month_row.get(name)
@@ -588,7 +597,10 @@ def get_kpi_leaderboard(
         month_row = df_wm_monthly.iloc[-1]
         prev_month_row = df_wm_monthly.iloc[month_idx - 1] if month_idx > 0 else None
         m_label = month_row['month_label']
-        leaders = ['Long', 'Sắc', 'Tài']
+        if any(c in month_row.index for c in ['Ca A', 'Ca B', 'Ca C']):
+            leaders = [c for c in ['Ca A', 'Ca B', 'Ca C'] if c in month_row.index]
+        else:
+            leaders = ['Long', 'Sắc', 'Tài']
         scores = []
         for name in leaders:
             val = month_row.get(name)

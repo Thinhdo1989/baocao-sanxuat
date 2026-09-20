@@ -2499,14 +2499,24 @@ elif task_num == 2:
             max_w_label = df_wm_weekly['week_label'].iloc[-1] if not df_wm_weekly.empty else "Tuần 38"
             st.markdown(f"#### 📈 {t('Diễn Biến Tổng Điểm KPI Ca Trưởng Qua Các Tuần', 'Shift Leader KPI Trend Across Weeks')} ({min_w_label} - {max_w_label})")
             fig_trend_w = go.Figure()
-            colors_l = {'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
-            for name in ['Long', 'Sắc', 'Tài']:
+            colors_l = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            display_ca_map = {
+                'Ca A': 'Ca A (Thành, Hải)',
+                'Ca B': 'Ca B (Lâm, Sắc)',
+                'Ca C': 'Ca C (Long, Tài)',
+                'Long': 'Ca Long (Ca C)',
+                'Sắc': 'Ca Sắc (Ca B)',
+                'Tài': 'Ca Tài (Ca C)'
+            }
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_weekly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            for name in target_cas:
                 if name in df_wm_weekly.columns:
+                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
                     fig_trend_w.add_trace(go.Scatter(
                         x=df_wm_weekly['week_label'],
                         y=df_wm_weekly[name],
                         mode='lines+markers+text',
-                        name=f'{t("Ca", "Shift")} {format_person_name(name)}',
+                        name=lbl,
                         text=[f"{v:.1f}" if pd.notna(v) else "" for v in df_wm_weekly[name]],
                         textposition="top center",
                         line=dict(color=colors_l.get(name, '#64748b'), width=2.5)
@@ -2567,13 +2577,23 @@ elif task_num == 2:
             all_m_labels = " vs ".join(df_wm_monthly['month_label'].tolist()) if not df_wm_monthly.empty else "Tháng 8 vs Tháng 9"
             st.markdown(f"#### 📈 {t('So Sánh Tổng Điểm KPI Qua Các Tháng', 'KPI Score Comparison Across Months')} ({all_m_labels})")
             fig_trend_m = go.Figure()
-            colors_l = {'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
-            for name in ['Long', 'Sắc', 'Tài']:
+            colors_l = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            display_ca_map = {
+                'Ca A': 'Ca A (Thành, Hải)',
+                'Ca B': 'Ca B (Lâm, Sắc)',
+                'Ca C': 'Ca C (Long, Tài)',
+                'Long': 'Ca Long (Ca C)',
+                'Sắc': 'Ca Sắc (Ca B)',
+                'Tài': 'Ca Tài (Ca C)'
+            }
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_monthly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            for name in target_cas:
                 if name in df_wm_monthly.columns:
+                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
                     fig_trend_m.add_trace(go.Bar(
                         x=df_wm_monthly['month_label'],
                         y=df_wm_monthly[name],
-                        name=f'{t("Ca", "Shift")} {format_person_name(name)}',
+                        name=lbl,
                         text=[f"{v:.2f} {t('đ', 'pts')}" if pd.notna(v) else "" for v in df_wm_monthly[name]],
                         textposition="outside",
                         marker_color=colors_l.get(name, '#64748b')
@@ -2662,18 +2682,28 @@ elif task_num == 2:
     with tab_c1:
         if not df_chart_dien.empty:
             fig_cd = go.Figure()
-            colors = {'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
-            for name in ['Long', 'Sắc', 'Tài']:
+            colors = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            display_ca_map = {
+                'Ca A': 'Ca A (Thành, Hải)',
+                'Ca B': 'Ca B (Lâm, Sắc)',
+                'Ca C': 'Ca C (Long, Tài)',
+                'Long': 'Ca Long (Ca C)',
+                'Sắc': 'Ca Sắc (Ca B)',
+                'Tài': 'Ca Tài (Ca C)'
+            }
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_dien.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            for name in target_cas:
                 if name in df_chart_dien.columns:
+                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
                     fig_cd.add_trace(go.Scatter(
                         x=df_chart_dien['date_str'], y=df_chart_dien[name],
-                        mode='lines+markers', name=f'{t("Ca", "Shift")} {format_person_name(name)}',
-                        line=dict(color=colors[name], width=2)
+                        mode='lines+markers', name=lbl,
+                        line=dict(color=colors.get(name, '#64748b'), width=2)
                     ))
-            # Đường line chuẩn 172
-            fig_cd.add_hline(y=172, line_dash="dash", line_color="red", annotation_text=t("Định mức 172 kWh/tấn", "Standard 172 kWh/ton"), annotation_position="top right")
+            # Đường line chuẩn 175 kWh/tấn (theo Danh mục mới)
+            fig_cd.add_hline(y=175, line_dash="dash", line_color="red", annotation_text=t("Định mức 175 kWh/tấn", "Standard 175 kWh/ton"), annotation_position="top right")
             fig_cd.update_layout(
-                title=t("Suất Tiêu Hao Điện Năng (kWh/tấn) Của Long vs Sắc vs Tài (So Với Chuẩn 172)", "Specific Power Consumption (kWh/ton) - Long vs Sac vs Tai (vs Std 172)"),
+                title=t("Suất Tiêu Hao Điện Năng (kWh/tấn) Theo Ca (So Với Chuẩn 175)", "Specific Power Consumption (kWh/ton) by Shift (vs Std 175)"),
                 xaxis_title=t("Ngày", "Date"), yaxis_title=t("kWh/tấn", "kWh/ton"), height=380, hovermode="x unified"
             )
             st.plotly_chart(fig_cd, use_container_width=True)
@@ -2683,17 +2713,27 @@ elif task_num == 2:
     with tab_c2:
         if not df_chart_cap.empty:
             fig_cc = go.Figure()
-            colors = {'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
-            for name in ['Long', 'Sắc', 'Tài']:
+            colors = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            display_ca_map = {
+                'Ca A': 'Ca A (Thành, Hải)',
+                'Ca B': 'Ca B (Lâm, Sắc)',
+                'Ca C': 'Ca C (Long, Tài)',
+                'Long': 'Ca Long (Ca C)',
+                'Sắc': 'Ca Sắc (Ca B)',
+                'Tài': 'Ca Tài (Ca C)'
+            }
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_cap.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            for name in target_cas:
                 if name in df_chart_cap.columns:
+                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
                     fig_cc.add_trace(go.Scatter(
                         x=df_chart_cap['date_str'], y=df_chart_cap[name],
-                        mode='lines+markers', name=f'{t("Ca", "Shift")} {format_person_name(name)}',
-                        line=dict(color=colors[name], width=2)
+                        mode='lines+markers', name=lbl,
+                        line=dict(color=colors.get(name, '#64748b'), width=2)
                     ))
             fig_cc.add_hline(y=4.0, line_dash="dash", line_color="green", annotation_text=t("Chỉ tiêu ≥ 4.0 tấn/h", "Target ≥ 4.0 tons/h"), annotation_position="top left")
             fig_cc.update_layout(
-                title=t("Năng Suất Ép Trung Bình (tấn/h) Của Long vs Sắc vs Tài (So Với Chỉ Tiêu 4.0)", "Average Press Productivity (t/h) - Long vs Sac vs Tai (vs Target 4.0)"),
+                title=t("Năng Suất Ép Trung Bình (tấn/h) Theo Ca (So Với Chỉ Tiêu 4.0)", "Average Press Productivity (t/h) by Shift (vs Target 4.0)"),
                 xaxis_title=t("Ngày", "Date"), yaxis_title=t("Tấn/giờ", "Tons/hour"), height=380, hovermode="x unified"
             )
             st.plotly_chart(fig_cc, use_container_width=True)
@@ -2703,17 +2743,27 @@ elif task_num == 2:
     with tab_c3:
         if not df_chart_moist.empty:
             fig_cm = go.Figure()
-            colors = {'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
-            for name in ['Long', 'Sắc', 'Tài']:
+            colors = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            display_ca_map = {
+                'Ca A': 'Ca A (Thành, Hải)',
+                'Ca B': 'Ca B (Lâm, Sắc)',
+                'Ca C': 'Ca C (Long, Tài)',
+                'Long': 'Ca Long (Ca C)',
+                'Sắc': 'Ca Sắc (Ca B)',
+                'Tài': 'Ca Tài (Ca C)'
+            }
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_moist.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            for name in target_cas:
                 if name in df_chart_moist.columns:
+                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
                     fig_cm.add_trace(go.Scatter(
                         x=df_chart_moist['date_str'], y=df_chart_moist[name],
-                        mode='lines+markers', name=f'{t("Ca", "Shift")} {format_person_name(name)}',
-                        line=dict(color=colors[name], width=2)
+                        mode='lines+markers', name=lbl,
+                        line=dict(color=colors.get(name, '#64748b'), width=2)
                     ))
             fig_cm.add_hline(y=9.0, line_dash="dash", line_color="red", annotation_text=t("Tiêu chuẩn 9.0%", "Standard 9.0%"), annotation_position="top right")
             fig_cm.update_layout(
-                title=t("Độ Ẩm Trung Bình (%) Của Long vs Sắc vs Tài (Sheet Chart Moisture)", "Average Moisture (%) - Long vs Sac vs Tai (Sheet Chart Moisture)"),
+                title=t("Độ Ẩm Trung Bình (%) Theo Ca (Dữ Liệu Đo Kiểm Data KCS)", "Average Moisture (%) by Shift (Data KCS)"),
                 xaxis_title=t("Ngày", "Date"), yaxis_title="%", height=380, hovermode="x unified"
             )
             st.plotly_chart(fig_cm, use_container_width=True)
@@ -2723,25 +2773,34 @@ elif task_num == 2:
     with tab_c4:
         if not df_chart_sl.empty:
             fig_csl = go.Figure()
-            colors_actual = {'Long': '#2563eb', 'Sac': '#16a34a', 'Tai': '#ea580c'}
-            colors_target = {'Long': '#93c5fd', 'Sac': '#86efac', 'Tai': '#fdba74'}
-            for code, name in [('Long', 'Long'), ('Sac', 'Sắc'), ('Tai', 'Tài')]:
+            colors_actual = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sac': '#16a34a', 'Tai': '#ea580c'}
+            colors_target = {'Ca A': '#93c5fd', 'Ca B': '#86efac', 'Ca C': '#fdba74', 'Long': '#93c5fd', 'Sac': '#86efac', 'Tai': '#fdba74'}
+            pairs = [
+                ('Ca A', 'Ca A (Thành, Hải)'),
+                ('Ca B', 'Ca B (Lâm, Sắc)'),
+                ('Ca C', 'Ca C (Long, Tài)')
+            ] if any(f'{c}_actual' in df_chart_sl.columns for c in ['Ca A', 'Ca B', 'Ca C']) else [
+                ('Long', 'Ca Long'),
+                ('Sac', 'Ca Sắc'),
+                ('Tai', 'Ca Tài')
+            ]
+            for code, name in pairs:
                 act_col = f'{code}_actual'
                 tgt_col = f'{code}_target'
                 if act_col in df_chart_sl.columns:
                     fig_csl.add_trace(go.Bar(
                         x=df_chart_sl['date_str'], y=df_chart_sl[act_col],
-                        name=f"{t('SL Thực Tế', 'Actual')} - {t('Ca', 'Shift')} {format_person_name(name)}",
-                        marker_color=colors_actual[code]
+                        name=f"{t('SL Thực Tế', 'Actual')} - {name}",
+                        marker_color=colors_actual.get(code, '#2563eb')
                     ))
                 if tgt_col in df_chart_sl.columns:
                     fig_csl.add_trace(go.Scatter(
                         x=df_chart_sl['date_str'], y=df_chart_sl[tgt_col],
-                        mode='lines', name=f"{t('Chỉ Tiêu', 'Target')} - {t('Ca', 'Shift')} {format_person_name(name)}",
-                        line=dict(color=colors_target[code], dash='dot', width=2)
+                        mode='lines', name=f"{t('Chỉ Tiêu', 'Target')} - {name}",
+                        line=dict(color=colors_target.get(code, '#93c5fd'), dash='dot', width=2)
                     ))
             fig_csl.update_layout(
-                title=t("Sản Lượng Thực Tế vs Chỉ Tiêu Từng Ca (Từ Sheet Chart SL)", "Actual Output vs Target by Shift (From Sheet Chart SL)"),
+                title=t("Sản Lượng Thực Tế vs Chỉ Tiêu Từng Ca (Từ Data KPI)", "Actual Output vs Target by Shift (From Data KPI)"),
                 xaxis_title=t("Ngày", "Date"), yaxis_title=t("Tấn", "Tons"), height=380, hovermode="x unified",
                 barmode='group'
             )

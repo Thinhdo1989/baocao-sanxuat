@@ -552,49 +552,174 @@ class DataLoader:
 
         return pd.DataFrame(records)
 
+    @staticmethod
+    def compute_kcs_average_moisture(df_kcs: pd.DataFrame, target_date: Any, shift_name: str) -> float:
+        """
+        Mô phỏng chính xác công thức Google Sheets:
+        =IFERROR(AVERAGEIFS('Data KCS'!$N:$N; 'Data KCS'!$B:$B; A2; 'Data KCS'!$F:$F; D2); "")
+        Trong đó:
+        - 'Data KCS'!$N:$N: am_vien_pct (Cột 14 / index 13)
+        - 'Data KCS'!$B:$B: date (Cột 2 / index 1)
+        - 'Data KCS'!$F:$F: shift_leader / Trưởng ca (Cột 6 / index 5)
+        """
+        if df_kcs is None or df_kcs.empty or 'am_vien_pct' not in df_kcs.columns:
+            return 0.0
+        
+        try:
+            t_date = pd.to_datetime(target_date).date() if target_date else None
+        except Exception:
+            t_date = None
+        if not t_date:
+            return 0.0
+
+        mask_date = df_kcs['date'].dt.date == t_date
+        s_clean = str(shift_name).strip().lower()
+        
+        # Ánh xạ ca tương đương nếu có
+        shift_aliases = {
+            'ca a': ['ca a', 'thành', 'thanh', 'hải', 'hai'],
+            'ca b': ['ca b', 'lâm', 'lam', 'sắc', 'sac'],
+            'ca c': ['ca c', 'long', 'tài', 'tai']
+        }
+        target_keys = [s_clean]
+        for k, aliases in shift_aliases.items():
+            if s_clean == k or s_clean in aliases:
+                target_keys = list(set(target_keys + [k] + aliases))
+                break
+
+        mask_shift = df_kcs['shift_leader'].astype(str).str.strip().str.lower().isin(target_keys)
+        filtered = df_kcs[mask_date & mask_shift]
+        
+        if filtered.empty:
+            # Tìm kiếm chứa chuỗi
+            mask_like = df_kcs['shift_leader'].astype(str).str.contains(s_clean, case=False, na=False)
+            filtered = df_kcs[mask_date & mask_like]
+
+        valid_vals = filtered[filtered['am_vien_pct'] > 0]['am_vien_pct']
+        if not valid_vals.empty:
+            return float(valid_vals.mean())
+        return 0.0
+
     def load_kcs_data(self) -> pd.DataFrame:
         """
-        Đọc và chuẩn hóa dữ liệu KCS (độ ẩm dăm, sau sấy, độ ẩm viên, độ tro).
+        Đọc và chuẩn hóa dữ liệu KCS (độ ẩm dăm, sau sấy, độ ẩm viên, tỷ trọng, độ tro).
+        Ưu tiên đọc từ sheet 'Data KCS' của file KPI (self.kpi_spreadsheet),
+        sau đó fallback sang sheet 'KCS' của file sản xuất (self.spreadsheet).
+        Tự động lưu và tải từ cache cục bộ (cache_kcs.parquet).
         """
-        rows = self.get_sheet_values('KCS')
-        if len(rows) < 4:
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_kcs.parquet"),
+            os.path.join("assets", "cache_kcs.parquet"),
+            os.path.join("deploy_files", "assets", "cache_kcs.parquet"),
+        ]
+
+        # 1. Ưu tiên đọc từ 'Data KCS' trong file KPI
+        rows = self.get_kpi_sheet_values('Data KCS')
+
+        # 2. Dự phòng đọc từ 'KCS' trong file sản xuất hoặc file KPI
+        if not rows or len(rows) < 2:
+            rows = self.get_sheet_values('KCS')
+        if not rows or len(rows) < 2:
+            rows = self.get_kpi_sheet_values('KCS')
+
+        # 3. Nếu không có kết nối mạng, đọc từ cache
+        if not rows or len(rows) < 2:
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        return pd.read_parquet(cp)
+                    except Exception:
+                        pass
             return pd.DataFrame()
 
         records = []
-        for r in rows[3:]:
-            if not r or not r[0].strip():
-                continue
-            date_dt = parse_vn_date(r[0])
-            if not date_dt:
+        for r in rows[1:]:
+            if not r or not any(str(c).strip() for c in r):
                 continue
 
-            record = {
-                'date': date_dt,
-                'date_str': date_dt.strftime('%d/%m/%Y'),
-                'week': clean_number(r[1]) if len(r) > 1 else 0,
-                'time_sample': r[2].strip() if len(r) > 2 else '',
-                'shift_leader': r[3].strip() if len(r) > 3 else '',
-                'tester': r[4].strip() if len(r) > 4 else '',
-                'ty_le_nl_dot': r[5].strip() if len(r) > 5 else '',
-                'ty_le_phoi_tron': r[6].strip() if len(r) > 6 else '',
-                'am_dam_pct': clean_number(r[7] if len(r) > 7 else 0),
-                'am_truoc_say_pct': clean_number(r[8] if len(r) > 8 else 0),
-                'am_sau_say_1_pct': clean_number(r[9] if len(r) > 9 else 0),
-                'am_sau_say_2_pct': clean_number(r[10] if len(r) > 10 else 0),
-                'am_vien_pct': clean_number(r[11] if len(r) > 11 else 0),
-                'density_dam': clean_number(r[12] if len(r) > 12 else 0),
-                'density_nghien_tho': clean_number(r[13] if len(r) > 13 else 0),
-                'density_nghien_tinh': clean_number(r[14] if len(r) > 14 else 0),
-                'density_vien': clean_number(r[15] if len(r) > 15 else 0),
-                'do_tro_pct': clean_number(r[21] if len(r) > 21 else 0),
-            }
-            # Chỉ lấy các dòng có ít nhất 1 giá trị độ ẩm hoặc độ tro
-            if any([record['am_dam_pct'], record['am_sau_say_1_pct'], record['am_sau_say_2_pct'], record['am_vien_pct'], record['do_tro_pct']]):
-                records.append(record)
+            # Xác định vị trí cột Ngày (Col 1 trong Data KCS mới hoặc Col 0 trong KCS cũ)
+            dt_candidate_1 = parse_vn_date(r[1]) if len(r) > 1 else None
+            dt_candidate_0 = parse_vn_date(r[0])
+
+            if dt_candidate_1:
+                date_dt = dt_candidate_1
+                sample_id = str(r[0]).strip()
+                # Cấu trúc Data KCS mới:
+                # 0: ID, 1: Ngày, 2: Tuần, 3: Tháng, 4: Giờ, 5: Trưởng ca, 6: Người đo
+                # 7: Tỷ lệ NL đốt, 8: Tỷ lệ phối trộn, 9: Ẩm dăm, 10: Ẩm trước sấy, 11: Ẩm sau sấy 1, 12: Ẩm sau sấy 2
+                # 13: Ẩm viên (Col N), 14: Tỷ trọng dăm, 15: Tỷ trọng nghiền thô, 16: Tỷ trọng nghiền tinh, 17: Tỷ trọng viên
+                # 18: Nhiệt độ sau làm nguội, 19: Lưới thô, 20: Lưới tinh, 21: Đường kính viên, 22: Chiều dài viên, 23: Độ tro viên
+                rec = {
+                    'id': sample_id,
+                    'date': date_dt,
+                    'date_str': date_dt.strftime('%d/%m/%Y'),
+                    'week': clean_number(r[2]) if len(r) > 2 else 0,
+                    'month': clean_number(r[3]) if len(r) > 3 else 0,
+                    'time_sample': str(r[4]).strip() if len(r) > 4 else '',
+                    'shift_leader': str(r[5]).strip() if len(r) > 5 else '',
+                    'tester': str(r[6]).strip() if len(r) > 6 else '',
+                    'ty_le_nl_dot': str(r[7]).strip() if len(r) > 7 else '',
+                    'ty_le_phoi_tron': str(r[8]).strip() if len(r) > 8 else '',
+                    'am_dam_pct': clean_number(r[9] if len(r) > 9 else 0),
+                    'am_truoc_say_pct': clean_number(r[10] if len(r) > 10 else 0),
+                    'am_sau_say_1_pct': clean_number(r[11] if len(r) > 11 else 0),
+                    'am_sau_say_2_pct': clean_number(r[12] if len(r) > 12 else 0),
+                    'am_vien_pct': clean_number(r[13] if len(r) > 13 else 0),
+                    'density_dam': clean_number(r[14] if len(r) > 14 else 0),
+                    'density_nghien_tho': clean_number(r[15] if len(r) > 15 else 0),
+                    'density_nghien_tinh': clean_number(r[16] if len(r) > 16 else 0),
+                    'density_vien': clean_number(r[17] if len(r) > 17 else 0),
+                    'temp_cooling': clean_number(r[18] if len(r) > 18 else 0),
+                    'luoi_nghien_tho': str(r[19]).strip() if len(r) > 19 else '',
+                    'luoi_nghien_tinh': str(r[20]).strip() if len(r) > 20 else '',
+                    'duong_kinh_vien': clean_number(r[21] if len(r) > 21 else 0),
+                    'chieu_dai_vien': str(r[22]).strip() if len(r) > 22 else '',
+                    'do_tro_pct': clean_number(r[23] if len(r) > 23 else 0),
+                }
+            elif dt_candidate_0:
+                date_dt = dt_candidate_0
+                rec = {
+                    'id': '',
+                    'date': date_dt,
+                    'date_str': date_dt.strftime('%d/%m/%Y'),
+                    'week': clean_number(r[1]) if len(r) > 1 else 0,
+                    'month': 0,
+                    'time_sample': str(r[2]).strip() if len(r) > 2 else '',
+                    'shift_leader': str(r[3]).strip() if len(r) > 3 else '',
+                    'tester': str(r[4]).strip() if len(r) > 4 else '',
+                    'ty_le_nl_dot': str(r[5]).strip() if len(r) > 5 else '',
+                    'ty_le_phoi_tron': str(r[6]).strip() if len(r) > 6 else '',
+                    'am_dam_pct': clean_number(r[7] if len(r) > 7 else 0),
+                    'am_truoc_say_pct': clean_number(r[8] if len(r) > 8 else 0),
+                    'am_sau_say_1_pct': clean_number(r[9] if len(r) > 9 else 0),
+                    'am_sau_say_2_pct': clean_number(r[10] if len(r) > 10 else 0),
+                    'am_vien_pct': clean_number(r[11] if len(r) > 11 else 0),
+                    'density_dam': clean_number(r[12] if len(r) > 12 else 0),
+                    'density_nghien_tho': clean_number(r[13] if len(r) > 13 else 0),
+                    'density_nghien_tinh': clean_number(r[14] if len(r) > 14 else 0),
+                    'density_vien': clean_number(r[15] if len(r) > 15 else 0),
+                    'temp_cooling': 0.0,
+                    'luoi_nghien_tho': '',
+                    'luoi_nghien_tinh': '',
+                    'duong_kinh_vien': 0.0,
+                    'chieu_dai_vien': '',
+                    'do_tro_pct': clean_number(r[21] if len(r) > 21 else 0),
+                }
+            else:
+                continue
+
+            if any([rec['am_dam_pct'], rec['am_sau_say_1_pct'], rec['am_sau_say_2_pct'], rec['am_vien_pct'], rec['do_tro_pct'], rec['density_vien']]):
+                records.append(rec)
 
         df = pd.DataFrame(records)
         if not df.empty:
             df = df.sort_values('date').reset_index(drop=True)
+            for cp in cache_paths:
+                try:
+                    os.makedirs(os.path.dirname(cp), exist_ok=True)
+                    df.to_parquet(cp, index=False)
+                except Exception:
+                    pass
         return df
 
     def load_diezen_data(self) -> pd.DataFrame:
@@ -640,6 +765,7 @@ class DataLoader:
     def load_wm_kpi_scores(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Đọc bảng điểm KPI theo tuần và theo tháng từ sheet 'W-M KPI' của file 2026 Nhat ky KPI.
+        Hỗ trợ các cột theo Ca A, Ca B, Ca C và ánh xạ tương thích với Long, Sắc, Tài.
         """
         cache_w_paths = [
             os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_wm_weekly.parquet"),
@@ -667,34 +793,48 @@ class DataLoader:
         monthly_records = []
 
         for r in rows[1:]:
-            # 1. Tuần: Col 0-3
-            if len(r) > 3 and r[0].strip() and r[0].strip().isdigit():
-                w_num = int(r[0].strip())
-                long_score = clean_number(r[1])
-                sac_score = clean_number(r[2])
-                tai_score = clean_number(r[3])
-                if any(s > 0 for s in [long_score, sac_score, tai_score]):
-                    weekly_records.append({
+            # 1. Tuần: Col 0-3 (Tuần, Ca A, Ca B, Ca C)
+            if len(r) > 3 and str(r[0]).strip() and str(r[0]).strip().isdigit():
+                w_num = int(str(r[0]).strip())
+                score_1 = clean_number(r[1])
+                score_2 = clean_number(r[2])
+                score_3 = clean_number(r[3])
+                if any(s > 0 for s in [score_1, score_2, score_3]):
+                    rec_w = {
                         'week': w_num,
                         'week_label': f"Tuần {w_num}",
-                        'Long': long_score if long_score > 0 else None,
-                        'Sắc': sac_score if sac_score > 0 else None,
-                        'Tài': tai_score if tai_score > 0 else None,
-                    })
+                        'Ca A': score_1 if score_1 > 0 else None,
+                        'Ca B': score_2 if score_2 > 0 else None,
+                        'Ca C': score_3 if score_3 > 0 else None,
+                        # Ánh xạ tương thích ngược
+                        'Long': score_3 if score_3 > 0 else None,
+                        'Sắc': score_2 if score_2 > 0 else None,
+                        'Tài': score_3 if score_3 > 0 else None,
+                        'Thành': score_1 if score_1 > 0 else None,
+                        'Lâm': score_2 if score_2 > 0 else None,
+                    }
+                    weekly_records.append(rec_w)
 
-            # 2. Tháng: Col 7-10
-            if len(r) > 10 and r[7].strip() and 'tháng' in r[7].strip().lower():
-                m_label = r[7].strip()
-                long_m = clean_number(r[8])
-                sac_m = clean_number(r[9])
-                tai_m = clean_number(r[10])
-                if any(s > 0 for s in [long_m, sac_m, tai_m]):
-                    monthly_records.append({
+            # 2. Tháng: Col 7-10 (Tháng, Ca A, Ca B, Ca C)
+            if len(r) > 10 and str(r[7]).strip() and 'tháng' in str(r[7]).strip().lower():
+                m_label = str(r[7]).strip()
+                m_score_1 = clean_number(r[8])
+                m_score_2 = clean_number(r[9])
+                m_score_3 = clean_number(r[10])
+                if any(s > 0 for s in [m_score_1, m_score_2, m_score_3]):
+                    rec_m = {
                         'month_label': m_label,
-                        'Long': long_m if long_m > 0 else None,
-                        'Sắc': sac_m if sac_m > 0 else None,
-                        'Tài': tai_m if tai_m > 0 else None,
-                    })
+                        'Ca A': m_score_1 if m_score_1 > 0 else None,
+                        'Ca B': m_score_2 if m_score_2 > 0 else None,
+                        'Ca C': m_score_3 if m_score_3 > 0 else None,
+                        # Ánh xạ tương thích ngược
+                        'Long': m_score_3 if m_score_3 > 0 else None,
+                        'Sắc': m_score_2 if m_score_2 > 0 else None,
+                        'Tài': m_score_3 if m_score_3 > 0 else None,
+                        'Thành': m_score_1 if m_score_1 > 0 else None,
+                        'Lâm': m_score_2 if m_score_2 > 0 else None,
+                    }
+                    monthly_records.append(rec_m)
 
         df_w = pd.DataFrame(weekly_records)
         df_m = pd.DataFrame(monthly_records)
@@ -719,7 +859,7 @@ class DataLoader:
 
     def load_leader_kpi_sheet(self, leader_name: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Đọc chi tiết các tiêu chí điểm KPI theo tuần và tháng của từng ca trưởng ('Long', 'Sắc', 'Tài').
+        Đọc chi tiết các tiêu chí điểm KPI theo tuần và tháng của từng ca ('Ca A', 'Ca B', 'Ca C' hoặc tên ca trưởng).
         Cấu trúc cột:
         Tuần: Col 0: Tuần, Col 1: Ca trưởng, Col 2: Số ca, Col 3: Chỉ tiêu SL, Col 4: SL Thực tế,
               Col 5: Điểm SL (/50), Col 6: Độ ẩm TB, Col 7: Điểm ẩm (/30), Col 8: Điện năng TB,
@@ -728,7 +868,17 @@ class DataLoader:
                Col 18: Điểm SL (/50), Col 19: Độ ẩm TB, Col 20: Điểm ẩm (/30), Col 21: Điện năng TB,
                Col 22: Năng suất TB, Col 23: Điểm năng suất (/20), Col 24: Điểm KPI (/100)
         """
-        rows = self.get_kpi_sheet_values(leader_name)
+        target_sheet = leader_name
+        alias_map = {
+            'Long': 'Ca C', 'Tài': 'Ca C', 'Ca C': 'Ca C',
+            'Sắc': 'Ca B', 'Lâm': 'Ca B', 'Ca B': 'Ca B',
+            'Thành': 'Ca A', 'Hải': 'Ca A', 'Ca A': 'Ca A'
+        }
+        rows = self.get_kpi_sheet_values(target_sheet)
+        if not rows and target_sheet in alias_map:
+            target_sheet = alias_map[target_sheet]
+            rows = self.get_kpi_sheet_values(target_sheet)
+
         if not rows or len(rows) < 2:
             return pd.DataFrame(), pd.DataFrame()
 
@@ -737,14 +887,14 @@ class DataLoader:
 
         for r in rows[1:]:
             # Phần Tuần: Col 0-11
-            if len(r) > 11 and r[0].strip() and r[0].strip().isdigit():
+            if len(r) > 11 and str(r[0]).strip() and str(r[0]).strip().isdigit():
                 kpi_score = clean_number(r[11])
                 sl_actual = clean_number(r[4])
                 if kpi_score > 0 or sl_actual > 0:
                     weekly_records.append({
-                        'week': int(r[0].strip()),
-                        'week_label': f"Tuần {r[0].strip()}",
-                        'ca_truong': leader_name,
+                        'week': int(str(r[0]).strip()),
+                        'week_label': f"Tuần {str(r[0]).strip()}",
+                        'ca_truong': target_sheet,
                         'so_ca': clean_number(r[2]),
                         'chi_tieu_sl': clean_number(r[3]),
                         'sl_thuc_te': sl_actual,
@@ -759,13 +909,13 @@ class DataLoader:
                     })
 
             # Phần Tháng: Col 13-24
-            if len(r) > 24 and r[13].strip() and 'tháng' in r[13].strip().lower():
+            if len(r) > 24 and str(r[13]).strip() and 'tháng' in str(r[13]).strip().lower():
                 kpi_m = clean_number(r[24])
                 sl_m = clean_number(r[17])
                 if kpi_m > 0 or sl_m > 0:
                     monthly_records.append({
-                        'month_label': r[13].strip(),
-                        'ca_truong': leader_name,
+                        'month_label': str(r[13]).strip(),
+                        'ca_truong': target_sheet,
                         'so_ca': clean_number(r[15]),
                         'chi_tieu_sl': clean_number(r[16]),
                         'sl_thuc_te': sl_m,
@@ -785,7 +935,7 @@ class DataLoader:
 
     def load_all_leaders_kpi(self) -> Dict[str, pd.DataFrame]:
         """
-        Tổng hợp chi tiết điểm KPI của cả 3 Ca Trưởng (Long, Sắc, Tài).
+        Tổng hợp chi tiết điểm KPI của cả 3 Ca (Ca A, Ca B, Ca C).
         """
         cache_w_paths = [
             os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_leaders_weekly.parquet"),
@@ -800,7 +950,8 @@ class DataLoader:
 
         all_weekly = []
         all_monthly = []
-        for name in ['Long', 'Sắc', 'Tài']:
+        target_names = ['Ca A', 'Ca B', 'Ca C']
+        for name in target_names:
             try:
                 df_w, df_m = self.load_leader_kpi_sheet(name)
                 if not df_w.empty:
@@ -809,6 +960,18 @@ class DataLoader:
                     all_monthly.append(df_m)
             except Exception as e:
                 print(f"[-] Lỗi đọc sheet KPI của {name}: {e}")
+
+        # Fallback tên cũ nếu không đọc được
+        if not all_weekly:
+            for name in ['Long', 'Sắc', 'Tài']:
+                try:
+                    df_w, df_m = self.load_leader_kpi_sheet(name)
+                    if not df_w.empty:
+                        all_weekly.append(df_w)
+                    if not df_m.empty:
+                        all_monthly.append(df_m)
+                except Exception:
+                    pass
 
         df_all_w = pd.concat(all_weekly, ignore_index=True) if all_weekly else pd.DataFrame()
         df_all_m = pd.concat(all_monthly, ignore_index=True) if all_monthly else pd.DataFrame()
@@ -851,36 +1014,85 @@ class DataLoader:
 
     def load_kpi_chart_data(self, sheet_name: str) -> pd.DataFrame:
         """
-        Đọc dữ liệu so sánh 3 ca trưởng theo ngày từ các sheet biểu đồ:
-        'Chart moisture', 'Chart dien', 'Chart capacity'
+        Đọc dữ liệu so sánh 3 ca theo ngày từ sheet 'chart capacity' hoặc tạo động từ 'Data KPI'.
+        Hỗ trợ: 'Chart moisture', 'Chart dien', 'Chart capacity'
         """
-        rows = self.get_kpi_sheet_values(sheet_name)
-        if not rows or len(rows) < 3:
+        s_lower = sheet_name.strip().lower()
+        if 'cap' in s_lower:
+            for s_try in ['chart capacity', 'Chart capacity', sheet_name]:
+                rows = self.get_kpi_sheet_values(s_try)
+                if rows and len(rows) >= 3:
+                    records = []
+                    for r in rows[2:]:
+                        if not r or not str(r[0]).strip():
+                            continue
+                        date_dt = parse_vn_date(r[0])
+                        if not date_dt:
+                            continue
+                        val_a = clean_number(r[1]) if len(r) > 1 and str(r[1]).strip() not in ['', '-'] else None
+                        val_b = clean_number(r[2]) if len(r) > 2 and str(r[2]).strip() not in ['', '-'] else None
+                        val_c = clean_number(r[3]) if len(r) > 3 and str(r[3]).strip() not in ['', '-'] else None
+                        item = {
+                            'date': date_dt,
+                            'date_str': date_dt.strftime('%d/%m/%Y'),
+                            'Ca A': val_a,
+                            'Ca B': val_b,
+                            'Ca C': val_c,
+                            'Long': val_c,
+                            'Sắc': val_b,
+                            'Tài': val_c,
+                        }
+                        if any(v is not None for v in [val_a, val_b, val_c]):
+                            records.append(item)
+                    if records:
+                        df = pd.DataFrame(records)
+                        return df.sort_values('date').reset_index(drop=True)
+
+        # 2. Tạo động từ Data KPI
+        df_shifts = self.load_kpi_daily_shifts()
+        if df_shifts.empty:
             return pd.DataFrame()
 
+        metric_col = 'nang_suat_tb'
+        tieu_chuan = 4.0
+        if 'moist' in s_lower or 'ẩm' in s_lower:
+            metric_col = 'do_am_tb'
+            tieu_chuan = 9.0
+        elif 'dien' in s_lower or 'điện' in s_lower:
+            metric_col = 'dien_tb'
+            tieu_chuan = 175.0
+
         records = []
-        for r in rows[2:]:
-            if not r or not r[0].strip():
-                continue
-            date_dt = parse_vn_date(r[0])
-            if not date_dt:
-                continue
-
+        for dt_val, group in df_shifts.groupby('date'):
             item = {
-                'date': date_dt,
-                'date_str': date_dt.strftime('%d/%m/%Y'),
-                'Long': clean_number(r[1]) if len(r) > 1 and r[1].strip() not in ['', '-'] else None,
-                'Sắc': clean_number(r[2]) if len(r) > 2 and r[2].strip() not in ['', '-'] else None,
-                'Tài': clean_number(r[3]) if len(r) > 3 and r[3].strip() not in ['', '-'] else None,
+                'date': dt_val,
+                'date_str': dt_val.strftime('%d/%m/%Y'),
+                'Ca A': None,
+                'Ca B': None,
+                'Ca C': None,
+                'Long': None,
+                'Sắc': None,
+                'Tài': None,
+                'Tieu_chuan': tieu_chuan
             }
-            if len(r) > 4 and r[4].strip() not in ['', '-']:
-                item['Trung_binh'] = clean_number(r[4])
-            if len(r) > 5 and r[5].strip() not in ['', '-']:
-                item['Tieu_chuan'] = clean_number(r[5])
-            elif len(r) > 4 and ('Line' in rows[1] or 'Tiêu chuẩn' in rows[1]):
-                item['Tieu_chuan'] = clean_number(r[4])
-
-            if any(item[k] is not None for k in ['Long', 'Sắc', 'Tài']):
+            vals = []
+            for _, row in group.iterrows():
+                ca = str(row.get('ca_truong', '')).strip()
+                val = float(row.get(metric_col, 0.0))
+                if val > 0:
+                    vals.append(val)
+                    if 'ca a' in ca.lower() or 'thành' in ca.lower():
+                        item['Ca A'] = val
+                    elif 'ca b' in ca.lower() or 'lâm' in ca.lower() or 'sắc' in ca.lower():
+                        item['Ca B'] = val
+                        item['Sắc'] = val
+                    elif 'ca c' in ca.lower() or 'long' in ca.lower() or 'tài' in ca.lower():
+                        item['Ca C'] = val
+                        item['Long'] = val
+                        item['Tài'] = val
+            if vals:
+                item['Trung_binh'] = round(sum(vals) / len(vals), 2)
+            if any(item[k] is not None for k in ['Ca A', 'Ca B', 'Ca C', 'Long', 'Sắc', 'Tài']):
                 records.append(item)
 
         df = pd.DataFrame(records)
@@ -890,30 +1102,46 @@ class DataLoader:
 
     def load_kpi_sl_chart_data(self) -> pd.DataFrame:
         """
-        Đọc dữ liệu so sánh sản lượng thực tế và chỉ tiêu của 3 ca trưởng theo ngày từ sheet 'Chart sl'.
+        Đọc/tạo dữ liệu so sánh sản lượng thực tế và chỉ tiêu của các ca theo ngày từ Data KPI.
         """
-        rows = self.get_kpi_sheet_values('Chart sl')
-        if not rows or len(rows) < 4:
+        df_shifts = self.load_kpi_daily_shifts()
+        if df_shifts.empty:
             return pd.DataFrame()
 
         records = []
-        for r in rows[3:]:
-            if not r or not r[0].strip():
-                continue
-            dt = parse_vn_date(r[0])
-            if not dt:
-                continue
+        for dt_val, group in df_shifts.groupby('date'):
             item = {
-                'date': dt,
-                'date_str': dt.strftime('%d/%m/%Y'),
-                'Long_target': clean_number(r[1]) if len(r) > 1 and r[1].strip() not in ['', '-'] else None,
-                'Long_actual': clean_number(r[2]) if len(r) > 2 and r[2].strip() not in ['', '-'] else None,
-                'Sac_target': clean_number(r[3]) if len(r) > 3 and r[3].strip() not in ['', '-'] else None,
-                'Sac_actual': clean_number(r[4]) if len(r) > 4 and r[4].strip() not in ['', '-'] else None,
-                'Tai_target': clean_number(r[5]) if len(r) > 5 and r[5].strip() not in ['', '-'] else None,
-                'Tai_actual': clean_number(r[6]) if len(r) > 6 and r[6].strip() not in ['', '-'] else None,
+                'date': dt_val,
+                'date_str': dt_val.strftime('%d/%m/%Y'),
+                'Ca A_actual': None, 'Ca A_target': None,
+                'Ca B_actual': None, 'Ca B_target': None,
+                'Ca C_actual': None, 'Ca C_target': None,
+                'Long_actual': None, 'Long_target': None,
+                'Sac_actual': None, 'Sac_target': None,
+                'Tai_actual': None, 'Tai_target': None,
             }
-            if any(item[k] is not None for k in ['Long_actual', 'Sac_actual', 'Tai_actual']):
+            for _, row in group.iterrows():
+                ca = str(row.get('ca_truong', '')).strip().lower()
+                act = float(row.get('sl_thuc_te', 0.0))
+                tgt = float(row.get('chi_tieu_sl', 0.0))
+                if act > 0 or tgt > 0:
+                    if 'ca a' in ca or 'thành' in ca:
+                        item['Ca A_actual'] = act if act > 0 else None
+                        item['Ca A_target'] = tgt if tgt > 0 else None
+                    elif 'ca b' in ca or 'lâm' in ca or 'sắc' in ca:
+                        item['Ca B_actual'] = act if act > 0 else None
+                        item['Ca B_target'] = tgt if tgt > 0 else None
+                        item['Sac_actual'] = act if act > 0 else None
+                        item['Sac_target'] = tgt if tgt > 0 else None
+                    elif 'ca c' in ca or 'long' in ca or 'tài' in ca:
+                        item['Ca C_actual'] = act if act > 0 else None
+                        item['Ca C_target'] = tgt if tgt > 0 else None
+                        item['Long_actual'] = act if act > 0 else None
+                        item['Long_target'] = tgt if tgt > 0 else None
+                        item['Tai_actual'] = act if act > 0 else None
+                        item['Tai_target'] = tgt if tgt > 0 else None
+
+            if any(item[k] is not None for k in ['Ca A_actual', 'Ca B_actual', 'Ca C_actual', 'Long_actual', 'Sac_actual', 'Tai_actual']):
                 records.append(item)
 
         df = pd.DataFrame(records)
@@ -921,39 +1149,62 @@ class DataLoader:
             df = df.sort_values('date').reset_index(drop=True)
         return df
 
-    def load_kpi_daily_shifts(self) -> pd.DataFrame:
+    def load_kpi_daily_shifts(self, df_kcs: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
-        Đọc dữ liệu nhật ký ca từ sheet 'Data' của file KPI.
+        Đọc dữ liệu nhật ký ca từ sheet 'Data KPI' (hoặc 'Data') của file KPI.
+        Các cột gồm: Ngày, Tuần, Tháng, Ca Trưởng, Thành phẩm (tấn), Chỉ tiêu (tấn), Điện năng TB, Năng suất, Độ ẩm viên %.
+        Tự động tính toán độ ẩm trung bình từ df_kcs theo công thức AVERAGEIFS nếu ô độ ẩm rỗng.
         """
-        rows = self.get_kpi_sheet_values('Data')
+        rows = self.get_kpi_sheet_values('Data KPI')
+        if not rows or len(rows) < 2:
+            rows = self.get_kpi_sheet_values('Data')
         if not rows or len(rows) < 2:
             return pd.DataFrame()
 
+        # Nạp kcs nếu cần để đối soát tính độ ẩm
+        if df_kcs is None or df_kcs.empty:
+            try:
+                df_kcs = self.load_kcs_data()
+            except Exception:
+                df_kcs = pd.DataFrame()
+
         records = []
         for r in rows[1:]:
-            if not r or not r[0].strip() or len(r) < 5:
+            if not r or not str(r[0]).strip() or len(r) < 4:
                 continue
-            ca_truong = r[2].strip()
-            if ca_truong in ['Nghĩ', 'Bảo trì-VS, Long, Sắc', ''] or not r[4].strip() or r[4].strip() == '-':
-                continue
+
             date_dt = parse_vn_date(r[0])
             if not date_dt:
                 continue
 
+            week_num = int(clean_number(r[1])) if len(r) > 1 else 0
+            month_num = int(clean_number(r[2])) if len(r) > 2 else 0
+            ca_truong = str(r[3]).strip() if len(r) > 3 else ''
+
+            if ca_truong in ['Nghĩ', 'OFF', 'Nghỉ ca', ''] and (len(r) < 5 or clean_number(r[4]) == 0):
+                continue
+
+            sl_thuc_te = clean_number(r[4]) if len(r) > 4 else 0.0
+            chi_tieu_sl = clean_number(r[5]) if len(r) > 5 else 0.0
+            dien_tb = clean_number(r[6]) if len(r) > 6 else 0.0
+            nang_suat_tb = clean_number(r[7]) if len(r) > 7 else 0.0
+            do_am_tb = clean_number(r[8]) if len(r) > 8 else 0.0
+
+            # Nếu độ ẩm trên Google Sheet rỗng hoặc = 0, áp dụng công thức AVERAGEIFS từ Data KCS
+            if do_am_tb == 0.0 and df_kcs is not None and not df_kcs.empty and sl_thuc_te > 0:
+                do_am_tb = self.compute_kcs_average_moisture(df_kcs, date_dt, ca_truong)
+
             records.append({
                 'date': date_dt,
                 'date_str': date_dt.strftime('%d/%m/%Y'),
-                'week': int(clean_number(r[1])),
+                'week': week_num,
+                'month': month_num,
                 'ca_truong': ca_truong,
-                'chi_tieu_sl': clean_number(r[3]),
-                'sl_thuc_te': clean_number(r[4]),
-                'dien_tb': clean_number(r[5]),
-                'nang_suat_tb': clean_number(r[6]),
-                'do_am_tb': clean_number(r[7]),
-                'nl_dot': clean_number(r[8]),
-                'nl_nghien': clean_number(r[9]),
-                'ty_le_che_bien': clean_number(r[10]),
-                'quan_so': r[11].strip() if len(r) > 11 else '',
+                'chi_tieu_sl': chi_tieu_sl,
+                'sl_thuc_te': sl_thuc_te,
+                'dien_tb': dien_tb,
+                'nang_suat_tb': nang_suat_tb,
+                'do_am_tb': do_am_tb,
             })
 
         df = pd.DataFrame(records)
@@ -1524,51 +1775,138 @@ class DataLoader:
 
     def save_kcs_record(self, record: Dict[str, Any]) -> Tuple[bool, str]:
         """
-        Ghi dữ liệu kết quả đo kiểm chất lượng KCS vào Google Sheets 'KCS'.
+        Ghi dữ liệu kết quả đo kiểm chất lượng KCS vào Google Sheets 'Data KCS' (file KPI) và 'KCS' (file sản xuất).
+        Đồng thời đồng bộ bộ đệm cache_kcs.parquet.
         """
         if not self.client:
             self.connect()
 
-        if not self.client or not self.spreadsheet:
-            return False, "Chưa kết nối được với Google Sheets sản xuất."
+        date_dt = record.get('date')
+        if isinstance(date_dt, str):
+            date_dt = parse_vn_date(date_dt)
+        if not date_dt:
+            date_dt = datetime.now()
 
+        d_str = date_dt.strftime('%d/%m/%Y')
+        week_val = date_dt.isocalendar()[1]
+        month_val = date_dt.month
+
+        saved_any = False
+        msg_parts = []
+
+        # 1. Ghi vào sheet 'Data KCS' trong file KPI
+        if self.kpi_spreadsheet:
+            try:
+                ws_kpi = self.kpi_spreadsheet.worksheet('Data KCS')
+                all_ids = ws_kpi.col_values(1)
+                new_id = f"K{len(all_ids):03d}"
+                row_data_kcs = [
+                    new_id,                                                     # 0: ID
+                    d_str,                                                      # 1: Ngày
+                    str(week_val),                                              # 2: Tuần
+                    str(month_val),                                             # 3: Tháng
+                    str(record.get('time_sample', '08h')),                      # 4: Giờ
+                    str(record.get('shift_leader', '')),                        # 5: Trưởng ca
+                    str(record.get('tester', 'QC')),                            # 6: Người đo
+                    str(record.get('ty_le_nl_dot', '100% Củi')),                # 7: Tỷ lệ NL đốt
+                    str(record.get('ty_le_phoi_tron', '8:2')),                  # 8: Tỷ lệ phối trộn
+                    str(record.get('am_dam_pct', '')).replace('.', ','),        # 9: Ẩm dăm (%)
+                    str(record.get('am_truoc_say_pct', '')).replace('.', ','),  # 10: Ẩm trước sấy (%)
+                    str(record.get('am_sau_say_1_pct', '')).replace('.', ','),  # 11: Ẩm sau sấy 1 (%)
+                    str(record.get('am_sau_say_2_pct', '')).replace('.', ','),  # 12: Ẩm sau sấy 2 (%)
+                    str(record.get('am_vien_pct', '')).replace('.', ','),       # 13: Ẩm viên (%)
+                    str(record.get('density_dam', '')).replace('.', ','),       # 14: Tỷ trọng dăm
+                    str(record.get('density_nghien_tho', '')).replace('.', ','),# 15: Tỷ trọng nghiền thô
+                    str(record.get('density_nghien_tinh', '')).replace('.', ','),# 16: Tỷ trọng nghiền tinh
+                    str(record.get('density_vien', '')).replace('.', ','),      # 17: Tỷ trọng viên
+                    str(record.get('temp_cooling', '30')).replace('.', ','),    # 18: Nhiệt độ sau làm nguội
+                    str(record.get('luoi_nghien_tho', '14')),                   # 19: Lưới thô
+                    str(record.get('luoi_nghien_tinh', '6')),                   # 20: Lưới tinh
+                    str(record.get('duong_kinh_vien', '')).replace('.', ','),   # 21: Đường kính viên
+                    str(record.get('chieu_dai_vien', '10-30')),                 # 22: Chiều dài viên
+                    str(record.get('do_tro_pct', '')).replace('.', ',')         # 23: Độ tro viên (%)
+                ]
+                ws_kpi.append_row(row_data_kcs, value_input_option='USER_ENTERED')
+                saved_any = True
+                msg_parts.append("Data KCS")
+            except Exception as e_kpi:
+                print(f"[-] Lỗi ghi sheet Data KCS: {e_kpi}")
+
+        # 2. Đồng bộ sheet 'KCS' trong file sản xuất nếu có
+        if self.spreadsheet:
+            try:
+                ws_prod = self.spreadsheet.worksheet('KCS')
+                row_prod = [
+                    d_str, str(week_val),
+                    str(record.get('time_sample', '08h')),
+                    str(record.get('shift_leader', '')),
+                    str(record.get('tester', 'KCS')),
+                    str(record.get('ty_le_nl_dot', '100% Củi')),
+                    str(record.get('ty_le_phoi_tron', '8:2')),
+                    str(record.get('am_dam_pct', '')).replace('.', ','),
+                    str(record.get('am_truoc_say_pct', '')).replace('.', ','),
+                    str(record.get('am_sau_say_1_pct', '')).replace('.', ','),
+                    str(record.get('am_sau_say_2_pct', '')).replace('.', ','),
+                    str(record.get('am_vien_pct', '')).replace('.', ','),
+                    str(record.get('density_dam', '')).replace('.', ','),
+                    str(record.get('density_nghien_tho', '')).replace('.', ','),
+                    str(record.get('density_nghien_tinh', '')).replace('.', ','),
+                    str(record.get('density_vien', '')).replace('.', ','),
+                    "", "", "", "", "",
+                    str(record.get('do_tro_pct', '')).replace('.', ',')
+                ]
+                ws_prod.append_row(row_prod, value_input_option='USER_ENTERED')
+                saved_any = True
+                msg_parts.append("KCS (Sản xuất)")
+            except Exception as e_prod:
+                print(f"[-] Lỗi ghi sheet KCS sản xuất: {e_prod}")
+
+        # 3. Đồng bộ cache_kcs.parquet cục bộ
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_kcs.parquet"),
+            os.path.join("assets", "cache_kcs.parquet"),
+            os.path.join("deploy_files", "assets", "cache_kcs.parquet"),
+        ]
         try:
-            ws = self.spreadsheet.worksheet('KCS')
-            date_dt = record.get('date')
-            if isinstance(date_dt, str):
-                date_dt = parse_vn_date(date_dt)
-            if not date_dt:
-                date_dt = datetime.now()
+            new_kcs_dict = {
+                'id': f"K{int(time.time())%1000:03d}",
+                'date': pd.to_datetime(date_dt),
+                'date_str': d_str,
+                'week': week_val,
+                'month': month_val,
+                'time_sample': str(record.get('time_sample', '08h')),
+                'shift_leader': str(record.get('shift_leader', '')),
+                'tester': str(record.get('tester', 'QC')),
+                'ty_le_nl_dot': str(record.get('ty_le_nl_dot', '100% Củi')),
+                'ty_le_phoi_tron': str(record.get('ty_le_phoi_tron', '8:2')),
+                'am_dam_pct': clean_number(record.get('am_dam_pct', 0)),
+                'am_truoc_say_pct': clean_number(record.get('am_truoc_say_pct', 0)),
+                'am_sau_say_1_pct': clean_number(record.get('am_sau_say_1_pct', 0)),
+                'am_sau_say_2_pct': clean_number(record.get('am_sau_say_2_pct', 0)),
+                'am_vien_pct': clean_number(record.get('am_vien_pct', 0)),
+                'density_dam': clean_number(record.get('density_dam', 0)),
+                'density_nghien_tho': clean_number(record.get('density_nghien_tho', 0)),
+                'density_nghien_tinh': clean_number(record.get('density_nghien_tinh', 0)),
+                'density_vien': clean_number(record.get('density_vien', 0)),
+                'temp_cooling': clean_number(record.get('temp_cooling', 30)),
+                'luoi_nghien_tho': str(record.get('luoi_nghien_tho', '14')),
+                'luoi_nghien_tinh': str(record.get('luoi_nghien_tinh', '6')),
+                'duong_kinh_vien': clean_number(record.get('duong_kinh_vien', 0)),
+                'chieu_dai_vien': str(record.get('chieu_dai_vien', '10-30')),
+                'do_tro_pct': clean_number(record.get('do_tro_pct', 0)),
+            }
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    df_c = pd.read_parquet(cp)
+                    df_c = pd.concat([df_c, pd.DataFrame([new_kcs_dict])], ignore_index=True)
+                    df_c = df_c.sort_values('date').reset_index(drop=True)
+                    df_c.to_parquet(cp, index=False)
+        except Exception as e_c:
+            print(f"[-] Lỗi cập nhật cache KCS parquet: {e_c}")
 
-            d_str = date_dt.strftime('%d/%m/%Y')
-            week_val = date_dt.isocalendar()[1]
-
-            row_vals = [
-                d_str,                                              # 0: Ngày
-                str(week_val),                                      # 1: Tuần
-                str(record.get('time_sample', '08h')),              # 2: Giờ lấy mẫu
-                str(record.get('shift_leader', '')),                # 3: Ca trưởng
-                str(record.get('tester', 'KCS')),                   # 4: Người đo
-                str(record.get('ty_le_nl_dot', '100% Củi')),        # 5: Tỷ lệ NL đốt
-                str(record.get('ty_le_phoi_tron', '8:2')),          # 6: Tỷ lệ phối trộn
-                str(record.get('am_dam_pct', '')).replace('.', ','),        # 7: Ẩm dăm
-                str(record.get('am_truoc_say_pct', '')).replace('.', ','),  # 8: Ẩm trước sấy
-                str(record.get('am_sau_say_1_pct', '')).replace('.', ','),  # 9: Ẩm sau sấy 1
-                str(record.get('am_sau_say_2_pct', '')).replace('.', ','),  # 10: Ẩm sau sấy 2
-                str(record.get('am_vien_pct', '')).replace('.', ','),       # 11: Ẩm viên
-                str(record.get('density_dam', '')).replace('.', ','),       # 12: Tỷ trọng dăm
-                str(record.get('density_nghien_tho', '')).replace('.', ','),# 13: Tỷ trọng nghiền thô
-                str(record.get('density_nghien_tinh', '')).replace('.', ','),# 14: Tỷ trọng nghiền tinh
-                str(record.get('density_vien', '')).replace('.', ','),      # 15: Tỷ trọng viên
-                "", "", "", "", "",                                         # 16-20: Cột trống
-                str(record.get('do_tro_pct', '')).replace('.', ',')         # 21: Độ tro
-            ]
-
-            ws.append_row(row_vals, value_input_option='USER_ENTERED')
-            return True, f"Đã lưu thành công mẫu kiểm nghiệm KCS lúc {record.get('time_sample')} ngày {d_str}!"
-
-        except Exception as e:
-            return False, f"Lỗi ghi dữ liệu KCS lên Google Sheets: {e}"
+        if saved_any:
+            return True, f"Đã lưu thành công mẫu kiểm nghiệm KCS lúc {record.get('time_sample')} ngày {d_str} vào {', '.join(msg_parts)}!"
+        return False, "Không thể kết nối để ghi dữ liệu KCS."
 
     def load_oil_change_data(self) -> Dict[str, Any]:
         """
