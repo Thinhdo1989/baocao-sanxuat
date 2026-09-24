@@ -173,7 +173,7 @@ def classify_shift_counts(df_subset: pd.DataFrame, num_days: Optional[int] = Non
         return 0, 0, 0
 
     shift_str = df_subset['shift_leader'].astype(str).str.lower() if 'shift_leader' in df_subset.columns else pd.Series([''] * len(df_subset), index=df_subset.index)
-    maint_mask = shift_str.str.contains('bảo trì|vệ sinh|bảo dưỡng|bảo trì-vs|bảo trì - vs', regex=True, na=False)
+    maint_mask = shift_str.str.contains(r'bảo trì|vệ sinh|bảo dưỡng|bt[-_]?vs|bao tri', regex=True, na=False)
     
     sl_col = df_subset['san_luong_tan'] if 'san_luong_tan' in df_subset.columns else 0
     h_col = df_subset['tong_gio_ep'] if 'tong_gio_ep' in df_subset.columns else 0
@@ -490,7 +490,10 @@ def get_kpi_leaderboard(
             week_row = match_w.iloc[0]
             prev_week_row = df_wm_weekly.iloc[week_idx - 1] if week_idx > 0 else None
             w_label = week_row['week_label']
-            leaders = ['Long', 'Sắc', 'Tài']
+            if any(c in week_row.index for c in ['Ca A', 'Ca B', 'Ca C']):
+                leaders = [c for c in ['Ca A', 'Ca B', 'Ca C'] if c in week_row.index]
+            else:
+                leaders = ['Long', 'Sắc', 'Tài']
             scores = []
             for name in leaders:
                 val = week_row.get(name)
@@ -523,7 +526,10 @@ def get_kpi_leaderboard(
         week_row = df_wm_weekly.iloc[-1]
         prev_week_row = df_wm_weekly.iloc[week_idx - 1] if week_idx > 0 else None
         w_label = week_row['week_label']
-        leaders = ['Long', 'Sắc', 'Tài']
+        if any(c in week_row.index for c in ['Ca A', 'Ca B', 'Ca C']):
+            leaders = [c for c in ['Ca A', 'Ca B', 'Ca C'] if c in week_row.index]
+        else:
+            leaders = ['Long', 'Sắc', 'Tài']
         scores = []
         for name in leaders:
             val = week_row.get(name)
@@ -555,7 +561,10 @@ def get_kpi_leaderboard(
             month_row = match_m.iloc[0]
             prev_month_row = df_wm_monthly.iloc[month_idx - 1] if month_idx > 0 else None
             m_label = month_row['month_label']
-            leaders = ['Long', 'Sắc', 'Tài']
+            if any(c in month_row.index for c in ['Ca A', 'Ca B', 'Ca C']):
+                leaders = [c for c in ['Ca A', 'Ca B', 'Ca C'] if c in month_row.index]
+            else:
+                leaders = ['Long', 'Sắc', 'Tài']
             scores = []
             for name in leaders:
                 val = month_row.get(name)
@@ -588,7 +597,10 @@ def get_kpi_leaderboard(
         month_row = df_wm_monthly.iloc[-1]
         prev_month_row = df_wm_monthly.iloc[month_idx - 1] if month_idx > 0 else None
         m_label = month_row['month_label']
-        leaders = ['Long', 'Sắc', 'Tài']
+        if any(c in month_row.index for c in ['Ca A', 'Ca B', 'Ca C']):
+            leaders = [c for c in ['Ca A', 'Ca B', 'Ca C'] if c in month_row.index]
+        else:
+            leaders = ['Long', 'Sắc', 'Tài']
         scores = []
         for name in leaders:
             val = month_row.get(name)
@@ -860,18 +872,10 @@ def get_all_leaders_dashboard_summary(
     và lập bảng đối sánh toàn diện với Dashboard Tổng Thể của nhà máy.
     """
     leader_configs = {
-        'Long': {
-            'pattern': r'long',
-            'display_name': 'Ca Trưởng Long',
-            'color': '#2563eb',
-            'bg_color': '#eff6ff',
-            'border_color': '#3b82f6',
-            'icon': '🔵',
-            'badge_cls': 'leader-card-long'
-        },
         'Sắc': {
-            'pattern': r'sắc|sac',
-            'display_name': 'Ca Trưởng Sắc',
+            'code': 'Ca A',
+            'pattern': r'\bca a\b|sắc|sac|\bhải\b|\bhai\b',
+            'display_name': 'Ca Trưởng Sắc (Ca A)',
             'color': '#16a34a',
             'bg_color': '#f0fdf4',
             'border_color': '#22c55e',
@@ -879,13 +883,24 @@ def get_all_leaders_dashboard_summary(
             'badge_cls': 'leader-card-sac'
         },
         'Tài': {
-            'pattern': r'tài|tai',
-            'display_name': 'Ca Trưởng Tài',
+            'code': 'Ca B',
+            'pattern': r'\bca b\b|tài|tai|\blâm\b|\blam\b',
+            'display_name': 'Ca Trưởng Tài (Ca B)',
             'color': '#ea580c',
             'bg_color': '#fff7ed',
             'border_color': '#f97316',
             'icon': '🟠',
             'badge_cls': 'leader-card-tai'
+        },
+        'Long': {
+            'code': 'Ca C',
+            'pattern': r'\bca c\b|long',
+            'display_name': 'Ca Trưởng Long (Ca C)',
+            'color': '#2563eb',
+            'bg_color': '#eff6ff',
+            'border_color': '#3b82f6',
+            'icon': '🔵',
+            'badge_cls': 'leader-card-long'
         }
     }
 
@@ -926,7 +941,7 @@ def get_all_leaders_dashboard_summary(
         
         # Phân loại ca của riêng ca trưởng: ca sản xuất và ca bảo trì
         shift_ldr_str = p_shifts['shift_leader'].astype(str).str.lower() if not p_shifts.empty else pd.Series([], dtype=str)
-        maint_shifts_ldr = p_shifts[shift_ldr_str.str.contains('bảo trì|vệ sinh|bảo dưỡng|bảo trì-vs|bảo trì - vs', regex=True, na=False)]
+        maint_shifts_ldr = p_shifts[shift_ldr_str.str.contains(r'bảo trì|vệ sinh|bảo dưỡng|bt[-_]?vs|bao tri', regex=True, na=False)]
         maint_count = len(maint_shifts_ldr)
         prod_count = len(active_shifts)
 
@@ -1178,66 +1193,74 @@ def get_all_leaders_dashboard_summary(
             'shifts_df': p_shifts
         }
 
-    # Bảng đối sánh DataFrame
-    long_s = leaders_summary.get('Long', {})
+    # Bổ sung alias theo mã vị trí Ca A, Ca B, Ca C
+    if 'Sắc' in leaders_summary:
+        leaders_summary['Ca A'] = leaders_summary['Sắc']
+    if 'Tài' in leaders_summary:
+        leaders_summary['Ca B'] = leaders_summary['Tài']
+    if 'Long' in leaders_summary:
+        leaders_summary['Ca C'] = leaders_summary['Long']
+
+    # Bảng đối sánh DataFrame theo chuẩn thứ tự Ca A (Sắc) - Ca B (Tài) - Ca C (Long)
     sac_s = leaders_summary.get('Sắc', {})
     tai_s = leaders_summary.get('Tài', {})
+    long_s = leaders_summary.get('Long', {})
 
     comp_data = [
         {
             'Chỉ Số Đo Lường': 'Sản lượng thực tế (tấn)',
             '🏭 Toàn Nhà Máy': f"{tot_factory_output:,.1f}",
-            '🔵 Ca Long': f"{long_s.get('output', 0):,.1f}" if long_s.get('has_active_shift') else f"0.0 (Lk: {long_s.get('month_output', 0):,.0f})",
-            '🟢 Ca Sắc': f"{sac_s.get('output', 0):,.1f}" if sac_s.get('has_active_shift') else f"0.0 (Lk: {sac_s.get('month_output', 0):,.0f})",
-            '🟠 Ca Tài': f"{tai_s.get('output', 0):,.1f}" if tai_s.get('has_active_shift') else f"0.0 (Lk: {tai_s.get('month_output', 0):,.0f})",
+            '🟢 Ca A (Sắc)': f"{sac_s.get('output', 0):,.1f}" if sac_s.get('has_active_shift') else f"0.0 (Lk: {sac_s.get('month_output', 0):,.0f})",
+            '🟠 Ca B (Tài)': f"{tai_s.get('output', 0):,.1f}" if tai_s.get('has_active_shift') else f"0.0 (Lk: {tai_s.get('month_output', 0):,.0f})",
+            '🔵 Ca C (Long)': f"{long_s.get('output', 0):,.1f}" if long_s.get('has_active_shift') else f"0.0 (Lk: {long_s.get('month_output', 0):,.0f})",
             'Định Mức Kỹ Thuật': 'Kế hoạch ngày'
         },
         {
             'Chỉ Số Đo Lường': 'Suất tiêu hao điện (kWh/tấn)',
             '🏭 Toàn Nhà Máy': f"{kpis_tong.get('avg_electricity_kwh_ton', 0):.1f}" if kpis_tong else "-",
-            '🔵 Ca Long': f"{long_s.get('kwh_per_ton', 0):.1f}" if long_s.get('kwh_per_ton', 0) > 0 else f"{long_s.get('month_kwh_ton', 0):.1f} (tháng)",
-            '🟢 Ca Sắc': f"{sac_s.get('kwh_per_ton', 0):.1f}" if sac_s.get('kwh_per_ton', 0) > 0 else f"{sac_s.get('month_kwh_ton', 0):.1f} (tháng)",
-            '🟠 Ca Tài': f"{tai_s.get('kwh_per_ton', 0):.1f}" if tai_s.get('kwh_per_ton', 0) > 0 else f"{tai_s.get('month_kwh_ton', 0):.1f} (tháng)",
+            '🟢 Ca A (Sắc)': f"{sac_s.get('kwh_per_ton', 0):.1f}" if sac_s.get('kwh_per_ton', 0) > 0 else f"{sac_s.get('month_kwh_ton', 0):.1f} (tháng)",
+            '🟠 Ca B (Tài)': f"{tai_s.get('kwh_per_ton', 0):.1f}" if tai_s.get('kwh_per_ton', 0) > 0 else f"{tai_s.get('month_kwh_ton', 0):.1f} (tháng)",
+            '🔵 Ca C (Long)': f"{long_s.get('kwh_per_ton', 0):.1f}" if long_s.get('kwh_per_ton', 0) > 0 else f"{long_s.get('month_kwh_ton', 0):.1f} (tháng)",
             'Định Mức Kỹ Thuật': '170 - 175 kWh/t'
         },
         {
             'Chỉ Số Đo Lường': 'Năng suất ép trung bình (tấn/h)',
             '🏭 Toàn Nhà Máy': f"{kpis_tong.get('avg_productivity', 0):.2f}" if kpis_tong else "-",
-            '🔵 Ca Long': f"{long_s.get('tph', 0):.2f}" if long_s.get('tph', 0) > 0 else f"{long_s.get('month_tph', 0):.2f} (tháng)",
-            '🟢 Ca Sắc': f"{sac_s.get('tph', 0):.2f}" if sac_s.get('tph', 0) > 0 else f"{sac_s.get('month_tph', 0):.2f} (tháng)",
-            '🟠 Ca Tài': f"{tai_s.get('tph', 0):.2f}" if tai_s.get('tph', 0) > 0 else f"{tai_s.get('month_tph', 0):.2f} (tháng)",
+            '🟢 Ca A (Sắc)': f"{sac_s.get('tph', 0):.2f}" if sac_s.get('tph', 0) > 0 else f"{sac_s.get('month_tph', 0):.2f} (tháng)",
+            '🟠 Ca B (Tài)': f"{tai_s.get('tph', 0):.2f}" if tai_s.get('tph', 0) > 0 else f"{tai_s.get('month_tph', 0):.2f} (tháng)",
+            '🔵 Ca C (Long)': f"{long_s.get('tph', 0):.2f}" if long_s.get('tph', 0) > 0 else f"{long_s.get('month_tph', 0):.2f} (tháng)",
             'Định Mức Kỹ Thuật': '≥ 4.0 tấn/h'
         },
         {
             'Chỉ Số Đo Lường': 'Tổng giờ máy ép (giờ)',
             '🏭 Toàn Nhà Máy': f"{kpis_tong.get('total_pellet_hours', 0):.1f}" if kpis_tong else "-",
-            '🔵 Ca Long': f"{long_s.get('pellet_hours', 0):.1f}",
-            '🟢 Ca Sắc': f"{sac_s.get('pellet_hours', 0):.1f}",
-            '🟠 Ca Tài': f"{tai_s.get('pellet_hours', 0):.1f}",
+            '🟢 Ca A (Sắc)': f"{sac_s.get('pellet_hours', 0):.1f}",
+            '🟠 Ca B (Tài)': f"{tai_s.get('pellet_hours', 0):.1f}",
+            '🔵 Ca C (Long)': f"{long_s.get('pellet_hours', 0):.1f}",
             'Định Mức Kỹ Thuật': '8 Máy Ép'
         },
         {
             'Chỉ Số Đo Lường': 'Độ ẩm trung bình viên (%)',
             '🏭 Toàn Nhà Máy': f"{kpis_tong.get('do_am_tb_pct', 0):.2f}%" if kpis_tong else "-",
-            '🔵 Ca Long': f"{long_s.get('moisture', 0):.2f}%",
-            '🟢 Ca Sắc': f"{sac_s.get('moisture', 0):.2f}%",
-            '🟠 Ca Tài': f"{tai_s.get('moisture', 0):.2f}%",
+            '🟢 Ca A (Sắc)': f"{sac_s.get('moisture', 0):.2f}%",
+            '🟠 Ca B (Tài)': f"{tai_s.get('moisture', 0):.2f}%",
+            '🔵 Ca C (Long)': f"{long_s.get('moisture', 0):.2f}%",
             'Định Mức Kỹ Thuật': '8.0 - 9.5%'
         },
         {
             'Chỉ Số Đo Lường': 'Tỷ lệ chế biến (lần)',
             '🏭 Toàn Nhà Máy': f"{kpis_tong.get('processing_ratio', 0):.2f}" if kpis_tong else "-",
-            '🔵 Ca Long': f"{long_s.get('processing_ratio', 0):.2f}",
-            '🟢 Ca Sắc': f"{sac_s.get('processing_ratio', 0):.2f}",
-            '🟠 Ca Tài': f"{tai_s.get('processing_ratio', 0):.2f}",
+            '🟢 Ca A (Sắc)': f"{sac_s.get('processing_ratio', 0):.2f}",
+            '🟠 Ca B (Tài)': f"{tai_s.get('processing_ratio', 0):.2f}",
+            '🔵 Ca C (Long)': f"{long_s.get('processing_ratio', 0):.2f}",
             'Định Mức Kỹ Thuật': '1.8 - 2.1'
         },
         {
             'Chỉ Số Đo Lường': 'Điểm KPI thi đua (/100)',
             '🏭 Toàn Nhà Máy': '-',
-            '🔵 Ca Long': f"{long_s.get('kpi_score', 0):.1f} ({long_s.get('kpi_eval', {}).get('medal', '')} {long_s.get('kpi_eval', {}).get('rank', '')})",
-            '🟢 Ca Sắc': f"{sac_s.get('kpi_score', 0):.1f} ({sac_s.get('kpi_eval', {}).get('medal', '')} {sac_s.get('kpi_eval', {}).get('rank', '')})",
-            '🟠 Ca Tài': f"{tai_s.get('kpi_score', 0):.1f} ({tai_s.get('kpi_eval', {}).get('medal', '')} {tai_s.get('kpi_eval', {}).get('rank', '')})",
+            '🟢 Ca A (Sắc)': f"{sac_s.get('kpi_score', 0):.1f} ({sac_s.get('kpi_eval', {}).get('medal', '')} {sac_s.get('kpi_eval', {}).get('rank', '')})",
+            '🟠 Ca B (Tài)': f"{tai_s.get('kpi_score', 0):.1f} ({tai_s.get('kpi_eval', {}).get('medal', '')} {tai_s.get('kpi_eval', {}).get('rank', '')})",
+            '🔵 Ca C (Long)': f"{long_s.get('kpi_score', 0):.1f} ({long_s.get('kpi_eval', {}).get('medal', '')} {long_s.get('kpi_eval', {}).get('rank', '')})",
             'Định Mức Kỹ Thuật': 'Thang 100 điểm'
         }
     ]
