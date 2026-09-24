@@ -48,11 +48,11 @@ STATIC_TASKS_EN = [
 ]
 
 ENTRY_TASKS_VI = [
-    "📝 14. Nhập Báo Cáo Ca & KCS"
+    "📝 14. Nhập Số Liệu"
 ]
 
 ENTRY_TASKS_EN = [
-    "📝 14. Shift & QC Data Entry"
+    "📝 14. Data Entry"
 ]
 
 TIME_MODES_VI = [
@@ -74,17 +74,17 @@ TIME_MODES_EN = [
 DASHBOARD_CHOICES_VI = [
     "Tất Cả (1 Dashboard Tổng + 3 Dashboard Ca Trưởng)",
     "Chỉ Dashboard Tổng Thể",
-    "Dashboard Ca Trưởng Long (Ca A)",
-    "Dashboard Ca Trưởng Sắc (Ca B)",
-    "Dashboard Ca Trưởng Tài (Ca C)"
+    "Ca A - Ca Trưởng Sắc",
+    "Ca B - Ca Trưởng Tài",
+    "Ca C - Ca Trưởng Long"
 ]
 
 DASHBOARD_CHOICES_EN = [
     "All (1 Plant Overview + 3 Shift Dashboards)",
     "Plant Overview Only",
-    "Shift Leader Long (Shift A) Dashboard",
-    "Shift Leader Sac (Shift B) Dashboard",
-    "Shift Leader Tai (Shift C) Dashboard"
+    "Shift A - Leader Sac",
+    "Shift B - Leader Tai",
+    "Shift C - Leader Long"
 ]
 
 # Từ điển ánh xạ đánh giá kỹ thuật & trạng thái
@@ -193,6 +193,8 @@ def apply_language_change(new_lang: str):
     # Đồng bộ lựa chọn Dashboard
     if 'main_db_view_radio' in st.session_state:
         st.session_state['main_db_view_radio'] = map_dashboard_choice(st.session_state['main_db_view_radio'], new_lang)
+    if 'main_db_view_select' in st.session_state:
+        st.session_state['main_db_view_select'] = map_dashboard_choice(st.session_state['main_db_view_select'], new_lang)
     if 'main_db_view_choice' in st.session_state:
         st.session_state['main_db_view_choice'] = map_dashboard_choice(st.session_state['main_db_view_choice'], new_lang)
 
@@ -302,11 +304,11 @@ def map_dashboard_choice(choice_str: str, target_lang: Optional[str] = None) -> 
         return target_choices[0]
     if 'chỉ dashboard tổng' in choice_str_low or 'overview only' in choice_str_low:
         return target_choices[1]
-    if 'long' in choice_str_low or 'ca a' in choice_str_low or 'shift a' in choice_str_low:
+    if 'ca a' in choice_str_low or 'shift a' in choice_str_low or 'sắc' in choice_str_low or 'sac' in choice_str_low:
         return target_choices[2]
-    if 'sắc' in choice_str_low or 'sac' in choice_str_low or 'ca b' in choice_str_low or 'shift b' in choice_str_low:
+    if 'ca b' in choice_str_low or 'shift b' in choice_str_low or 'tài' in choice_str_low or 'tai' in choice_str_low:
         return target_choices[3]
-    if 'tài' in choice_str_low or 'tai' in choice_str_low or 'ca c' in choice_str_low or 'shift c' in choice_str_low:
+    if 'ca c' in choice_str_low or 'shift c' in choice_str_low or 'long' in choice_str_low:
         return target_choices[4]
     return target_choices[0]
 
@@ -349,12 +351,18 @@ def translate_comparison_df(df: Any) -> Any:
     col_map = {
         'Chỉ Số Đo Lường': 'Metric',
         '🏭 Toàn Nhà Máy': '🏭 Plant-Wide',
-        '🔵 Ca Long': '🔵 Shift Long (A)',
-        '🟢 Ca Sắc': '🟢 Shift Sac (B)',
-        '🟠 Ca Tài': '🟠 Shift Tai (C)',
-        '🔵 Ca A': '🔵 Shift A',
-        '🟢 Ca B': '🟢 Shift B',
-        '🟠 Ca C': '🟠 Shift C',
+        '🟢 Ca A (Sắc)': '🟢 Shift A (Sac)',
+        '🟠 Ca B (Tài)': '🟠 Shift B (Tai)',
+        '🔵 Ca C (Long)': '🔵 Shift C (Long)',
+        '🟢 Ca A': '🟢 Shift A',
+        '🟠 Ca B': '🟠 Shift B',
+        '🔵 Ca C': '🔵 Shift C',
+        '🟢 Ca Sắc': '🟢 Shift Sac',
+        '🟠 Ca Tài': '🟠 Shift Tai',
+        '🔵 Ca Long': '🔵 Shift Long',
+        '🔵 Ca Long (A)': '🔵 Shift Long (A)',
+        '🟢 Ca Sắc (B)': '🟢 Shift Sac (B)',
+        '🟠 Ca Tài (C)': '🟠 Shift Tai (C)',
         'Định Mức Kỹ Thuật': 'Technical Standard'
     }
     df_res.rename(columns=col_map, inplace=True)
@@ -383,7 +391,7 @@ def translate_comparison_df(df: Any) -> Any:
     if 'Technical Standard' in df_res.columns:
         df_res['Technical Standard'] = df_res['Technical Standard'].replace(std_map)
 
-    for col in ['🔵 Shift Long (A)', '🟢 Shift Sac (B)', '🟠 Shift Tai (C)', '🔵 Shift Long', '🟢 Shift Sac', '🟠 Shift Tai', '🔵 Shift A', '🟢 Shift B', '🟠 Shift C']:
+    for col in ['🟢 Shift A (Sac)', '🟠 Shift B (Tai)', '🔵 Shift C (Long)', '🟢 Shift A', '🟠 Shift B', '🔵 Shift C', '🟢 Shift Sac', '🟠 Shift Tai', '🔵 Shift Long', '🔵 Shift Long (A)', '🟢 Shift Sac (B)', '🟠 Shift Tai (C)']:
         if col in df_res.columns:
             df_res[col] = df_res[col].astype(str).str.replace('(tháng)', '(month)', regex=False)
             df_res[col] = df_res[col].str.replace('(Lk:', '(Acc:', regex=False)

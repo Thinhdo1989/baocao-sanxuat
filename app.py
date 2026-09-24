@@ -24,7 +24,11 @@ from data_entry import (
     check_viewer_authorization,
     render_viewer_lock_screen,
     logout_viewer,
-    AUTHORIZED_VIEWER_EMAIL
+    AUTHORIZED_VIEWER_EMAIL,
+    check_tab_permission,
+    render_permission_denied_card,
+    render_shift_production_form,
+    render_login_box
 )
 from i18n import (
     get_lang, set_lang, apply_language_change, is_en, t, translate_eval, strip_accents, format_person_name,
@@ -267,7 +271,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-from data_loader import DataLoader, DEFAULT_SHIFT_COLUMNS
+from data_loader import DataLoader, DEFAULT_SHIFT_COLUMNS, match_shift_leader, POSITION_DIRECTORY, parse_vn_date
 from kpi_calculator import (
     classify_shift_counts,
     get_latest_day_kpis,
@@ -290,9 +294,9 @@ from kpi_calculator import (
     EQUIPMENT_INFO
 )
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def load_all_factory_data():
-    """Tải và lưu đệm dữ liệu từ cả 4 Google Sheets trong 5 phút"""
+    """Tải và lưu đệm dữ liệu từ các Google Sheets trong 60 giây (tự động làm mới sau mỗi 1 phút)"""
     loader = DataLoader()
     loader.connect()
     df_shifts = loader.load_shift_data()
@@ -315,6 +319,8 @@ def load_all_factory_data():
     df_maint_log = loader.load_maintenance_log()
     df_maint_plan = loader.load_maintenance_plan_monthly()
     df_4m = loader.load_4m_management()
+    tpm_data = loader.load_tpm_improvements()
+    grease_data = loader.load_pm30_grease_data()
 
     # Dữ liệu Quy Trình Chế Biến & Kỹ Thuật (ID: 1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw)
     process_data = loader.load_wood_pellet_process_data()
@@ -340,12 +346,14 @@ def load_all_factory_data():
         'maint_log': df_maint_log,
         'maint_plan': df_maint_plan,
         'maint_4m': df_4m,
+        'tpm_data': tpm_data,
+        'grease_data': grease_data,
         'process_data': process_data,
         'oil_change_data': oil_change_data,
         'loader': loader,
         'prod_title': loader.spreadsheet.title if loader.spreadsheet else "2026 BVN QB Nhật kí sản xuất",
         'kpi_title': loader.kpi_spreadsheet.title if loader.kpi_spreadsheet else "2026 Nhat ky KPI",
-        'maint_log_title': loader.maint_log_spreadsheet.title if loader.maint_log_spreadsheet else "2026 BẢO TRÌ BVN",
+        'maint_log_title': loader.maint_log_spreadsheet.title if loader.maint_log_spreadsheet else "Maninternance BVNQB",
         'maint_plan_title': loader.maint_plan_spreadsheet.title if loader.maint_plan_spreadsheet else "Mainternance BVN QB",
         'oil_title': loader.oil_spreadsheet.title if loader.oil_spreadsheet else "Lịch thay nhớt hộp số máy ép"
     }
@@ -376,18 +384,319 @@ try:
         df_maint_log = data.get('maint_log', pd.DataFrame())
         df_maint_plan = data.get('maint_plan', pd.DataFrame())
         df_4m = data.get('maint_4m', pd.DataFrame())
+        tpm_data = data.get('tpm_data', {'summary': {}, 'tasks': pd.DataFrame()})
+        grease_data = data.get('grease_data', pd.DataFrame())
         process_data = data.get('process_data', {})
         oil_change_data = data.get('oil_change_data', {'summary': pd.DataFrame(), 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép"})
         app_loader = data.get('loader', None)
         sheet_title = data['prod_title']
         kpi_sheet_title = data['kpi_title']
-        maint_log_title = data.get('maint_log_title', "2026 BẢO TRÌ BVN")
+        maint_log_title = data.get('maint_log_title', "Maninternance BVNQB")
         maint_plan_title = data.get('maint_plan_title', "Mainternance BVN QB")
         oil_title = data.get('oil_title', "Lịch thay nhớt hộp số máy ép")
 except Exception as e:
     st.error(f"❌ Không thể kết nối tới Google Sheets: {e}")
     st.info("Vui lòng kiểm tra file `credentials.json` và phân quyền chia sẻ bảng tính.")
     st.stop()
+
+
+# ==============================================================================
+# BỘ CÔNG CỤ TÌM KIẾM & TRA CỨU TÙY BIẾN TOÀN HỆ THỐNG (UNIVERSAL SEARCH ENGINE)
+# ==============================================================================
+def search_df(df: pd.DataFrame, query: str, search_cols: Optional[List[str]] = None) -> pd.DataFrame:
+    """
+    Tìm kiếm nhanh không phân biệt hoa/thường và không phân biệt dấu tiếng Việt trên DataFrame.
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty or not query:
+        return df
+    q_str = str(query).strip().lower()
+    if not q_str:
+        return df
+    q_no = strip_accents(q_str).lower()
+
+    target_cols = [c for c in (search_cols or list(df.columns)) if c in df.columns]
+    if not target_cols:
+        return df
+    try:
+        row_text = df[target_cols[0]].fillna('').astype(str)
+        for c in target_cols[1:]:
+            row_text = row_text + " " + df[c].fillna('').astype(str)
+        row_text = row_text.str.lower()
+        row_text_no = row_text.apply(strip_accents).str.lower()
+        mask = row_text.str.contains(q_str, regex=False, na=False) | row_text_no.str.contains(q_no, regex=False, na=False)
+        return df[mask]
+    except Exception:
+        return df
+
+
+def search_shifts_df(df_shifts: pd.DataFrame, query: str) -> pd.DataFrame:
+    """
+    Tìm kiếm thông minh trên bảng ca sản xuất: hỗ trợ tìm theo ngày, ca trưởng,
+    ghi chú hoặc theo mã thiết bị (nếu người dùng gõ PE1, DR124... sẽ lọc ca máy đó vận hành).
+    """
+    if df_shifts is None or not isinstance(df_shifts, pd.DataFrame) or df_shifts.empty or not query:
+        return df_shifts
+    q_str = str(query).strip().lower()
+    if not q_str:
+        return df_shifts
+    q_no = strip_accents(q_str).lower()
+
+    try:
+        str_cols = [c for c in ['date_str', 'shift_leader', 'week', 'month', 'date'] if c in df_shifts.columns]
+        if not str_cols:
+            str_cols = list(df_shifts.columns)
+        row_text = df_shifts[str_cols[0]].fillna('').astype(str)
+        for c in str_cols[1:]:
+            row_text = row_text + " " + df_shifts[c].fillna('').astype(str)
+        row_text = row_text.str.lower()
+        row_text_no = row_text.apply(strip_accents).str.lower()
+        mask = row_text.str.contains(q_str, regex=False, na=False) | row_text_no.str.contains(q_no, regex=False, na=False)
+
+        q_upper = query.strip().upper()
+        if f"h_{q_upper}" in df_shifts.columns:
+            mask = mask | (df_shifts[f"h_{q_upper}"] > 0)
+        elif q_upper in df_shifts.columns:
+            mask = mask | (df_shifts[q_upper] > 0)
+
+        # 3. Tìm theo tên ca trưởng (Sắc -> Ca A, Tài -> Ca B, Long -> Ca C)
+        if 'shift_leader' in df_shifts.columns:
+            if any(k in q_no for k in ['sac', 'ca a', 'hai']):
+                mask = mask | df_shifts['shift_leader'].apply(lambda val: match_shift_leader(val, 'Ca A'))
+            elif any(k in q_no for k in ['tai', 'ca b', 'lam']):
+                mask = mask | df_shifts['shift_leader'].apply(lambda val: match_shift_leader(val, 'Ca B'))
+            elif any(k in q_no for k in ['long', 'ca c']):
+                mask = mask | df_shifts['shift_leader'].apply(lambda val: match_shift_leader(val, 'Ca C'))
+
+        return df_shifts[mask]
+    except Exception:
+        return df_shifts
+
+
+def universal_system_search(query: str, data_dict: dict) -> dict:
+    """
+    Tra cứu thông tin tùy biến trên toàn bộ các nguồn dữ liệu:
+    - Sự Cố Kỹ Thuật (df_incidents)
+    - Nhật Ký Bảo Trì (df_maint_log)
+    - Ca Sản Xuất (df_shifts)
+    - Đánh Giá Điểm KPI Tuần / Tháng (wm_weekly, wm_monthly)
+    - TPM & Cải Tiến Thiết Bị (tpm_data['tasks'])
+    - Kiểm Định Mỡ Máy Ép PM30-6 (grease_data)
+    - Lịch Thay Nhớt PE1-PE8 (oil_change_data)
+    - Kiểm Định Chất Lượng KCS (df_kcs)
+    """
+    if not query or not str(query).strip():
+        return {}
+
+    q = str(query).strip()
+    q_no = strip_accents(q.lower())
+
+    df_inc = data_dict.get('incidents', pd.DataFrame())
+    df_ml = data_dict.get('maint_log', pd.DataFrame())
+    df_sh = data_dict.get('shifts', pd.DataFrame())
+    df_kpi_w = data_dict.get('wm_weekly', pd.DataFrame())
+    df_kpi_m = data_dict.get('wm_monthly', pd.DataFrame())
+    tpm_info = data_dict.get('tpm_data', {})
+    df_tpm = tpm_info.get('tasks', pd.DataFrame()) if isinstance(tpm_info, dict) else pd.DataFrame()
+    df_gr = data_dict.get('grease_data', pd.DataFrame())
+    oil_info = data_dict.get('oil_change_data', {})
+    df_oil = oil_info.get('summary', pd.DataFrame()) if isinstance(oil_info, dict) else pd.DataFrame()
+    df_kcs = data_dict.get('kcs', pd.DataFrame())
+
+    res_inc = search_df(df_inc, q)
+    res_ml = search_df(df_ml, q)
+    res_sh = search_shifts_df(df_sh, q)
+    res_tpm = search_df(df_tpm, q)
+    res_gr = search_df(df_gr, q)
+    res_oil = search_df(df_oil, q)
+    res_kcs = search_df(df_kcs, q)
+
+    # Tra cứu KPI: nếu gõ 'kpi' hoặc liên quan điểm số/đánh giá
+    if 'kpi' in q_no or 'danh gia' in q_no or 'diem' in q_no:
+        res_kpi_w = df_kpi_w.copy() if not df_kpi_w.empty else pd.DataFrame()
+        res_kpi_m = df_kpi_m.copy() if not df_kpi_m.empty else pd.DataFrame()
+    else:
+        res_kpi_w = search_df(df_kpi_w, q)
+        res_kpi_m = search_df(df_kpi_m, q)
+
+    total_matches = (
+        len(res_inc) + len(res_ml) + len(res_sh) + 
+        len(res_tpm) + len(res_gr) + len(res_oil) + 
+        len(res_kcs) + len(res_kpi_w) + len(res_kpi_m)
+    )
+
+    return {
+        'query': q,
+        'total': total_matches,
+        'incidents': res_inc,
+        'maint_log': res_ml,
+        'shifts': res_sh,
+        'tpm': res_tpm,
+        'grease': res_gr,
+        'oil': res_oil,
+        'kcs': res_kcs,
+        'kpi_w': res_kpi_w,
+        'kpi_m': res_kpi_m
+    }
+
+
+def reset_global_search():
+    """
+    Callback xóa an toàn ô tìm kiếm (chạy ở đầu chu kỳ rerun Streamlit, tránh StreamlitWidgetAlreadyInstantiatedError).
+    """
+    st.session_state['global_search_input_widget'] = ""
+    st.session_state['global_search_kw'] = ""
+
+
+def render_universal_search_panel(search_res: dict):
+    """
+    Hiển thị giao diện tổng hợp kết quả tìm kiếm tùy biến đa nguồn trực quan và tiện dụng.
+    """
+    if not search_res:
+        return
+
+    q = search_res.get('query', '')
+    total = search_res.get('total', 0)
+
+    hdr_title = t(f'KẾT QUẢ TÌM KIẾM TOÀN BỘ HỆ THỐNG: "{q}"', f'SYSTEM-WIDE SEARCH RESULTS: "{q}"')
+    sub_title = t(f"Đã quét qua 6 cơ sở dữ liệu • Tìm thấy <b>{total:,}</b> kết quả phù hợp", f"Scanned 6 databases • Found <b>{total:,}</b> matching records")
+
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 2px solid #0284c7; border-radius: 12px; padding: 12px 18px; margin-top: 10px; margin-bottom: 12px; box-shadow: 0 4px 18px rgba(2,132,199,0.22);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 24px;">🔍</span>
+                <div>
+                    <div style="font-size: 15px; font-weight: 800; color: #ffffff;">
+                        {hdr_title}
+                    </div>
+                    <div style="font-size: 12px; color: #38bdf8; font-weight: 600; margin-top: 2px;">
+                        {sub_title}
+                    </div>
+                </div>
+            </div>
+            <div>
+                <span style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #0284c7; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700;">
+                    {total} {t("KẾT QUẢ", "RESULTS")}
+                </span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if total == 0:
+        st.warning(t(
+            f"⚠️ Không tìm thấy bản ghi nào khớp với từ khóa **'{q}'**. Vui lòng kiểm tra lại hoặc thử với mã thiết bị (`PE1`, `HM118`), tên ca trưởng (`Sắc`, `Tài`, `Long`), sự cố (`bạc đạn`, `cháy`, `kẹt`), ngày làm việc...",
+            f"⚠️ No records found matching **'{q}'**. Please try machine code (`PE1`, `HM118`), leader name (`Sac`, `Tai`, `Long`), issue (`bearing`, `jam`), or date..."
+        ))
+        st.button(
+            t("✖ Đóng & Xóa Tìm Kiếm", "✖ Close & Clear Search"),
+            key="btn_clear_search_empty",
+            on_click=reset_global_search,
+            use_container_width=True
+        )
+        return
+
+    # Metric Badges
+    res_inc = search_res.get('incidents', pd.DataFrame())
+    res_ml = search_res.get('maint_log', pd.DataFrame())
+    res_sh = search_res.get('shifts', pd.DataFrame())
+    res_tpm = search_res.get('tpm', pd.DataFrame())
+    res_gr = search_res.get('grease', pd.DataFrame())
+    res_oil = search_res.get('oil', pd.DataFrame())
+    res_kcs = search_res.get('kcs', pd.DataFrame())
+    res_kpi_w = search_res.get('kpi_w', pd.DataFrame())
+    res_kpi_m = search_res.get('kpi_m', pd.DataFrame())
+    total_kpi = len(res_kpi_w) + len(res_kpi_m)
+
+    c_m1, c_m2, c_m3, c_m4, c_m5, c_m6 = st.columns(6)
+    c_m1.metric(t("🚨 Sự Cố", "🚨 Incidents"), f"{len(res_inc):,} " + t("vụ", "cases"))
+    c_m2.metric(t("🔧 Bảo Trì", "🔧 Maintenance"), f"{len(res_ml):,} " + t("lượt", "jobs"))
+    c_m3.metric(t("📋 Ca Sản Xuất", "📋 Prod Shifts"), f"{len(res_sh):,} " + t("ca", "shifts"))
+    c_m4.metric(t("🎯 Đánh Giá KPI", "🎯 KPI Scores"), f"{total_kpi:,} " + t("kỳ", "periods"))
+    c_m5.metric(t("🚀 Cải Tiến TPM", "🚀 TPM Items"), f"{len(res_tpm):,} " + t("việc", "tasks"))
+    c_m6.metric(t("🛢️ Bôi Trơn", "🛢️ Lubrication"), f"{len(res_gr) + len(res_oil):,} " + t("lần", "times"))
+
+    # Tabs chi tiết
+    with st.expander(t("📋 BẤM ĐỂ XEM / THU GỌN DANH SÁCH CHI TIẾT CÁC BẢN GHI TÌM ĐƯỢC", "📋 CLICK TO EXPAND / COLLAPSE DETAILED MATCHING RECORDS"), expanded=True):
+        st_tabs = st.tabs([
+            f"🚨 {t('Sự Cố', 'Incidents')} ({len(res_inc)})",
+            f"🔧 {t('Bảo Trì', 'Maintenance')} ({len(res_ml)})",
+            f"📋 {t('Ca Sản Xuất', 'Shifts')} ({len(res_sh)})",
+            f"🎯 {t('Đánh Giá KPI', 'KPI Scores')} ({total_kpi})",
+            f"🚀 {t('TPM & Cải Tiến', 'TPM')} ({len(res_tpm)})",
+            f"🛢️ {t('Bôi Trơn', 'Lubrication')} ({len(res_gr) + len(res_oil)})",
+            f"🔬 {t('KCS', 'QC')} ({len(res_kcs)})"
+        ])
+
+        with st_tabs[0]:
+            if not res_inc.empty:
+                cols_inc = ['id_su_co', 'date_str', 'shift_leader', 'equipment_raw', 'description', 'solution', 'performer', 'duration_hours', 'status']
+                avail_cols = [c for c in cols_inc if c in res_inc.columns]
+                st.dataframe(res_inc[avail_cols], hide_index=True, use_container_width=True)
+            else:
+                st.info(t("Không có sự cố nào khớp với từ khóa.", "No incidents matching keyword."))
+
+        with st_tabs[1]:
+            if not res_ml.empty:
+                cols_ml = ['id', 'date', 'equipment', 'activity', 'description', 'duration_hours', 'performer', 'status']
+                avail_cols = [c for c in cols_ml if c in res_ml.columns]
+                st.dataframe(res_ml[avail_cols], hide_index=True, use_container_width=True)
+            else:
+                st.info(t("Không có bản ghi bảo trì nào khớp với từ khóa.", "No maintenance records matching keyword."))
+
+        with st_tabs[2]:
+            if not res_sh.empty:
+                cols_sh = ['date_str', 'shift_leader', 'san_luong_tan', 'tong_gio_ep', 'nang_suat_tph', 'dien_kwh', 'dien_tb_kwh_tan', 'ton_kho_tan']
+                avail_cols = [c for c in cols_sh if c in res_sh.columns]
+                st.dataframe(res_sh[avail_cols], hide_index=True, use_container_width=True)
+            else:
+                st.info(t("Không có ca sản xuất nào khớp với từ khóa.", "No production shifts matching keyword."))
+
+        with st_tabs[3]:
+            if total_kpi > 0:
+                if not res_kpi_w.empty:
+                    st.markdown(f"**{t('Điểm KPI Theo Tuần (34 tuần gần nhất):', 'Weekly KPI Scores:')}**")
+                    st.dataframe(res_kpi_w, hide_index=True, use_container_width=True)
+                if not res_kpi_m.empty:
+                    st.markdown(f"**{t('Điểm KPI Theo Tháng:', 'Monthly KPI Scores:')}**")
+                    st.dataframe(res_kpi_m, hide_index=True, use_container_width=True)
+            else:
+                st.info(t("Không có dữ liệu KPI nào khớp với từ khóa.", "No KPI records matching keyword."))
+
+        with st_tabs[4]:
+            if not res_tpm.empty:
+                cols_tpm = ['id', 'category', 'description', 'location', 'assignee', 'priority', 'status', 'start_date', 'due_date']
+                avail_cols = [c for c in cols_tpm if c in res_tpm.columns]
+                st.dataframe(res_tpm[avail_cols], hide_index=True, use_container_width=True)
+            else:
+                st.info(t("Không có mục TPM nào khớp với từ khóa.", "No TPM items matching keyword."))
+
+        with st_tabs[5]:
+            if not res_gr.empty:
+                st.markdown(f"**{t('Kiểm Định Mỡ Máy Ép PM30-6 (Google Sheet):', 'PM30-6 Grease Dosing:')}**")
+                st.dataframe(res_gr.head(50), hide_index=True, use_container_width=True)
+            if not res_oil.empty:
+                st.markdown(f"**{t('Lịch Thay Nhớt Hộp Số PE1-PE8:', 'PE1-PE8 Oil Change Schedule:')}**")
+                st.dataframe(res_oil, hide_index=True, use_container_width=True)
+            if res_gr.empty and res_oil.empty:
+                st.info(t("Không có dữ liệu bôi trơn nào khớp với từ khóa.", "No lubrication records matching keyword."))
+
+        with st_tabs[6]:
+            if not res_kcs.empty:
+                st.dataframe(res_kcs.head(50), hide_index=True, use_container_width=True)
+            else:
+                st.info(t("Không có dữ liệu KCS nào khớp với từ khóa.", "No QC records matching keyword."))
+
+    col_btn_c1, col_btn_c2 = st.columns([3, 1])
+    with col_btn_c2:
+        st.button(
+            t("✖ Tắt Chế Độ Tìm Kiếm & Hiển Thị Đầy Đủ", "✖ Exit Search Mode & Show All"),
+            key="btn_exit_search_panel",
+            on_click=reset_global_search,
+            type="secondary",
+            use_container_width=True
+        )
+
 
 # Danh sách chuẩn 52 tuần và 12 tháng trong năm
 ALL_WEEKS_52 = [f"Tuần {i}" for i in range(1, 53)]
@@ -470,8 +779,10 @@ with st.sidebar:
         st.markdown(f"🌲 **{t('Quy trình chế biến:', 'Processing Workflow:')}** `1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw`")
         st.markdown(f"🛢️ **{t('Lịch thay nhớt PE1-PE8:', 'PE1-PE8 Lubrication:')}** `{oil_title}`")
     
-    if st.button(t("🔄 Tải lại dữ liệu (Refresh)", "🔄 Refresh Data"), width="stretch"):
+    if st.button(t("🔄 Làm Mới Dữ Liệu (Refresh)", "🔄 Refresh Data"), key="sidebar_manual_refresh_btn", use_container_width=True, help=t("Xóa bộ nhớ đệm và tải lại dữ liệu mới nhất từ Google Sheets", "Clear cache and reload latest data from Google Sheets")):
         st.cache_data.clear()
+        if 'hr_data' in st.session_state:
+            del st.session_state['hr_data']
         st.rerun()
 
     # Hiển thị thông tin người xem hoặc Admin được cấp quyền
@@ -502,13 +813,41 @@ with st.sidebar:
             logout_viewer()
 
     st.markdown("---")
+    st.subheader(t("🔍 Tra Cứu & Tìm Kiếm Tùy Biến", "🔍 Quick & Custom Search"))
+    global_search_raw = st.text_input(
+        t("Nhập từ khóa tìm kiếm:", "Enter search keyword:"),
+        placeholder=t("Thiết bị, sự cố, người, ngày, lỗi...", "Machine, incident, staff, date, issue..."),
+        key="global_search_input_widget",
+        help=t("Nhập bất kỳ thông tin nào (mã máy PE1, DR124, tên người, sự cố, linh kiện, ngày...) để tra cứu tức thì trên toàn hệ thống.",
+               "Enter any search keyword (machine code, person, incident, parts, date...) to search across the entire system.")
+    )
+    global_search_kw = (global_search_raw or "").strip()
+    st.session_state['global_search_kw'] = global_search_kw
+
+    if global_search_kw:
+        col_c1, col_c2 = st.columns([3, 2])
+        with col_c1:
+            lbl_searching = t('Đang tìm:', 'Searching:')
+            st.markdown(f"<div style='font-size: 11px; color: #38bdf8; font-weight: 700; margin-top: 6px;'>🔎 {lbl_searching} <span style='color: #facc15;'>&quot;{global_search_kw}&quot;</span></div>", unsafe_allow_html=True)
+        with col_c2:
+            st.button(
+                t("✖ Xóa lọc", "✖ Clear"),
+                key="btn_clear_sb_search",
+                on_click=reset_global_search,
+                use_container_width=True
+            )
+
+    st.markdown("---")
     st.subheader(t("👤 Lọc Ca Trưởng", "👤 Filter Shift Leader"))
     all_ldr_lbl = t("Tất cả", "All")
-    if 'shift_leader' in df_shifts.columns and not df_shifts.empty:
-        raw_ldrs = sorted([str(l).strip() for l in df_shifts['shift_leader'].dropna().unique() if str(l).strip() != ''])
-        available_leaders = [all_ldr_lbl] + raw_ldrs
-    else:
-        available_leaders = [all_ldr_lbl, "Long", "Sắc", "Tài"]
+    available_leaders = [
+        all_ldr_lbl,
+        "Ca A (Sắc)",
+        "Ca B (Tài)",
+        "Ca C (Long)",
+        "BT-VS (Bảo trì)",
+        "OFF (Nghỉ ca)"
+    ]
     selected_leader = st.selectbox(
         t("Ca Trưởng:", "Shift Leader:"),
         available_leaders,
@@ -579,19 +918,23 @@ with st.sidebar:
     <div style="background: #1e293b; color: #f8fafc; padding: 8px 12px; border-radius: 8px; margin-top: 12px; margin-bottom: 6px; border: 1px solid #334155; border-left: 4px solid #10b981; display: flex; align-items: center; justify-content: space-between;">
         <div style="font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
             <span>📝</span>
-            <span>{t("NHẬP BÁO CÁO CA", "SHIFT DATA ENTRY")}</span>
+            <span>{t("NHẬP SỐ LIỆU", "DATA ENTRY")}</span>
         </div>
         {user_status_badge}
     </div>
     """, unsafe_allow_html=True)
 
-    st.radio(
-        "Nhóm 3 (Nhập Báo Cáo):",
-        ENTRY_TASKS,
-        key="sidebar_entry_radio",
-        on_change=on_sb_entry_nav_change,
-        label_visibility="collapsed"
-    )
+    cur_task = st.session_state.get('active_task', OP_TASKS[0])
+    is_entry_active = (cur_task == ENTRY_TASKS[0])
+    btn_text = f"👉 📝 14. {t('Nhập Số Liệu', 'Data Entry')} 🟢" if is_entry_active else f"📝 14. {t('Nhập Số Liệu', 'Data Entry')}"
+    if st.button(
+        btn_text,
+        key="sidebar_entry_button",
+        use_container_width=True,
+        type="primary" if is_entry_active else "secondary"
+    ):
+        st.session_state['active_task'] = ENTRY_TASKS[0]
+        st.rerun()
 
     st.markdown("---")
     with st.expander(t("📌 **ĐỊNH MỨC & TIÊU CHUẨN KỸ THUẬT**", "📌 **TECHNICAL SPECS & STANDARDS**"), expanded=False):
@@ -631,30 +974,7 @@ with st.sidebar:
             """)
 
 
-# ================= HEADER & BỘ LỌC THỜI GIAN ĐẦU TRANG =================
-# 🌐 THANH CHUYỂN ĐỔI NGÔN NGỮ ĐẦU TRANG (HIỂN THỊ TRỰC DIỆN TRÊN IPHONE & MOBILE KHÔNG CẦN MỞ SIDEBAR)
-top_badge_col, top_lang_col = st.columns([6, 4])
-with top_badge_col:
-    st.markdown(f"""
-    <div style="display: flex; align-items: center; gap: 8px; padding-top: 6px; margin-bottom: 2px;">
-        <span style="background: linear-gradient(135deg, #16a34a, #15803d); color: white; padding: 3px 10px; border-radius: 6px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px;">BVN QUẢNG BÌNH</span>
-        <span style="font-size: 12px; font-weight: 700; color: #64748b;">{t("DÂY CHUYỀN VIÊN NÉN GỖ XUẤT KHẨU", "WOOD PELLET EXPORT PRODUCTION LINE")}</span>
-    </div>
-    """, unsafe_allow_html=True)
-with top_lang_col:
-    btn_vi_col, btn_en_col = st.columns(2)
-    with btn_vi_col:
-        if st.button("🇻🇳 Tiếng Việt", type="primary" if curr_lang == 'vi' else "secondary", use_container_width=True, key="btn_top_lang_vi"):
-            if curr_lang != 'vi':
-                apply_language_change('vi')
-                st.rerun()
-    with btn_en_col:
-        if st.button("🇬🇧 English", type="primary" if curr_lang == 'en' else "secondary", use_container_width=True, key="btn_top_lang_en"):
-            if curr_lang != 'en':
-                apply_language_change('en')
-                st.rerun()
-
-st.title(t("🏭 PRODUCTION | BÁO CÁO SẢN XUẤT BVN QUẢNG BÌNH", "🏭 PRODUCTION | BVN QUANG BINH WOOD PELLET PRODUCTION REPORT"))
+# ================= BỘ LỌC THỜI GIAN ĐẦU TRANG =================
 
 # Xác định ngày có dữ liệu gần nhất và danh sách các ngày
 max_date = df_shifts['date'].max() if ('date' in df_shifts.columns and not df_shifts.empty) else datetime.now()
@@ -704,13 +1024,27 @@ def get_inventory_for_period(df_all_shifts: pd.DataFrame, target_end_date: Any =
             
     return 0.0
 
-# ================= BỘ LỌC THỜI GIAN SẢN XUẤT (FULL WIDTH NHƯ HÌNH 2) =================
-st.markdown(f"""<div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-left: 5px solid #38bdf8; border-radius: 10px; padding: 10px 16px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-<div style="font-size: 14px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px; display: flex; align-items: center; justify-content: space-between;">
-<span>{t("📅 BỘ LỌC THỜI GIAN", "📅 TIME FILTER")}</span>
-<span style="font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">{t("NGÀY / TUẦN / THÁNG / NĂM", "DAY / WEEK / MONTH / YEAR")}</span>
-</div>
-</div>""", unsafe_allow_html=True)
+# ================= BỘ LỌC THỜI GIAN SẢN XUẤT & NÚT LÀM MỚI ĐẦU TRANG =================
+col_top_filter_title, col_top_refresh = st.columns([7, 3])
+with col_top_filter_title:
+    st.markdown(f"""<div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-left: 5px solid #38bdf8; border-radius: 10px; padding: 10px 16px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+    <div style="font-size: 14px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px; display: flex; align-items: center; justify-content: space-between;">
+    <span>{t("📅 BỘ LỌC THỜI GIAN", "📅 TIME FILTER")}</span>
+    <span style="font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">{t("NGÀY / TUẦN / THÁNG / NĂM", "DAY / WEEK / MONTH / YEAR")}</span>
+    </div>
+    </div>""", unsafe_allow_html=True)
+with col_top_refresh:
+    if st.button(
+        t("🔄 Làm Mới Dữ Liệu", "🔄 Refresh Data"),
+        key="top_manual_refresh_btn",
+        use_container_width=True,
+        type="primary",
+        help=t("Xóa bộ nhớ đệm và tải lại số liệu mới nhất từ Google Sheets ngay lập tức (dành cho điện thoại & máy tính)", "Clear cache and reload latest data from Google Sheets immediately (for mobile & desktop)")
+    ):
+        st.cache_data.clear()
+        if 'hr_data' in st.session_state:
+            del st.session_state['hr_data']
+        st.rerun()
 
 if 'main_view_mode_radio' in st.session_state and st.session_state['main_view_mode_radio'] not in time_modes:
     st.session_state['main_view_mode_radio'] = curr_mode
@@ -737,115 +1071,63 @@ selected_month_sidebar = None
 selected_year_sidebar = None
 
 if is_day_mode:
-    c_d1, c_d2, c_d3 = st.columns([5, 2.5, 2.5])
-    with c_d1:
-        avail_dates = sorted(df_shifts['date'].dt.date.unique(), reverse=True) if ('date' in df_shifts.columns and not df_shifts.empty) else [max_date.date()]
-        default_d = st.session_state.get('top_target_date', max_date.date())
-        if default_d not in avail_dates and len(avail_dates) > 0:
-            default_d = avail_dates[0]
-        picked_date = st.date_input(
-            t("Chọn ngày làm việc:", "Select Working Date:"),
-            value=default_d,
-            min_value=min_date.date(),
-            max_value=max_date.date(),
-            key="main_date_picker"
-        )
-        selected_date = datetime.combine(picked_date, datetime.min.time())
-        st.session_state['top_target_date'] = picked_date
-    with c_d2:
-        st.markdown('<div style="height: 28px;"></div>', unsafe_allow_html=True)
-        btn_quick_label = t("👉 Ngày đủ 3 ca (13/09)", "👉 Full 3-Shift Day (13/09)")
-        btn_quick_help = t("Nhảy nhanh đến ngày 13/09/2026: Cả 3 Ca Trưởng đều chạy máy đầy đủ!", "Quick jump to Sep 13, 2026: All 3 Shift Leaders in full operation!")
-        if st.button(btn_quick_label, help=btn_quick_help, use_container_width=True):
-            st.session_state['top_view_mode'] = t("☀️ Theo Ngày", "☀️ Daily")
-            st.session_state['top_target_date'] = datetime(2026, 9, 13).date()
-            st.rerun()
-    with c_d3:
-        inv_val_peek = get_inventory_for_period(df_shifts, selected_date)
-        st.markdown(f"""
-        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
-            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 {t("TỒN KHO VIÊN NÉN", "PELLET INVENTORY")}</div>
-            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_val_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">{t("tấn", "tons")}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+    avail_dates = sorted(df_shifts['date'].dt.date.unique(), reverse=True) if ('date' in df_shifts.columns and not df_shifts.empty) else [max_date.date()]
+    default_d = st.session_state.get('top_target_date', max_date.date())
+    if default_d not in avail_dates and len(avail_dates) > 0:
+        default_d = avail_dates[0]
+    picked_date = st.date_input(
+        t("Chọn ngày làm việc:", "Select Working Date:"),
+        value=default_d,
+        min_value=min_date.date(),
+        max_value=max_date.date(),
+        key="main_date_picker"
+    )
+    selected_date = datetime.combine(picked_date, datetime.min.time())
+    st.session_state['top_target_date'] = picked_date
 
 elif is_week_mode:
-    c_w1, c_w2 = st.columns([7, 3])
-    with c_w1:
-        selected_week_sidebar = st.selectbox(t("Chọn tuần trong năm 2026:", "Select Week in 2026:"), ALL_WEEKS_52, index=default_w_idx, key="main_week_select")
-        selected_date = None
-    with c_w2:
-        w_num_peek = int(selected_week_sidebar.replace("Tuần ", "").replace("Week ", "")) if selected_week_sidebar else None
-        w_peek = df_shifts[df_shifts['date'].dt.isocalendar().week == w_num_peek] if (w_num_peek and 'date' in df_shifts.columns) else None
-        inv_w_peek = get_inventory_for_period(df_shifts, w_peek['date'].max() if (w_peek is not None and not w_peek.empty) else None, w_peek)
-        st.markdown(f"""
-        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
-            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 {t("TỒN KHO CUỐI TUẦN", "END-OF-WEEK INVENTORY")}</div>
-            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_w_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">{t("tấn", "tons")}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+    selected_week_sidebar = st.selectbox(t("Chọn tuần trong năm 2026:", "Select Week in 2026:"), ALL_WEEKS_52, index=default_w_idx, key="main_week_select")
+    selected_date = None
 
 elif is_month_mode:
-    c_m1, c_m2 = st.columns([7, 3])
-    with c_m1:
-        selected_month_sidebar = st.selectbox(t("Chọn tháng trong năm 2026:", "Select Month in 2026:"), ALL_MONTHS_CODE_12, index=default_m_code_idx, key="main_month_select")
-        selected_date = None
-    with c_m2:
-        m_num_peek, y_num_peek = map(int, selected_month_sidebar.split('/')) if selected_month_sidebar else (9, 2026)
-        m_peek = df_shifts[(df_shifts['date'].dt.month == m_num_peek) & (df_shifts['date'].dt.year == y_num_peek)] if 'date' in df_shifts.columns else None
-        inv_m_peek = get_inventory_for_period(df_shifts, m_peek['date'].max() if (m_peek is not None and not m_peek.empty) else None, m_peek)
-        st.markdown(f"""
-        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
-            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 {t("TỒN KHO CUỐI THÁNG", "END-OF-MONTH INVENTORY")}</div>
-            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_m_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">{t("tấn", "tons")}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+    selected_month_sidebar = st.selectbox(t("Chọn tháng trong năm 2026:", "Select Month in 2026:"), ALL_MONTHS_CODE_12, index=default_m_code_idx, key="main_month_select")
+    selected_date = None
 
 elif is_year_mode:
-    c_y1, c_y2 = st.columns([7, 3])
-    with c_y1:
-        selected_year_sidebar = 2026
-        st.selectbox(t("Chọn năm vận hành:", "Select Operating Year:"), [t("Năm 2026 (Toàn bộ 229 ngày làm việc)", "Year 2026 (All 229 operating days)")], index=0, key="main_year_select")
-        selected_date = None
-    with c_y2:
-        inv_y_peek = get_inventory_for_period(df_shifts, df_shifts['date'].max() if not df_shifts.empty else None, df_shifts)
-        st.markdown(f"""
-        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
-            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 {t("TỒN KHO NĂM 2026", "INVENTORY YEAR 2026")}</div>
-            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_y_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">{t("tấn", "tons")}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+    selected_year_sidebar = 2026
+    st.selectbox(t("Chọn năm vận hành:", "Select Operating Year:"), [t("Năm 2026 (Toàn bộ 229 ngày làm việc)", "Year 2026 (All 229 operating days)")], index=0, key="main_year_select")
+    selected_date = None
 
 elif is_range_mode:
-    c_r1, c_r2 = st.columns([7, 3])
-    with c_r1:
-        date_range_input = st.date_input(
-            t("Chọn khoảng ngày:", "Select Date Range:"),
-            value=(max_date.date() - timedelta(days=14), max_date.date()),
-            min_value=min_date.date(),
-            max_value=max_date.date(),
-            key="main_range_picker"
+    date_range_input = st.date_input(
+        t("Chọn khoảng ngày:", "Select Date Range:"),
+        value=(max_date.date() - timedelta(days=14), max_date.date()),
+        min_value=min_date.date(),
+        max_value=max_date.date(),
+        key="main_range_picker"
+    )
+    if isinstance(date_range_input, tuple) and len(date_range_input) == 2:
+        date_range = (
+            datetime.combine(date_range_input[0], datetime.min.time()),
+            datetime.combine(date_range_input[1], datetime.max.time())
         )
-        if isinstance(date_range_input, tuple) and len(date_range_input) == 2:
-            date_range = (
-                datetime.combine(date_range_input[0], datetime.min.time()),
-                datetime.combine(date_range_input[1], datetime.max.time())
-            )
-            selected_date = None
-    with c_r2:
-        end_d_peek = date_range[1] if (isinstance(date_range_input, tuple) and len(date_range_input) == 2) else max_date
-        inv_r_peek = get_inventory_for_period(df_shifts, end_d_peek)
-        st.markdown(f"""
-        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 12px; margin-top: 24px; text-align: center; box-shadow: 0 2px 6px rgba(2,132,199,0.15);">
-            <div style="font-size: 11px; color: #94a3b8; font-weight: 700;">📦 {t("TỒN KHO CUỐI KỲ", "END-OF-PERIOD INVENTORY")}</div>
-            <div style="font-size: 16px; font-weight: 800; color: #38bdf8; line-height: 1.2;">{inv_r_peek:,.1f} <span style="font-size: 11px; font-weight: 600; color: #cbd5e1;">{t("tấn", "tons")}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+        selected_date = None
 
 # Lọc dữ liệu theo ca trưởng nếu có
 df_filtered_shifts = df_shifts.copy()
 if selected_leader not in ["Tất cả", "All"] and 'shift_leader' in df_filtered_shifts.columns:
-    df_filtered_shifts = df_filtered_shifts[df_filtered_shifts['shift_leader'] == selected_leader]
+    df_filtered_shifts = df_filtered_shifts[df_filtered_shifts['shift_leader'].apply(lambda val: match_shift_leader(val, selected_leader))]
+
+# ================= XỬ LÝ TRA CỨU & TÌM KIẾM TÙY BIẾN TOÀN HỆ THỐNG =================
+search_results_data = None
+if global_search_kw:
+    search_results_data = universal_system_search(global_search_kw, data)
+    render_universal_search_panel(search_results_data)
+
+    # Nếu từ khóa có khớp với ca sản xuất, tinh chỉnh bảng df_filtered_shifts
+    matched_shifts = search_shifts_df(df_filtered_shifts, global_search_kw)
+    if not matched_shifts.empty:
+        df_filtered_shifts = matched_shifts
 
 # Tính KPI cho ngày/tuần/tháng/năm được chọn
 if is_week_mode and selected_week_sidebar:
@@ -1766,8 +2048,8 @@ def render_leaders_side_by_side(all_db, default_time_view: str = None):
         if not selected_kpi_time_view:
             selected_kpi_time_view = default_time_view
 
-    col_l, col_s, col_t = st.columns(3)
-    leader_order = [('Long', col_l), ('Sắc', col_s), ('Tài', col_t)]
+    col_a, col_b, col_c = st.columns(3)
+    leader_order = [('Sắc', col_a), ('Tài', col_b), ('Long', col_c)]
 
     for key, col in leader_order:
         ldr = leaders.get(key, {})
@@ -1776,7 +2058,7 @@ def render_leaders_side_by_side(all_db, default_time_view: str = None):
             st.markdown(html, unsafe_allow_html=True)
 
     # Bảng đối sánh toàn diện
-    with st.expander(t("📊 Xem Bảng Đối Sánh Toàn Diện: Toàn Nhà Máy vs 3 Ca Trưởng (Long - Sắc - Tài)", "📊 Comprehensive Comparison: Plant-Wide vs 3 Shift Leaders (Long - Sac - Tai)"), expanded=True):
+    with st.expander(t("📊 Xem Bảng Đối Sánh Toàn Diện: Toàn Nhà Máy vs 3 Ca Trưởng (Ca A Sắc - Ca B Tài - Ca C Long)", "📊 Comprehensive Comparison: Plant-Wide vs 3 Shift Leaders (Shift A Sac - Shift B Tai - Shift C Long)"), expanded=True):
         st.dataframe(translate_comparison_df(all_db.get('comparison_df', pd.DataFrame())), use_container_width=True, hide_index=True)
 
 # Hàm hiển thị Dashboard chuyên sâu cho 1 Ca Trưởng
@@ -1897,54 +2179,7 @@ def render_single_leader_dashboard(ldr, all_db):
             }, inplace=True)
         st.dataframe(df_sub_disp, use_container_width=True, hide_index=True)
 
-# Bộ chọn Dashboard hiển thị
-st.markdown("---")
-db_choices = get_dashboard_choices(curr_lang)
-curr_db_choice = st.session_state.get('main_db_view_choice', db_choices[0])
-curr_db_choice = map_dashboard_choice(curr_db_choice, curr_lang)
-try:
-    default_db_idx = db_choices.index(curr_db_choice)
-except ValueError:
-    default_db_idx = 0
-
-if 'main_db_view_radio' in st.session_state and st.session_state['main_db_view_radio'] not in db_choices:
-    st.session_state['main_db_view_radio'] = curr_db_choice
-
-selected_dashboard_view = st.radio(
-    t("📌 **LỰA CHỌN DASHBOARD HIỂN THỊ:**", "📌 **SELECT DASHBOARD VIEW:**"),
-    db_choices,
-    horizontal=True,
-    index=default_db_idx,
-    key="main_db_view_radio"
-)
-st.session_state['main_db_view_choice'] = selected_dashboard_view
-sel_db_idx = db_choices.index(selected_dashboard_view) if selected_dashboard_view in db_choices else 0
-
-# Hiển thị theo chế độ đã chọn
-if sel_db_idx == 0:
-    st.markdown(render_section_banner(t("🏭 1. BẢNG ĐIỀU KHIỂN TỔNG HỢP TOÀN NHÀ MÁY", "🏭 1. PLANT-WIDE CONSOLIDATED DASHBOARD"), t("Định mức & Mục tiêu Kỹ thuật BVN Quảng Bình", "Technical Benchmarks & Targets - BVN Quang Binh"), "#2563eb"), unsafe_allow_html=True)
-    render_factory_dashboard_cards(kpis, df_weekly)
-    st.markdown("---")
-    st.markdown(render_section_banner(t("👥 2. BẢNG ĐIỀU KHIỂN CHI TIẾT 3 CA TRƯỞNG: LONG - SẮC - TÀI", "👥 2. DETAILED SHIFT LEADER DASHBOARDS: LONG - SAC - TAI"), t("Theo dõi Song Song & Thi Đua KPI", "Parallel Monitoring & KPI Competition"), "#10b981"), unsafe_allow_html=True)
-    cur_def_time = t("☀️ Theo Ngày", "☀️ Daily")
-    if is_week_mode:
-        cur_def_time = t("📅 Theo Tuần", "📅 Weekly")
-    elif is_month_mode or is_year_mode:
-        cur_def_time = t("📆 Theo Tháng", "📆 Monthly")
-    render_leaders_side_by_side(all_db_summary, default_time_view=cur_def_time)
-elif sel_db_idx == 1:
-    st.markdown(render_section_banner(t("🏭 BẢNG ĐIỀU KHIỂN TỔNG HỢP TOÀN NHÀ MÁY", "🏭 PLANT-WIDE CONSOLIDATED DASHBOARD"), t("Định mức & Mục tiêu Kỹ thuật BVN Quảng Bình", "Technical Benchmarks & Targets - BVN Quang Binh"), "#2563eb"), unsafe_allow_html=True)
-    render_factory_dashboard_cards(kpis, df_weekly)
-elif sel_db_idx == 2:
-    render_single_leader_dashboard(all_db_summary['leaders']['Long'], all_db_summary)
-elif sel_db_idx == 3:
-    render_single_leader_dashboard(all_db_summary['leaders']['Sắc'], all_db_summary)
-elif sel_db_idx == 4:
-    render_single_leader_dashboard(all_db_summary['leaders']['Tài'], all_db_summary)
-
-st.markdown("---")
-
-# ================= CỬA SỔ TÁC VỤ (ĐIỀU HƯỚNG DỌC BÊN TRÁI MÀN HÌNH) =================
+# ================= CỬA SỔ TÁC VỤ & ĐIỀU HƯỚNG =================
 active_task = st.session_state.get('active_task', OP_TASKS[0])
 active_task = map_task_name(active_task, curr_lang)
 st.session_state['active_task'] = active_task
@@ -1956,6 +2191,88 @@ is_op = active_task in OP_TASKS
 is_static = active_task in STATIC_TASKS
 is_entry = active_task in ENTRY_TASKS
 
+# Nếu ở nhóm 1 (Vận hành & KPI), hiển thị Dashboard tổng hợp & Dashboard ca trưởng
+if is_op:
+    st.markdown("---")
+    db_choices = get_dashboard_choices(curr_lang)
+    curr_db_choice = st.session_state.get('main_db_view_choice', db_choices[0])
+    curr_db_choice = map_dashboard_choice(curr_db_choice, curr_lang)
+    try:
+        default_db_idx = db_choices.index(curr_db_choice)
+    except ValueError:
+        default_db_idx = 0
+
+    if 'main_db_view_select' in st.session_state and st.session_state['main_db_view_select'] not in db_choices:
+        st.session_state['main_db_view_select'] = curr_db_choice
+
+    selected_dashboard_view = st.selectbox(
+        t("📌 LỰA CHỌN DASHBOARD HIỂN THỊ:", "📌 SELECT DASHBOARD VIEW:"),
+        db_choices,
+        index=default_db_idx,
+        key="main_db_view_select"
+    )
+    st.session_state['main_db_view_choice'] = selected_dashboard_view
+    sel_db_idx = db_choices.index(selected_dashboard_view) if selected_dashboard_view in db_choices else 0
+
+    # Hiển thị theo chế độ đã chọn
+    if sel_db_idx == 0:
+        st.markdown(render_section_banner(t("🏭 1. BẢNG ĐIỀU KHIỂN TỔNG HỢP TOÀN NHÀ MÁY", "🏭 1. PLANT-WIDE CONSOLIDATED DASHBOARD"), t("Định mức & Mục tiêu Kỹ thuật BVN Quảng Bình", "Technical Benchmarks & Targets - BVN Quang Binh"), "#2563eb"), unsafe_allow_html=True)
+        render_factory_dashboard_cards(kpis, df_weekly)
+
+        # Thanh chuyển nhanh sang phân hệ nhập số liệu trực tiếp
+        c_eb1, c_eb2 = st.columns([7, 3])
+        with c_eb1:
+            st.markdown(f"""
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 8px 14px; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 20px;">✍️</span>
+                <div>
+                    <span style="font-size: 13px; font-weight: 700; color: #34d399;">{t("KHÔNG GIAN NHẬP SỐ LIỆU SẢN XUẤT TRỰC TIẾP", "DIRECT PRODUCTION DATA ENTRY WORKSPACE")}</span>
+                    <span style="font-size: 11px; color: #94a3b8; margin-left: 8px;">{t("Phân quyền: 🏭 Sản Xuất (Ca A, B, C, QĐ) • 🔬 KCS • 🔧 Bảo Trì • 🪵 Chipper", "Role-based: 🏭 Production • 🔬 KCS • 🔧 Maint • 🪵 Chipper")}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with c_eb2:
+            if st.button(f"🚀 {t('NHẬP SỐ LIỆU NGAY (4 TABS)', 'ENTER DATA NOW (4 TABS)')}", key="btn_jump_to_entry_from_overview", type="primary", use_container_width=True):
+                st.session_state['active_task'] = ENTRY_TASKS[0]
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown(render_section_banner(t("👥 2. BẢNG ĐIỀU KHIỂN CHI TIẾT 3 CA TRƯỞNG: SẮC (CA A) - TÀI (CA B) - LONG (CA C)", "👥 2. DETAILED SHIFT LEADER DASHBOARDS: SAC (SHIFT A) - TAI (SHIFT B) - LONG (SHIFT C)"), t("Theo dõi Song Song & Thi Đua KPI", "Parallel Monitoring & KPI Competition"), "#10b981"), unsafe_allow_html=True)
+        cur_def_time = t("☀️ Theo Ngày", "☀️ Daily")
+        if is_week_mode:
+            cur_def_time = t("📅 Theo Tuần", "📅 Weekly")
+        elif is_month_mode or is_year_mode:
+            cur_def_time = t("📆 Theo Tháng", "📆 Monthly")
+        render_leaders_side_by_side(all_db_summary, default_time_view=cur_def_time)
+    elif sel_db_idx == 1:
+        st.markdown(render_section_banner(t("🏭 BẢNG ĐIỀU KHIỂN TỔNG HỢP TOÀN NHÀ MÁY", "🏭 PLANT-WIDE CONSOLIDATED DASHBOARD"), t("Định mức & Mục tiêu Kỹ thuật BVN Quảng Bình", "Technical Benchmarks & Targets - BVN Quang Binh"), "#2563eb"), unsafe_allow_html=True)
+        render_factory_dashboard_cards(kpis, df_weekly)
+
+        # Thanh chuyển nhanh sang phân hệ nhập số liệu trực tiếp
+        c_eb1, c_eb2 = st.columns([7, 3])
+        with c_eb1:
+            st.markdown(f"""
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 8px 14px; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 20px;">✍️</span>
+                <div>
+                    <span style="font-size: 13px; font-weight: 700; color: #34d399;">{t("KHÔNG GIAN NHẬP SỐ LIỆU SẢN XUẤT TRỰC TIẾP", "DIRECT PRODUCTION DATA ENTRY WORKSPACE")}</span>
+                    <span style="font-size: 11px; color: #94a3b8; margin-left: 8px;">{t("Phân quyền: 🏭 Sản Xuất (Ca A, B, C, QĐ) • 🔬 KCS • 🔧 Bảo Trì • 🪵 Chipper", "Role-based: 🏭 Production • 🔬 KCS • 🔧 Maint • 🪵 Chipper")}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with c_eb2:
+            if st.button(f"🚀 {t('NHẬP SỐ LIỆU NGAY (4 TABS)', 'ENTER DATA NOW (4 TABS)')}", key="btn_jump_to_entry_from_overview_single", type="primary", use_container_width=True):
+                st.session_state['active_task'] = ENTRY_TASKS[0]
+                st.rerun()
+    elif sel_db_idx == 2:
+        render_single_leader_dashboard(all_db_summary['leaders']['Sắc'], all_db_summary)
+    elif sel_db_idx == 3:
+        render_single_leader_dashboard(all_db_summary['leaders']['Tài'], all_db_summary)
+    elif sel_db_idx == 4:
+        render_single_leader_dashboard(all_db_summary['leaders']['Long'], all_db_summary)
+
+st.markdown("---")
+
 if is_op:
     group_title = t("📊 NHÓM 1: VẬN HÀNH, KPI & ĐO LƯỜNG (SỐ LIỆU ĐỘNG HÀNG NGÀY)", "📊 GROUP 1: OPERATIONS, KPI & METRICS (DYNAMIC DAILY DATA)")
     group_color = "#38bdf8"
@@ -1965,9 +2282,9 @@ elif is_static:
     group_color = "#c084fc"
     group_tag = t(f"Mục {STATIC_TASKS.index(active_task) + 1}/3 Quy Trình & Sơ Đồ", f"Item {STATIC_TASKS.index(active_task) + 1}/3 Workflows & Schematics")
 else:
-    group_title = t("📝 NHÓM 3: NHẬP BÁO CÁO CA & KCS TRỰC TIẾP (BẢO MẬT CA TRƯỞNG)", "📝 GROUP 3: SHIFT & QC DIRECT DATA ENTRY (PIN PROTECTED)")
+    group_title = t("📝 NHÓM 3: NHẬP SỐ LIỆU (PHÂN QUYỀN TRUY CẬP)", "📝 GROUP 3: DATA ENTRY (ROLE PROTECTED)")
     group_color = "#34d399"
-    group_tag = t("Mục 14/14 Nhập Liệu Trực Tiếp", "Item 14/14 Direct Data Entry")
+    group_tag = t("Mục 14/14 Nhập Số Liệu", "Item 14/14 Data Entry")
 
 st.markdown(f"""
 <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 12px; padding: 14px 20px; margin-bottom: 12px; border: 1px solid #334155; box-shadow: 0 4px 14px rgba(0,0,0,0.15); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
@@ -2046,6 +2363,10 @@ if task_num == 1:
         shift_data = kpis.get('shift_details', [])
         if shift_data:
             df_shifts_table = pd.DataFrame(shift_data)
+            if global_search_kw and not df_shifts_table.empty:
+                s_match = search_df(df_shifts_table, global_search_kw)
+                if not s_match.empty:
+                    df_shifts_table = s_match
             # Tạo các cột hiển thị đẹp
             df_view = pd.DataFrame({
                 t('Ca Trưởng', 'Shift Leader'): df_shifts_table['ca_truong'],
@@ -2061,7 +2382,17 @@ if task_num == 1:
             })
             st.dataframe(df_view, use_container_width=True, hide_index=True)
         else:
-            st.info(t("Không có dữ liệu ca cho ngày này.", "No shift data available for this date."))
+            st.markdown(f"""
+            <div style="background: rgba(234, 179, 8, 0.08); border: 1.5px dashed #eab308; border-radius: 10px; padding: 18px 16px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; color: #facc15; font-size: 14px;">
+                    <span>⚠️</span>
+                    <span>{t(f"Ngày {kpis.get('date_str', '')} chưa có dữ liệu ca sản xuất", f"No shift production data for {kpis.get('date_str', '')}")}</span>
+                </div>
+                <div style="font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.5;">
+                    {t("Chưa có ca nào được ghi nhận cho ngày này. Quý khách có thể nhập trực tiếp bằng biểu mẫu bên dưới hoặc bấm nút chuyển nhanh sang phân hệ Nhập Số Liệu.", "No shifts recorded yet for this date. You can enter data using the form below or switch to the Data Entry workspace.")}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
     with col_t1_right:
         # Biểu đồ Donut tỷ trọng sản lượng theo ca
@@ -2077,6 +2408,17 @@ if task_num == 1:
             fig_donut.update_traces(textinfo='percent+label', pull=[0.05]*len(shift_data))
             fig_donut.update_layout(margin=dict(t=40, b=0, l=0, r=0), height=260)
             st.plotly_chart(fig_donut, use_container_width=True)
+        else:
+            st.markdown(f"""
+            <div style="background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 10px;">
+                <div style="font-size: 26px; margin-bottom: 4px;">📝</div>
+                <div style="font-size: 13px; font-weight: 700; color: #34d399;">{t("KHÔNG GIAN NHẬP SỐ LIỆU", "DATA ENTRY WORKSPACE")}</div>
+                <div style="font-size: 11px; color: #94a3b8; margin-top: 4px; margin-bottom: 10px;">{t("4 Tabs: 🏭 Sản Xuất • 🔬 KCS • 🔧 Bảo Trì • 🪵 Chipper", "4 Tabs: 🏭 Prod • 🔬 KCS • 🔧 Maint • 🪵 Chipper")}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button(f"🚀 {t('NHẬP SỐ LIỆU NGAY (4 TABS)', 'ENTER DATA NOW (4 TABS)')}", key="btn_jump_to_entry_empty_shift", type="primary", use_container_width=True):
+                st.session_state['active_task'] = ENTRY_TASKS[0]
+                st.rerun()
 
     st.markdown(f'<div class="section-title">{t("⏱️ Thời Gian Máy Chạy Của Các Cụm Thiết Bị (Giờ/Ngày)", "⏱️ Equipment Operating Hours (Hours/Day)")}</div>', unsafe_allow_html=True)
     
@@ -2128,6 +2470,32 @@ if task_num == 1:
             fig_pe = px.bar(data_pe, x=col_mach, y=col_hr, text=col_hr, color_discrete_sequence=['#10b981'])
             fig_pe.update_layout(yaxis_range=[0, 24], height=240, margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
             st.plotly_chart(fig_pe, use_container_width=True)
+
+    # KHÔNG GIAN NHẬP SỐ LIỆU SẢN XUẤT TRỰC TIẾP (ĐỒNG BỘ GOOGLE SHEETS)
+    st.markdown("---")
+    st.markdown(f'<div class="section-title">{t("✍️ Không Gian Nhập Liệu & Báo Cáo Ca Sản Xuất (Đồng Bộ Google Sheets)", "✍️ Direct Shift Data Entry Workspace (Sync to Google Sheets)")}</div>', unsafe_allow_html=True)
+    c_inline_l, c_inline_r = st.columns([7, 3])
+    with c_inline_l:
+        st.caption(t(
+            f"Nhập trực tiếp số liệu ca sản xuất cho ngày **{kpis.get('date_str', 'hôm nay')}** lên Google Sheets (Sheet `Product_Data`). Hệ thống sẽ tự động tính toán KPI và cập nhật toàn bộ biểu đồ tức thì.",
+            f"Enter shift production data for **{kpis.get('date_str', 'today')}** directly to Google Sheets (`Product_Data`). Dashboard KPI metrics refresh instantly."
+        ))
+    with c_inline_r:
+        if st.button(f"🚀 {t('MỞ PHÂN HỆ NHẬP SỐ LIỆU (4 TABS)', 'OPEN DATA ENTRY (4 TABS)')}", key="btn_jump_to_tab14_from_tab1_footer", type="primary", use_container_width=True):
+            st.session_state['active_task'] = ENTRY_TASKS[0]
+            st.rerun()
+
+    has_shifts = bool(kpis.get('shift_details', []))
+    exp_label = f"📝 {t('MỞ BIỂU MẪU NHẬP SỐ LIỆU CA CHO NGÀY', 'OPEN SHIFT PRODUCTION FORM FOR')} {kpis.get('date_str', 'HÔM NAY')}"
+    with st.expander(exp_label, expanded=(not has_shifts)):
+        c_user = get_current_user()
+        if c_user is None:
+            render_login_box("tab1_inline_login")
+        else:
+            if check_tab_permission(c_user.get('id', ''), 'san_xuat'):
+                render_shift_production_form(app_loader or DataLoader(), c_user)
+            else:
+                render_permission_denied_card(t("Sản Xuất", "Production"), "san_xuat", c_user)
 
 # ----------------- TAB KPI: ĐÁNH GIÁ & XẾP HẠNG KPI CA TRƯỞNG (FILE MỚI) -----------------
 elif task_num == 2:
@@ -2195,9 +2563,12 @@ elif task_num == 2:
             return
 
         ca_colors = {
+            'Ca A': '#16a34a',
+            'Ca B': '#ea580c',
+            'Ca C': '#2563eb',
             'Sắc': '#16a34a',
-            'Long': '#2563eb',
             'Tài': '#ea580c',
+            'Long': '#2563eb',
         }
         pts_lbl = t("đ", "pts")
 
@@ -2500,16 +2871,16 @@ elif task_num == 2:
             max_w_label = df_wm_weekly['week_label'].iloc[-1] if not df_wm_weekly.empty else "Tuần 38"
             st.markdown(f"#### 📈 {t('Diễn Biến Tổng Điểm KPI Ca Trưởng Qua Các Tuần', 'Shift Leader KPI Trend Across Weeks')} ({min_w_label} - {max_w_label})")
             fig_trend_w = go.Figure()
-            colors_l = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            colors_l = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
             display_ca_map = {
-                'Ca A': 'Ca A (Thành, Hải)',
-                'Ca B': 'Ca B (Lâm, Sắc)',
-                'Ca C': 'Ca C (Long, Tài)',
-                'Long': 'Ca Long (Ca C)',
-                'Sắc': 'Ca Sắc (Ca B)',
-                'Tài': 'Ca Tài (Ca C)'
+                'Ca A': 'Ca A (Sắc)',
+                'Ca B': 'Ca B (Tài)',
+                'Ca C': 'Ca C (Long)',
+                'Sắc': 'Ca Trưởng Sắc (Ca A)',
+                'Tài': 'Ca Trưởng Tài (Ca B)',
+                'Long': 'Ca Trưởng Long (Ca C)'
             }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_weekly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_weekly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
             for name in target_cas:
                 if name in df_wm_weekly.columns:
                     lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
@@ -2578,16 +2949,16 @@ elif task_num == 2:
             all_m_labels = " vs ".join(df_wm_monthly['month_label'].tolist()) if not df_wm_monthly.empty else "Tháng 8 vs Tháng 9"
             st.markdown(f"#### 📈 {t('So Sánh Tổng Điểm KPI Qua Các Tháng', 'KPI Score Comparison Across Months')} ({all_m_labels})")
             fig_trend_m = go.Figure()
-            colors_l = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            colors_l = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
             display_ca_map = {
-                'Ca A': 'Ca A (Thành, Hải)',
-                'Ca B': 'Ca B (Lâm, Sắc)',
-                'Ca C': 'Ca C (Long, Tài)',
-                'Long': 'Ca Long (Ca C)',
-                'Sắc': 'Ca Sắc (Ca B)',
-                'Tài': 'Ca Tài (Ca C)'
+                'Ca A': 'Ca A (Sắc)',
+                'Ca B': 'Ca B (Tài)',
+                'Ca C': 'Ca C (Long)',
+                'Sắc': 'Ca Trưởng Sắc (Ca A)',
+                'Tài': 'Ca Trưởng Tài (Ca B)',
+                'Long': 'Ca Trưởng Long (Ca C)'
             }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_monthly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_monthly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
             for name in target_cas:
                 if name in df_wm_monthly.columns:
                     lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
@@ -2683,16 +3054,16 @@ elif task_num == 2:
     with tab_c1:
         if not df_chart_dien.empty:
             fig_cd = go.Figure()
-            colors = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            colors = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
             display_ca_map = {
-                'Ca A': 'Ca A (Thành, Hải)',
-                'Ca B': 'Ca B (Lâm, Sắc)',
-                'Ca C': 'Ca C (Long, Tài)',
-                'Long': 'Ca Long (Ca C)',
-                'Sắc': 'Ca Sắc (Ca B)',
-                'Tài': 'Ca Tài (Ca C)'
+                'Ca A': 'Ca A (Sắc)',
+                'Ca B': 'Ca B (Tài)',
+                'Ca C': 'Ca C (Long)',
+                'Sắc': 'Ca Trưởng Sắc (Ca A)',
+                'Tài': 'Ca Trưởng Tài (Ca B)',
+                'Long': 'Ca Trưởng Long (Ca C)'
             }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_dien.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_dien.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
             for name in target_cas:
                 if name in df_chart_dien.columns:
                     lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
@@ -2714,16 +3085,16 @@ elif task_num == 2:
     with tab_c2:
         if not df_chart_cap.empty:
             fig_cc = go.Figure()
-            colors = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            colors = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
             display_ca_map = {
-                'Ca A': 'Ca A (Thành, Hải)',
-                'Ca B': 'Ca B (Lâm, Sắc)',
-                'Ca C': 'Ca C (Long, Tài)',
-                'Long': 'Ca Long (Ca C)',
-                'Sắc': 'Ca Sắc (Ca B)',
-                'Tài': 'Ca Tài (Ca C)'
+                'Ca A': 'Ca A (Sắc)',
+                'Ca B': 'Ca B (Tài)',
+                'Ca C': 'Ca C (Long)',
+                'Sắc': 'Ca Trưởng Sắc (Ca A)',
+                'Tài': 'Ca Trưởng Tài (Ca B)',
+                'Long': 'Ca Trưởng Long (Ca C)'
             }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_cap.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_cap.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
             for name in target_cas:
                 if name in df_chart_cap.columns:
                     lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
@@ -2744,16 +3115,16 @@ elif task_num == 2:
     with tab_c3:
         if not df_chart_moist.empty:
             fig_cm = go.Figure()
-            colors = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c'}
+            colors = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
             display_ca_map = {
-                'Ca A': 'Ca A (Thành, Hải)',
-                'Ca B': 'Ca B (Lâm, Sắc)',
-                'Ca C': 'Ca C (Long, Tài)',
-                'Long': 'Ca Long (Ca C)',
-                'Sắc': 'Ca Sắc (Ca B)',
-                'Tài': 'Ca Tài (Ca C)'
+                'Ca A': 'Ca A (Sắc)',
+                'Ca B': 'Ca B (Tài)',
+                'Ca C': 'Ca C (Long)',
+                'Sắc': 'Ca Trưởng Sắc (Ca A)',
+                'Tài': 'Ca Trưởng Tài (Ca B)',
+                'Long': 'Ca Trưởng Long (Ca C)'
             }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_moist.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Long', 'Sắc', 'Tài']
+            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_moist.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
             for name in target_cas:
                 if name in df_chart_moist.columns:
                     lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
@@ -2774,16 +3145,16 @@ elif task_num == 2:
     with tab_c4:
         if not df_chart_sl.empty:
             fig_csl = go.Figure()
-            colors_actual = {'Ca A': '#2563eb', 'Ca B': '#16a34a', 'Ca C': '#ea580c', 'Long': '#2563eb', 'Sac': '#16a34a', 'Tai': '#ea580c'}
-            colors_target = {'Ca A': '#93c5fd', 'Ca B': '#86efac', 'Ca C': '#fdba74', 'Long': '#93c5fd', 'Sac': '#86efac', 'Tai': '#fdba74'}
+            colors_actual = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Sac': '#16a34a', 'Tài': '#ea580c', 'Tai': '#ea580c', 'Long': '#2563eb'}
+            colors_target = {'Ca A': '#86efac', 'Ca B': '#fdba74', 'Ca C': '#93c5fd', 'Sắc': '#86efac', 'Sac': '#86efac', 'Tài': '#fdba74', 'Tai': '#fdba74', 'Long': '#93c5fd'}
             pairs = [
-                ('Ca A', 'Ca A (Thành, Hải)'),
-                ('Ca B', 'Ca B (Lâm, Sắc)'),
-                ('Ca C', 'Ca C (Long, Tài)')
+                ('Ca A', 'Ca A (Sắc)'),
+                ('Ca B', 'Ca B (Tài)'),
+                ('Ca C', 'Ca C (Long)')
             ] if any(f'{c}_actual' in df_chart_sl.columns for c in ['Ca A', 'Ca B', 'Ca C']) else [
-                ('Long', 'Ca Long'),
-                ('Sac', 'Ca Sắc'),
-                ('Tai', 'Ca Tài')
+                ('Sac', 'Ca Sắc (Ca A)'),
+                ('Tai', 'Ca Tài (Ca B)'),
+                ('Long', 'Ca Long (Ca C)')
             ]
             for code, name in pairs:
                 act_col = f'{code}_actual'
@@ -2792,13 +3163,13 @@ elif task_num == 2:
                     fig_csl.add_trace(go.Bar(
                         x=df_chart_sl['date_str'], y=df_chart_sl[act_col],
                         name=f"{t('SL Thực Tế', 'Actual')} - {name}",
-                        marker_color=colors_actual.get(code, '#2563eb')
+                        marker_color=colors_actual.get(code, '#16a34a')
                     ))
                 if tgt_col in df_chart_sl.columns:
                     fig_csl.add_trace(go.Scatter(
                         x=df_chart_sl['date_str'], y=df_chart_sl[tgt_col],
                         mode='lines', name=f"{t('Chỉ Tiêu', 'Target')} - {name}",
-                        line=dict(color=colors_target.get(code, '#93c5fd'), dash='dot', width=2)
+                        line=dict(color=colors_target.get(code, '#86efac'), dash='dot', width=2)
                     ))
             fig_csl.update_layout(
                 title=t("Sản Lượng Thực Tế vs Chỉ Tiêu Từng Ca (Từ Data KPI)", "Actual Output vs Target by Shift (From Data KPI)"),
@@ -3253,6 +3624,10 @@ elif task_num == 5:
         with c_tbl_inc:
             st.markdown(f"##### 📋 {t('Bảng Chi Tiết Các Vụ Sự Cố Đã Ghi Nhận', 'Detailed Incident Log Table')}")
             df_show_inc = inc_stats['df_filtered']
+            if global_search_kw and not df_show_inc.empty:
+                inc_match = search_df(df_show_inc, global_search_kw)
+                if not inc_match.empty:
+                    df_show_inc = inc_match
             if not df_show_inc.empty:
                 cols_inc_disp = ['id_su_co', 'date_str', 'shift_leader', 'equipment_raw', 'description', 'solution', 'performer', 'duration_hours', 'status']
                 avail_c_inc = [c for c in cols_inc_disp if c in df_show_inc.columns]
@@ -3289,105 +3664,541 @@ elif task_num == 5:
 
 # ----------------- TAB MAINT LOG: NHẬT KÝ BẢO TRÌ & SỬA CHỮA (2026 BẢO TRÌ BVN) -----------------
 elif task_num == 6:
-    st.markdown(f'<div class="section-title">{t("🔧 NHẬT KÝ BẢO TRÌ, GIA CÔNG & PHỤC HỒI THIẾT BỊ (2026 BẢO TRÌ BVN)", "🔧 MAINTENANCE, FABRICATION & OVERHAUL LOG (2026 BVN MAINTENANCE)")}</div>', unsafe_allow_html=True)
-    st.caption(f"{t('Nguồn dữ liệu:', 'Data source:')} **{maint_log_title}** (Google Sheets ID: `1hInwQQgN3zXWFEXC1qaFgaXeIiogXUJtm0cPgP3PlX8`)")
+    st.markdown(f'<div class="section-title">{t("🔧 BÁO CÁO ĐỊNH KỲ, NHẬT KÝ BẢO TRÌ & QUẢN TRỊ TPM (MANINTERNANCE BVNQB)", "🔧 PERIODIC REPORTS, MAINTENANCE LOG & TPM MANAGEMENT (MANINTERNANCE BVNQB)")}</div>', unsafe_allow_html=True)
+    st.caption(f"{t('Nguồn dữ liệu:', 'Data source:')} **{maint_log_title}** (Google Sheets ID: `1hInwQQgN3zXWFEXC1qaFgaXeIiogXUJtm0cPgP3PlX8` | GID: `1631161446`)")
 
-    if not df_maint_log.empty:
-        # Bộ lọc thiết bị và loại bảo trì
-        c_ml_f1, c_ml_f2, c_ml_f3 = st.columns(3)
-        all_lbl = t("Tất cả", "All")
-        with c_ml_f1:
-            all_acts = [all_lbl] + sorted([a for a in df_maint_log['activity'].unique() if a])
-            sel_act = st.selectbox(t("Loại hoạt động bảo trì:", "Maintenance Activity Type:"), all_acts, key="sb_ml_act")
-        with c_ml_f2:
-            all_eqs = [all_lbl] + sorted([e for e in df_maint_log['equipment'].unique() if e])
-            sel_eq = st.selectbox(t("Lọc theo thiết bị:", "Filter by Equipment:"), all_eqs, key="sb_ml_eq")
-        with c_ml_f3:
-            all_status = [all_lbl] + sorted([s for s in df_maint_log['status'].unique() if s])
-            sel_status = st.selectbox(t("Trạng thái:", "Status:"), all_status, key="sb_ml_status")
+    maint_tab1, maint_tab2, maint_tab3, maint_tab4 = st.tabs([
+        t("📊 BÁO CÁO ĐỊNH KỲ (MONTHLY / WEEKLY / DAILY)", "📊 PERIODIC REPORTS (MONTHLY / WEEKLY / DAILY)"),
+        t("🔧 NHẬT KÝ BẢO TRÌ CHI TIẾT (SHEET DATA)", "🔧 DETAILED MAINTENANCE LOG (DATA SHEET)"),
+        t("🚀 QUẢN TRỊ TPM & CẢI TIẾN (TPM & IMPROVEMENTS)", "🚀 TPM & IMPROVEMENT MANAGEMENT"),
+        t("🛢️ KIỂM ĐỊNH MỠ BÔI TRƠN MÁY ÉP (PM30-6)", "🛢️ PELLET MILL GREASE DOSING CHECK (PM30-6)")
+    ])
 
-        df_ml_filt = df_maint_log.copy()
-        if sel_act != all_lbl:
-            df_ml_filt = df_ml_filt[df_ml_filt['activity'] == sel_act]
-        if sel_eq != all_lbl:
-            df_ml_filt = df_ml_filt[df_ml_filt['equipment'] == sel_eq]
-        if sel_status != all_lbl:
-            df_ml_filt = df_ml_filt[df_ml_filt['status'] == sel_status]
+    # -------------------------------------------------------------
+    # SUBTAB 1: BÁO CÁO ĐỊNH KỲ (TƯƠNG ỨNG SHEET MONTHLY_REPORT GID 1631161446)
+    # -------------------------------------------------------------
+    with maint_tab1:
+        st.markdown(f"#### 📊 {t('BÁO CÁO BẢO TRÌ & SỰ CỐ TỔNG HỢP (MONTHLY / WEEKLY / DAILY)', 'SYNTHESIZED MAINTENANCE & INCIDENT REPORT')}")
+        st.caption(t("Báo cáo tương thích trực tiếp với trang Google Sheets `Monthly_Report` (GID: 1631161446), `Weekly_Report` và `Daily_Report`.", "Report directly compatible with Google Sheets `Monthly_Report` (GID: 1631161446), `Weekly_Report`, and `Daily_Report`."))
 
-        # Thẻ KPI
-        tot_maint = len(df_ml_filt)
-        tot_proactive = len(df_ml_filt[df_ml_filt['activity'].str.contains('Bảo trì chủ động', case=False, na=False)])
-        tot_rulo_die = len(df_ml_filt[df_ml_filt['activity'].str.contains('rulo|khuôn', case=False, na=False)])
-        tot_done = len(df_ml_filt[df_ml_filt['status'].str.contains('Hoàn thành', case=False, na=False)])
-        rate_done = round(tot_done / tot_maint * 100, 1) if tot_maint > 0 else 100.0
-
-        c_m1, c_m2, c_m3, c_m4 = st.columns(4)
-        c_m1.metric(t("Tổng Số Lượt Bảo Trì", "Total Maintenance Jobs"), f"{tot_maint:,} " + t("lượt", "jobs"))
-        c_m2.metric(t("Bảo Trì Chủ Động", "Proactive Maintenance"), f"{tot_proactive:,} " + t("lượt", "jobs"))
-        c_m3.metric(t("Phục Hồi Rulo & Khuôn", "Roller & Die Overhaul"), f"{tot_rulo_die:,} " + t("lượt", "jobs"))
-        c_m4.metric(t("Tỷ Lệ Hoàn Thành", "Completion Rate"), f"{rate_done}%")
-
-        # Biểu đồ phân bổ
-        c_g1, c_g2 = st.columns(2)
-        with c_g1:
-            df_act_cnt = df_maint_log['activity'].value_counts().head(7).reset_index()
-            df_act_cnt.columns = ['Hoạt Động', 'Số Lần']
-            fig_act = px.pie(
-                df_act_cnt,
-                names='Hoạt Động',
-                values='Số Lần',
-                title=t("Cơ Cấu Hoạt Động Bảo Trì & Sửa Chữa Toàn Nhà Máy", "Plant Maintenance & Repair Breakdown"),
-                hole=0.45,
-                color_discrete_sequence=px.colors.qualitative.Pastel
+        c_rep_type, c_rep_sel = st.columns([1, 2])
+        with c_rep_type:
+            rep_type = st.radio(
+                t("Chọn chu kỳ báo cáo:", "Select report period:"),
+                [
+                    t("📆 Theo Tháng (Monthly Report)", "📆 Monthly Report"),
+                    t("📅 Theo Tuần (Weekly Report)", "📅 Weekly Report"),
+                    t("☀️ Theo Ngày (Daily Report)", "☀️ Daily Report")
+                ],
+                key="sb_maint_rep_type"
             )
-            fig_act.update_layout(height=320, margin=dict(t=40, b=20, l=20, r=20))
-            st.plotly_chart(fig_act, use_container_width=True, key="fig_act_pie")
 
-        with c_g2:
-            df_eq_cnt = df_maint_log[df_maint_log['equipment'] != '']['equipment'].value_counts().head(10).reset_index()
-            df_eq_cnt.columns = ['Thiết Bị', 'Số Lần Bảo Trì']
-            fig_eq_m = px.bar(
-                df_eq_cnt,
-                x='Thiết Bị',
-                y='Số Lần Bảo Trì',
-                text='Số Lần Bảo Trì',
-                color='Số Lần Bảo Trì',
-                color_continuous_scale='Blues',
-                title=t("Top 10 Thiết Bị Được Bảo Dưỡng & Sửa Chữa Nhiều Nhất", "Top 10 Maintained & Repaired Equipment")
+        # Lọc dữ liệu theo chu kỳ được chọn
+        df_inc_sub = df_incidents.copy() if not df_incidents.empty else pd.DataFrame()
+        df_ml_sub = df_maint_log.copy() if not df_maint_log.empty else pd.DataFrame()
+
+        period_title = ""
+
+        with c_rep_sel:
+            if "Tháng" in rep_type or "Monthly" in rep_type:
+                available_months = sorted(list(set(
+                    ([int(m) for m in df_ml_sub['month'].dropna().unique() if int(m) > 0] if not df_ml_sub.empty and 'month' in df_ml_sub else []) +
+                    ([int(m) for m in df_inc_sub['month'].dropna().unique() if int(m) > 0] if not df_inc_sub.empty and 'month' in df_inc_sub else [])
+                )))
+                if not available_months:
+                    available_months = [2, 5, 6, 7, 8, 9]
+                month_opts = [f"Tháng {int(m)}" for m in available_months]
+                def_m_idx = len(month_opts) - 1
+                sel_m_str = st.selectbox(t("Chọn Tháng báo cáo:", "Select reporting month:"), month_opts, index=def_m_idx, key="sb_maint_month_pick")
+                m_match = re.search(r'\d+', sel_m_str)
+                sel_m_num = int(m_match.group()) if m_match else 9
+                period_title = f"{t('Tháng', 'Month')} {sel_m_num}"
+
+                if not df_inc_sub.empty and 'month' in df_inc_sub:
+                    df_inc_sub = df_inc_sub[df_inc_sub['month'] == sel_m_num]
+                if not df_ml_sub.empty and 'month' in df_ml_sub:
+                    df_ml_sub = df_ml_sub[df_ml_sub['month'] == sel_m_num]
+
+            elif "Tuần" in rep_type or "Weekly" in rep_type:
+                available_weeks = sorted(list(set(
+                    ([int(w) for w in df_ml_sub['week'].dropna().unique() if int(w) > 0] if not df_ml_sub.empty and 'week' in df_ml_sub else []) +
+                    ([int(w) for w in df_inc_sub['week'].dropna().unique() if int(w) > 0] if not df_inc_sub.empty and 'week' in df_inc_sub else [])
+                )))
+                if not available_weeks:
+                    available_weeks = list(range(1, 53))
+                week_opts = [f"Tuần {int(w)}" for w in available_weeks]
+                def_w_idx = len(week_opts) - 1
+                sel_w_str = st.selectbox(t("Chọn Tuần báo cáo:", "Select reporting week:"), week_opts, index=def_w_idx, key="sb_maint_week_pick")
+                w_match = re.search(r'\d+', sel_w_str)
+                sel_w_num = int(w_match.group()) if w_match else 36
+                period_title = f"{t('Tuần', 'Week')} {sel_w_num}"
+
+                if not df_inc_sub.empty and 'week' in df_inc_sub:
+                    df_inc_sub = df_inc_sub[df_inc_sub['week'] == sel_w_num]
+                if not df_ml_sub.empty and 'week' in df_ml_sub:
+                    df_ml_sub = df_ml_sub[df_ml_sub['week'] == sel_w_num]
+
+            else:
+                available_dates = []
+                if not df_ml_sub.empty and 'date_str' in df_ml_sub:
+                    available_dates.extend([d for d in df_ml_sub['date_str'].unique() if d and d != 'N/A'])
+                if not df_inc_sub.empty and 'date_str' in df_inc_sub:
+                    available_dates.extend([d for d in df_inc_sub['date_str'].unique() if d and d != 'N/A'])
+                
+                valid_date_objs = []
+                for d in available_dates:
+                    dt = parse_vn_date(d)
+                    if dt and dt.year == 2026:
+                        valid_date_objs.append(dt.date())
+                
+                valid_date_objs = sorted(list(set(valid_date_objs)))
+                default_date = valid_date_objs[-1] if valid_date_objs else datetime(2026, 9, 20).date()
+                min_date = valid_date_objs[0] if valid_date_objs else datetime(2026, 1, 1).date()
+                max_date = datetime(2026, 12, 31).date()
+
+                sel_d_obj = st.date_input(
+                    t("📅 Chọn Ngày báo cáo (Click vào để mở lịch):", "📅 Select Reporting Date (Click to open calendar):"),
+                    value=default_date,
+                    min_value=min_date,
+                    max_value=max_date,
+                    format="DD/MM/YYYY",
+                    key="cal_maint_date_pick"
+                )
+                sel_d_str = sel_d_obj.strftime("%d/%m/%Y")
+                period_title = f"{t('Ngày', 'Date')} {sel_d_str}"
+
+                if not df_inc_sub.empty:
+                    if 'date' in df_inc_sub:
+                        df_inc_sub = df_inc_sub[pd.to_datetime(df_inc_sub['date'], errors='coerce').dt.date == sel_d_obj]
+                    elif 'date_str' in df_inc_sub:
+                        df_inc_sub = df_inc_sub[df_inc_sub['date_str'] == sel_d_str]
+
+                if not df_ml_sub.empty:
+                    if 'date' in df_ml_sub:
+                        df_ml_sub = df_ml_sub[pd.to_datetime(df_ml_sub['date'], errors='coerce').dt.date == sel_d_obj]
+                    elif 'date_str' in df_ml_sub:
+                        df_ml_sub = df_ml_sub[df_ml_sub['date_str'] == sel_d_str]
+
+        # Tinh chỉnh theo từ khóa tìm kiếm nếu có
+        if global_search_kw:
+            if not df_inc_sub.empty:
+                inc_m = search_df(df_inc_sub, global_search_kw)
+                if not inc_m.empty:
+                    df_inc_sub = inc_m
+            if not df_ml_sub.empty:
+                ml_m = search_df(df_ml_sub, global_search_kw)
+                if not ml_m.empty:
+                    df_ml_sub = ml_m
+
+        # 3 Thẻ Metric then chốt chuẩn theo Google Sheets Monthly_Report
+        tot_inc_cases = len(df_inc_sub)
+        tot_down_hours = df_inc_sub['duration_hours'].sum() if not df_inc_sub.empty and 'duration_hours' in df_inc_sub else 0.0
+        tot_maint_jobs = len(df_ml_sub)
+
+        c_rp1, c_rp2, c_rp3 = st.columns(3)
+        with c_rp1:
+            st.metric(
+                t(f"🚨 Tổng Số Vụ Sự Cố ({period_title})", f"🚨 Total Incidents ({period_title})"),
+                f"{tot_inc_cases:,} " + t("vụ", "cases"),
+                help="Tính từ cột D trong sheet 'Su co' (tương ứng công thức =COUNTIF)"
             )
-            fig_eq_m.update_traces(textposition='outside')
-            fig_eq_m.update_layout(height=320, margin=dict(t=40, b=20, l=20, r=20), xaxis_title=t("Thiết Bị", "Equipment"), yaxis_title=t("Số Lần", "Count"))
-            st.plotly_chart(fig_eq_m, use_container_width=True, key="fig_eq_maint_bar")
+        with c_rp2:
+            st.metric(
+                t(f"⏱️ Tổng Thời Gian Dừng Máy ({period_title})", f"⏱️ Total Downtime ({period_title})"),
+                f"{tot_down_hours:,.2f} " + t("giờ", "hours"),
+                help="Tính từ cột L trong sheet 'Su co' (tương ứng công thức =SUMIF)"
+            )
+        with c_rp3:
+            st.metric(
+                t(f"🔧 Tổng Việc Bảo Trì Thực Hiện ({period_title})", f"🔧 Total Maintenance Jobs ({period_title})"),
+                f"{tot_maint_jobs:,} " + t("lượt", "jobs"),
+                help="Tính từ cột D trong sheet 'Data' (tương ứng công thức =COUNTIF)"
+            )
 
-        st.markdown(f"##### 📋 {t('Bảng Chi Tiết Nhật Ký Bảo Trì Thiết Bị', 'Equipment Maintenance Detailed Log Table')}")
-        cols_ml_disp = ['date_str', 'ca', 'equipment', 'die_code', 'activity', 'description', 'performer', 'status']
-        avail_ml_cols = [c for c in cols_ml_disp if c in df_ml_filt.columns]
-        df_show_ml = df_ml_filt[avail_ml_cols].copy()
-        if is_en():
-            df_show_ml.rename(columns={
-                'date_str': 'Date',
-                'ca': 'Shift / Tech',
-                'equipment': 'Equipment Tag',
-                'die_code': 'Die Code',
-                'activity': 'Activity',
-                'description': 'Work Description',
-                'performer': 'Assignee',
-                'status': 'Status'
-            }, inplace=True)
+        st.markdown("---")
+
+        # 2 Bảng hiển thị song song theo chuẩn Monthly_Report
+        c_tbl_inc, c_tbl_maint = st.columns(2)
+
+        with c_tbl_inc:
+            st.markdown(f"##### 🚨 {t('Danh Sách Chi Tiết Sự Cố Phát Sinh Trong Kỳ (Su co)', 'Detailed Incident Breakdown (Su co)')}")
+            if not df_inc_sub.empty:
+                cols_inc_show = ['id_su_co', 'date_str', 'shift_leader', 'equipment_raw', 'description', 'solution', 'duration_hours', 'status']
+                avail_inc_cols = [c for c in cols_inc_show if c in df_inc_sub.columns]
+                df_disp_inc_p = df_inc_sub[avail_inc_cols].copy()
+                if is_en():
+                    df_disp_inc_p.rename(columns={
+                        'id_su_co': 'Case ID',
+                        'date_str': 'Date',
+                        'shift_leader': 'Leader',
+                        'equipment_raw': 'Equipment',
+                        'description': 'Incident Description',
+                        'solution': 'Action Taken',
+                        'duration_hours': 'Downtime (h)',
+                        'status': 'Status'
+                    }, inplace=True)
+                else:
+                    df_disp_inc_p.rename(columns={
+                        'id_su_co': 'Mã SC',
+                        'date_str': 'Ngày',
+                        'shift_leader': 'Ca Trực',
+                        'equipment_raw': 'Thiết Bị',
+                        'description': 'Mô Tả Hiện Trạng',
+                        'solution': 'Biện Pháp Xử Lý',
+                        'duration_hours': 'TG Dừng (h)',
+                        'status': 'Trạng Thái'
+                    }, inplace=True)
+                st.dataframe(df_disp_inc_p, hide_index=True, use_container_width=True, height=400)
+            else:
+                st.info(t(f"Không có sự cố nào ghi nhận trong {period_title}.", f"No incidents recorded in {period_title}."))
+
+        with c_tbl_maint:
+            st.markdown(f"##### 🔧 {t('Công Việc Bảo Trì & Phục Hồi Đã Làm (Sheet Data)', 'Maintenance & Overhaul Jobs Done (Data)')}")
+            if not df_ml_sub.empty:
+                cols_ml_show = ['id', 'date_str', 'ca', 'equipment', 'activity', 'description', 'performer', 'status']
+                avail_ml_cols = [c for c in cols_ml_show if c in df_ml_sub.columns]
+                df_disp_ml_p = df_ml_sub[avail_ml_cols].copy()
+                if is_en():
+                    df_disp_ml_p.rename(columns={
+                        'id': 'Job ID',
+                        'date_str': 'Date',
+                        'ca': 'Shift',
+                        'equipment': 'Equipment',
+                        'activity': 'Activity',
+                        'description': 'Work Description',
+                        'performer': 'Assignee',
+                        'status': 'Status'
+                    }, inplace=True)
+                else:
+                    df_disp_ml_p.rename(columns={
+                        'id': 'Mã BT',
+                        'date_str': 'Ngày',
+                        'ca': 'Ca Trực',
+                        'equipment': 'Mã Thiết Bị',
+                        'activity': 'Hoạt Động',
+                        'description': 'Nội Dung Công Việc',
+                        'performer': 'Người Thực Hiện',
+                        'status': 'Trạng Thái'
+                    }, inplace=True)
+                st.dataframe(df_disp_ml_p, hide_index=True, use_container_width=True, height=400)
+            else:
+                st.info(t(f"Chưa có dữ liệu bảo trì ghi nhận trong {period_title}.", f"No maintenance recorded in {period_title}."))
+
+        # Biểu đồ phân tích trực quan
+        if not df_inc_sub.empty or not df_ml_sub.empty:
+            st.markdown("---")
+            c_cht1, c_cht2 = st.columns(2)
+            with c_cht1:
+                if not df_inc_sub.empty and 'equipment_raw' in df_inc_sub:
+                    eq_down = df_inc_sub.groupby('equipment_raw')['duration_hours'].sum().reset_index()
+                    eq_down = eq_down[eq_down['duration_hours'] > 0].sort_values('duration_hours', ascending=False).head(8)
+                    if not eq_down.empty:
+                        fig_down = px.bar(
+                            eq_down,
+                            x='equipment_raw',
+                            y='duration_hours',
+                            text='duration_hours',
+                            title=t(f"Top Thiết Bị Dừng Máy Nhiều Nhất ({period_title})", f"Top Downtime Equipment ({period_title})"),
+                            labels={'equipment_raw': t('Thiết Bị', 'Equipment'), 'duration_hours': t('Giờ Dừng (h)', 'Hours')},
+                            color='duration_hours',
+                            color_continuous_scale='Reds'
+                        )
+                        fig_down.update_traces(texttemplate='%{text:.1f}h', textposition='outside')
+                        fig_down.update_layout(height=320, margin=dict(t=40, b=20, l=20, r=20))
+                        st.plotly_chart(fig_down, use_container_width=True, key="fig_rep_downtime_bar")
+            with c_cht2:
+                if not df_ml_sub.empty and 'activity' in df_ml_sub:
+                    act_pie = df_ml_sub['activity'].value_counts().head(7).reset_index()
+                    act_pie.columns = ['Hoạt Động', 'Số Lần']
+                    fig_act_p = px.pie(
+                        act_pie,
+                        names='Hoạt Động',
+                        values='Số Lần',
+                        title=t(f"Cơ Cấu Hoạt Động Bảo Trì ({period_title})", f"Maintenance Activities Breakdown ({period_title})"),
+                        hole=0.45,
+                        color_discrete_sequence=px.colors.qualitative.Pastel
+                    )
+                    fig_act_p.update_layout(height=320, margin=dict(t=40, b=20, l=20, r=20))
+                    st.plotly_chart(fig_act_p, use_container_width=True, key="fig_rep_act_pie")
+
+    # -------------------------------------------------------------
+    # SUBTAB 2: NHẬT KÝ BẢO TRÌ CHI TIẾT (SHEET DATA - 2.264 BẢN GHI)
+    # -------------------------------------------------------------
+    with maint_tab2:
+        st.markdown(f"#### 🔧 {t('TOÀN BỘ NHẬT KÝ BẢO TRÌ, GIA CÔNG & PHỤC HỒI (SHEET DATA)', 'FULL MAINTENANCE, FABRICATION & OVERHAUL LOG (DATA SHEET)')}")
+        st.caption(f"{t('Tổng hợp 2.264+ lượt bảo trì máy ép, nghiền, sấy, chipper, rulo, dao băm từ Google Sheets.', 'Consolidated 2,264+ maintenance records for pellet mills, hammer mills, dryers, chipper, rollers, knives.')}")
+
+        if not df_maint_log.empty:
+            c_ml_f1, c_ml_f2, c_ml_f3, c_ml_f4 = st.columns(4)
+            all_lbl = t("Tất cả", "All")
+            with c_ml_f1:
+                all_acts = [all_lbl] + sorted([a for a in df_maint_log['activity'].unique() if a])
+                sel_act = st.selectbox(t("Loại hoạt động:", "Activity:"), all_acts, key="sb_ml_act_t2")
+            with c_ml_f2:
+                all_eqs = [all_lbl] + sorted([e for e in df_maint_log['equipment'].unique() if e])
+                sel_eq = st.selectbox(t("Thiết bị:", "Equipment:"), all_eqs, key="sb_ml_eq_t2")
+            with c_ml_f3:
+                all_status = [all_lbl] + sorted([s for s in df_maint_log['status'].unique() if s])
+                sel_status = st.selectbox(t("Trạng thái:", "Status:"), all_status, key="sb_ml_status_t2")
+            with c_ml_f4:
+                search_kw = st.text_input(t("Tìm kiếm từ khóa:", "Search keyword:"), placeholder=t("Gõ tên dao, rulo, người làm...", "Type knife, roller, name..."), key="txt_ml_kw")
+
+            df_ml_filt = df_maint_log.copy()
+            if sel_act != all_lbl:
+                df_ml_filt = df_ml_filt[df_ml_filt['activity'] == sel_act]
+            if sel_eq != all_lbl:
+                df_ml_filt = df_ml_filt[df_ml_filt['equipment'] == sel_eq]
+            if sel_status != all_lbl:
+                df_ml_filt = df_ml_filt[df_ml_filt['status'] == sel_status]
+            eff_kw = search_kw.strip() if search_kw.strip() else global_search_kw
+            if eff_kw:
+                df_ml_filt = search_df(df_ml_filt, eff_kw)
+
+            # 4 Thẻ KPI
+            tot_maint = len(df_ml_filt)
+            tot_proactive = len(df_ml_filt[df_ml_filt['activity'].str.contains('Bảo trì chủ động', case=False, na=False)])
+            tot_rulo_die = len(df_ml_filt[df_ml_filt['activity'].str.contains('rulo|khuôn', case=False, na=False)])
+            tot_done = len(df_ml_filt[df_ml_filt['status'].str.contains('Hoàn thành|OK', case=False, na=False)])
+            rate_done = round(tot_done / tot_maint * 100, 1) if tot_maint > 0 else 100.0
+
+            c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+            c_m1.metric(t("Tổng Số Lượt Bảo Trì", "Total Maintenance Jobs"), f"{tot_maint:,} " + t("lượt", "jobs"))
+            c_m2.metric(t("Bảo Trì Chủ Động", "Proactive Maintenance"), f"{tot_proactive:,} " + t("lượt", "jobs"))
+            c_m3.metric(t("Phục Hồi Rulo & Khuôn", "Roller & Die Overhaul"), f"{tot_rulo_die:,} " + t("lượt", "jobs"))
+            c_m4.metric(t("Tỷ Lệ Hoàn Thành", "Completion Rate"), f"{rate_done}%")
+
+            # Biểu đồ
+            c_g1, c_g2 = st.columns(2)
+            with c_g1:
+                df_act_cnt = df_ml_filt['activity'].value_counts().head(7).reset_index()
+                df_act_cnt.columns = ['Hoạt Động', 'Số Lần']
+                fig_act = px.pie(
+                    df_act_cnt,
+                    names='Hoạt Động',
+                    values='Số Lần',
+                    title=t("Cơ Cấu Hoạt Động Bảo Trì & Sửa Chữa", "Maintenance & Repair Breakdown"),
+                    hole=0.45,
+                    color_discrete_sequence=px.colors.qualitative.Pastel
+                )
+                fig_act.update_layout(height=320, margin=dict(t=40, b=20, l=20, r=20))
+                st.plotly_chart(fig_act, use_container_width=True, key="fig_act_pie_t2")
+
+            with c_g2:
+                df_eq_cnt = df_ml_filt[df_ml_filt['equipment'] != '']['equipment'].value_counts().head(10).reset_index()
+                df_eq_cnt.columns = ['Thiết Bị', 'Số Lần Bảo Trì']
+                fig_eq_m = px.bar(
+                    df_eq_cnt,
+                    x='Thiết Bị',
+                    y='Số Lần Bảo Trì',
+                    text='Số Lần Bảo Trì',
+                    color='Số Lần Bảo Trì',
+                    color_continuous_scale='Blues',
+                    title=t("Top 10 Thiết Bị Được Bảo Dưỡng Nhiều Nhất", "Top 10 Maintained Equipment")
+                )
+                fig_eq_m.update_traces(textposition='outside')
+                fig_eq_m.update_layout(height=320, margin=dict(t=40, b=20, l=20, r=20), xaxis_title=t("Thiết Bị", "Equipment"), yaxis_title=t("Số Lần", "Count"))
+                st.plotly_chart(fig_eq_m, use_container_width=True, key="fig_eq_maint_bar_t2")
+
+            st.markdown(f"##### 📋 {t('Bảng Chi Tiết Nhật Ký Bảo Trì Thiết Bị (Data)', 'Equipment Maintenance Detailed Table (Data)')}")
+            cols_ml_disp = ['id', 'date_str', 'ca', 'equipment', 'die_code', 'activity', 'description', 'duration_str', 'performer', 'status']
+            avail_ml_cols = [c for c in cols_ml_disp if c in df_ml_filt.columns]
+            df_show_ml = df_ml_filt[avail_ml_cols].copy()
+            if is_en():
+                df_show_ml.rename(columns={
+                    'id': 'ID',
+                    'date_str': 'Date',
+                    'ca': 'Shift / Tech',
+                    'equipment': 'Equipment Tag',
+                    'die_code': 'Die Code',
+                    'activity': 'Activity',
+                    'description': 'Work Description',
+                    'duration_str': 'Hours',
+                    'performer': 'Assignee',
+                    'status': 'Status'
+                }, inplace=True)
+            else:
+                df_show_ml.rename(columns={
+                    'id': 'Mã BT',
+                    'date_str': 'Ngày',
+                    'ca': 'Ca / Người Trực',
+                    'equipment': 'Mã Thiết Bị',
+                    'die_code': 'Mã Khuôn',
+                    'activity': 'Hoạt Động',
+                    'description': 'Nội Dung Công Việc',
+                    'duration_str': 'Thời Gian (h)',
+                    'performer': 'Người Thực Hiện',
+                    'status': 'Trạng Thái'
+                }, inplace=True)
+            st.dataframe(df_show_ml, hide_index=True, use_container_width=True)
+
+            csv_maint = df_show_ml.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=t("📥 Tải dữ liệu nhật ký bảo trì (CSV)", "📥 Download Maintenance Data (CSV)"),
+                data=csv_maint,
+                file_name=f"maintenance_log_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime='text/csv',
+                key="btn_dl_maint_csv"
+            )
         else:
-            df_show_ml.rename(columns={
-                'date_str': 'Ngày',
-                'ca': 'Ca / Người Trực',
-                'equipment': 'Mã Thiết Bị',
-                'die_code': 'Mã Khuôn',
-                'activity': 'Hoạt Động',
-                'description': 'Nội Dung Công Việc',
-                'performer': 'Người Thực Hiện',
-                'status': 'Trạng Thái'
-            }, inplace=True)
-        st.dataframe(df_show_ml, hide_index=True, use_container_width=True)
-    else:
-        st.info(t("Chưa có dữ liệu từ bảng tính '2026 BẢO TRÌ BVN'.", "No data from '2026 BẢO TRÌ BVN' sheet."))
+            st.info(t("Chưa có dữ liệu từ bảng tính 'Maninternance BVNQB'.", "No data from 'Maninternance BVNQB' sheet."))
+
+    # -------------------------------------------------------------
+    # SUBTAB 3: QUẢN TRỊ TPM & CẢI TIẾN (SHEET TPM VÀ CAI TIEN)
+    # -------------------------------------------------------------
+    with maint_tab3:
+        st.markdown(f"#### 🚀 {t('BẢNG QUẢN TRỊ MỤC TIÊU TPM & CẢI TIẾN THIẾT BỊ', 'TOTAL PRODUCTIVE MAINTENANCE & CONTINUOUS IMPROVEMENT (TPM)')}")
+        st.caption(t("Theo dõi 115 hạng mục cải tiến máy móc, thiết bị xưởng băm, sấy, nghiền, ép từ sheet `TPM và cai tien`.", "Tracking 115 equipment improvement actions from `TPM và cai tien` sheet."))
+
+        tpm_summary = tpm_data.get('summary', {})
+        df_tpm_tasks = tpm_data.get('tasks', pd.DataFrame())
+
+        tpm_total = tpm_summary.get('total', len(df_tpm_tasks))
+        tpm_done = tpm_summary.get('completed', 0)
+        tpm_prog = tpm_summary.get('in_progress', 0)
+        tpm_not = tpm_summary.get('not_started', 0)
+        tpm_rate = round(tpm_done / tpm_total * 100, 1) if tpm_total > 0 else 0.0
+
+        c_tp1, c_tp2, c_tp3, c_tp4, c_tp5 = st.columns(5)
+        c_tp1.metric(t("Tổng Việc Cải Tiến", "Total Improvements"), f"{tpm_total} " + t("việc", "tasks"))
+        c_tp2.metric(t("Đã Hoàn Thành", "Completed"), f"{tpm_done} " + t("việc", "tasks"))
+        c_tp3.metric(t("Đang Thực Hiện", "In Progress"), f"{tpm_prog} " + t("việc", "tasks"))
+        c_tp4.metric(t("Chưa Bắt Đầu", "Not Started"), f"{tpm_not} " + t("việc", "tasks"))
+        c_tp5.metric(t("Tỷ Lệ Hoàn Thành", "Completion Rate"), f"{tpm_rate}%")
+
+        st.progress(min(max(tpm_rate / 100.0, 0.0), 1.0))
+
+        if not df_tpm_tasks.empty:
+            c_tf1, c_tf2, c_tf3 = st.columns(3)
+            all_lbl = t("Tất cả", "All")
+            with c_tf1:
+                all_priorities = [all_lbl] + sorted([p for p in df_tpm_tasks['priority'].unique() if p])
+                sel_prio = st.selectbox(t("Mức độ ưu tiên:", "Priority:"), all_priorities, key="sb_tpm_prio")
+            with c_tf2:
+                all_tpm_st = [all_lbl] + sorted([s for s in df_tpm_tasks['status'].unique() if s])
+                sel_tpm_st = st.selectbox(t("Trạng thái:", "Status:"), all_tpm_st, key="sb_tpm_status")
+            with c_tf3:
+                all_assignees = [all_lbl] + sorted([a for a in df_tpm_tasks['person_in_charge'].unique() if a])
+                sel_assignee = st.selectbox(t("Người phụ trách:", "Person in charge:"), all_assignees, key="sb_tpm_assignee")
+
+            df_tpm_filt = df_tpm_tasks.copy()
+            if sel_prio != all_lbl:
+                df_tpm_filt = df_tpm_filt[df_tpm_filt['priority'] == sel_prio]
+            if sel_tpm_st != all_lbl:
+                df_tpm_filt = df_tpm_filt[df_tpm_filt['status'] == sel_tpm_st]
+            if sel_assignee != all_lbl:
+                df_tpm_filt = df_tpm_filt[df_tpm_filt['person_in_charge'] == sel_assignee]
+
+            if global_search_kw and not df_tpm_filt.empty:
+                tpm_m = search_df(df_tpm_filt, global_search_kw)
+                if not tpm_m.empty:
+                    df_tpm_filt = tpm_m
+
+            df_tpm_disp = df_tpm_filt[['task', 'equipment_code', 'priority', 'person_in_charge', 'status', 'start_date', 'end_date', 'total_days', 'materials', 'note']].copy()
+            if is_en():
+                df_tpm_disp.rename(columns={
+                    'task': 'Improvement Action / Task',
+                    'equipment_code': 'Equipment Tag',
+                    'priority': 'Priority',
+                    'person_in_charge': 'Person in Charge',
+                    'status': 'Status',
+                    'start_date': 'Start Date',
+                    'end_date': 'End Date',
+                    'total_days': 'Days',
+                    'materials': 'Materials',
+                    'note': 'Note'
+                }, inplace=True)
+            else:
+                df_tpm_disp.rename(columns={
+                    'task': 'Thiết Bị / Hạng Mục Cải Tiến',
+                    'equipment_code': 'Mã Thiết Bị',
+                    'priority': 'Mức Độ Ưu Tiên',
+                    'person_in_charge': 'Người Phụ Trách',
+                    'status': 'Trạng Thái',
+                    'start_date': 'Ngày Bắt Đầu',
+                    'end_date': 'Ngày Kết Thúc',
+                    'total_days': 'Tổng Ngày',
+                    'materials': 'Vật Tư',
+                    'note': 'Ghi Chú / Nhận Xét'
+                }, inplace=True)
+            st.dataframe(df_tpm_disp, hide_index=True, use_container_width=True)
+        else:
+            st.info(t("Chưa có dữ liệu từ sheet 'TPM và cai tien'.", "No data from 'TPM và cai tien' sheet."))
+
+    # -------------------------------------------------------------
+    # SUBTAB 4: KIỂM ĐỊNH MỠ BÔI TRƠN MÁY ÉP (CHECK GREASE FOR PM30_6)
+    # -------------------------------------------------------------
+    with maint_tab4:
+        st.markdown(f"#### 🛢️ {t('KIỂM TRA ĐỊNH LƯỢNG MỠ BÔI TRƠN MÁY ÉP PM30-6 (PE1 - PE8)', 'PELLET MILL LUBRICATING GREASE CONSUMPTION MONITORING (PE1 - PE8)')}")
+        st.caption(t("Dữ liệu thực nghiệm cân định lượng mỡ bôi trơn máy ép viên PM30-6 (Tiêu chuẩn SCADA: 360s / 5 pulses ~ 1.5 - 1.6 g/pulse).", "Empirical grease weighing data for PM30-6 pellet mills (SCADA standard: 360s / 5 pulses ~ 1.5 - 1.6 g/pulse)."))
+
+        if not grease_data.empty:
+            c_gr_eq, c_gr_info = st.columns([1, 2])
+            all_lbl = t("Tất cả", "All")
+            with c_gr_eq:
+                all_gr_eqs = [all_lbl] + sorted([e for e in grease_data['equipment'].unique() if e])
+                sel_gr_eq = st.selectbox(t("Chọn máy ép:", "Select Pellet Mill:"), all_gr_eqs, key="sb_grease_eq")
+            with c_gr_info:
+                st.info(t("💡 **Chuẩn bôi trơn:** 360s / 5 xung (pulses) tương ứng ~1.5 - 1.6 g/xung để đảm bảo bảo vệ ổ bi lô ép và trục chính không bị quá nhiệt.", "💡 **Standard lubrication:** 360s / 5 pulses (~1.5 - 1.6 g/pulse) ensuring roller bearing and main shaft protection against overheating."))
+
+            df_gr_filt = grease_data.copy()
+            if sel_gr_eq != all_lbl:
+                df_gr_filt = df_gr_filt[df_gr_filt['equipment'] == sel_gr_eq]
+
+            avg_left = df_gr_filt['left_roller_g'].mean() if not df_gr_filt.empty else 0.0
+            avg_right = df_gr_filt['right_roller_g'].mean() if not df_gr_filt.empty else 0.0
+            avg_shaft = df_gr_filt['main_shaft_g'].mean() if not df_gr_filt.empty else 0.0
+            avg_total = df_gr_filt['total_g'].mean() if not df_gr_filt.empty else 0.0
+
+            c_g1, c_g2, c_g3, c_g4 = st.columns(4)
+            c_g1.metric(t("TB Lô Trái (Left Roller)", "Avg Left Roller"), f"{avg_left:.2f} g")
+            c_g2.metric(t("TB Lô Phải (Right Roller)", "Avg Right Roller"), f"{avg_right:.2f} g")
+            c_g3.metric(t("TB Trục Chính (Main Shaft)", "Avg Main Shaft"), f"{avg_shaft:.2f} g")
+            c_g4.metric(t("TB Tổng Lượng Mỡ / Chu Kỳ", "Avg Total Grease / Cycle"), f"{avg_total:.2f} g")
+
+            # Biểu đồ so sánh lượng mỡ theo máy ép
+            df_gr_summary = grease_data.groupby('equipment')[['left_roller_g', 'right_roller_g', 'main_shaft_g']].mean().reset_index()
+            fig_gr = px.bar(
+                df_gr_summary,
+                x='equipment',
+                y=['left_roller_g', 'right_roller_g', 'main_shaft_g'],
+                barmode='group',
+                title=t("Định Lượng Mỡ Bôi Trơn Trung Bình Từng Vị Trí (g)", "Average Lubricating Grease per Position (g)"),
+                labels={'equipment': t('Máy Ép', 'Pellet Mill'), 'value': 'Gam (g)', 'variable': t('Vị Trí', 'Position')},
+                color_discrete_sequence=['#3b82f6', '#10b981', '#f59e0b']
+            )
+            fig_gr.update_layout(height=340, margin=dict(t=40, b=20, l=20, r=20))
+            st.plotly_chart(fig_gr, use_container_width=True, key="fig_grease_bar")
+
+            # Bảng chi tiết
+            st.markdown(f"##### 📋 {t('Bảng Nhật Ký Kiểm Tra Định Lượng Mỡ Máy Ép', 'Pellet Mill Grease Inspection Log')}")
+            df_gr_disp = df_gr_filt[['date_str', 'leader', 'equipment', 'circle', 'left_roller_g', 'right_roller_g', 'main_shaft_g', 'total_g', 'pulses']].copy()
+            if is_en():
+                df_gr_disp.rename(columns={
+                    'date_str': 'Date',
+                    'leader': 'Inspector / Leader',
+                    'equipment': 'Mill Tag',
+                    'circle': 'Circle',
+                    'left_roller_g': 'Left Roller (g)',
+                    'right_roller_g': 'Right Roller (g)',
+                    'main_shaft_g': 'Main Shaft (g)',
+                    'total_g': 'Total (g)',
+                    'pulses': 'Pulses'
+                }, inplace=True)
+            else:
+                df_gr_disp.rename(columns={
+                    'date_str': 'Ngày Kiểm Tra',
+                    'leader': 'Người Kiểm Tra',
+                    'equipment': 'Máy Ép',
+                    'circle': 'Chu Kỳ (Vòng)',
+                    'left_roller_g': 'Lô Trái (g)',
+                    'right_roller_g': 'Lô Phải (g)',
+                    'main_shaft_g': 'Trục Chính (g)',
+                    'total_g': 'Tổng Mỡ (g)',
+                    'pulses': 'Số Xung (Pulses)'
+                }, inplace=True)
+            st.dataframe(df_gr_disp, hide_index=True, use_container_width=True)
+        else:
+            st.info(t("Chưa có dữ liệu từ sheet 'Check Grease for PM30_6'.", "No data from 'Check Grease for PM30_6' sheet."))
 
 # ----------------- TAB MAINT PLAN: KẾ HOẠCH BẢO TRÌ & QUẢN TRỊ 4M -----------------
 elif task_num == 7:
@@ -3847,6 +4658,10 @@ elif task_num == 9:
 elif task_num == 10:
     st.markdown(f'<div class="section-title">{t("🏆 So Sánh Hiệu Suất Sản Xuất Theo Ca Trưởng", "🏆 Shift Leader Production Performance Benchmarking")}</div>', unsafe_allow_html=True)
     df_leaders = get_shift_leader_kpis(df_shifts)
+    if global_search_kw and not df_leaders.empty:
+        ld_m = search_df(df_leaders, global_search_kw)
+        if not ld_m.empty:
+            df_leaders = ld_m
     
     if not df_leaders.empty:
         df_ld_disp = translate_shift_leader_kpis(df_leaders)
@@ -3896,7 +4711,7 @@ elif task_num == 12:
 elif task_num == 13:
     render_factory_schematic_diagram()
 
-# ----------------- TAB 14: NHẬP BÁO CÁO CA & KCS TRỰC TIẾP -----------------
+# ----------------- TAB 14: NHẬP SỐ LIỆU (PHÂN QUYỀN TRUY CẬP) -----------------
 elif task_num == 14:
     if app_loader is None:
         app_loader = DataLoader()

@@ -37,6 +37,129 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
+# ==============================================================================
+# BẢNG DANH MỤC MÃ HÓA NHÂN SỰ & VỊ TRÍ VẬN HÀNH (CHUẨN HÓA THEO GOOGLE SHEETS)
+# ==============================================================================
+POSITION_DIRECTORY = {
+    'Ca A': {
+        'code': 'Ca A',
+        'current_name': 'Sắc',
+        'full_name': 'Ca Trưởng Sắc (Ca A)',
+        'retired_names': ['Hải'],
+        'moved_names': [],
+        'pattern': r'\bca a\b|sắc|sac|\bhải\b|\bhai\b',
+        'color': '#16a34a',
+        'icon': '🟢'
+    },
+    'Ca B': {
+        'code': 'Ca B',
+        'current_name': 'Tài',
+        'full_name': 'Ca Trưởng Tài (Ca B)',
+        'retired_names': [],
+        'moved_names': ['Lâm'],
+        'pattern': r'\bca b\b|tài|tai|\blâm\b|\blam\b',
+        'color': '#ea580c',
+        'icon': '🟠'
+    },
+    'Ca C': {
+        'code': 'Ca C',
+        'current_name': 'Long',
+        'full_name': 'Ca Trưởng Long (Ca C)',
+        'retired_names': [],
+        'moved_names': [],
+        'pattern': r'\bca c\b|long',
+        'color': '#2563eb',
+        'icon': '🔵'
+    },
+    'OFF': {
+        'code': 'OFF',
+        'current_name': 'Nghỉ ca',
+        'full_name': 'Nghỉ ca (OFF)',
+        'pattern': r'\boff\b|nghỉ|nghĩ',
+        'color': '#94a3b8',
+        'icon': '☕'
+    },
+    'BT-VS': {
+        'code': 'BT-VS',
+        'current_name': 'Bảo trì_VS',
+        'full_name': 'Bảo trì - Vệ sinh (BT-VS)',
+        'pattern': r'bt[-_]?vs|bảo trì|bao tri|vệ sinh',
+        'color': '#f59e0b',
+        'icon': '🔧'
+    },
+    'XH': {
+        'code': 'XH',
+        'current_name': 'Xuất Hàng',
+        'full_name': 'Xuất Hàng (XH)',
+        'pattern': r'\bxh\b|xuất hàng|xuat hang',
+        'color': '#8b5cf6',
+        'icon': '🚚'
+    },
+    'Bao tri': {
+        'code': 'Bao tri',
+        'current_name': 'Nhớ',
+        'full_name': 'Tổ trưởng cơ khí (Nhớ)',
+        'pattern': r'nhớ|nho|bao tri',
+        'color': '#64748b',
+        'icon': '🛠️'
+    },
+    'QC': {
+        'code': 'QC',
+        'current_name': 'Dung',
+        'full_name': 'KCS / QC (Dung)',
+        'pattern': r'\bqc\b|kcs|dung',
+        'color': '#ec4899',
+        'icon': '🔬'
+    },
+    'QĐ': {
+        'code': 'QĐ',
+        'current_name': 'Thành',
+        'full_name': 'Quản Đốc (Thành)',
+        'pattern': r'\bqđ\b|\bqd\b|thành|thanh',
+        'color': '#eab308',
+        'icon': '👑'
+    },
+    'CME': {
+        'code': 'CME',
+        'current_name': 'Dương',
+        'full_name': 'Kỹ sư CME (Dương)',
+        'pattern': r'\bcme\b|dương|duong',
+        'color': '#06b6d4',
+        'icon': '📐'
+    },
+    'CTL': {
+        'code': 'CTL',
+        'current_name': 'Cường',
+        'full_name': 'Chế biến & KT (Cường)',
+        'pattern': r'\bctl\b|cường|cuong',
+        'color': '#10b981',
+        'icon': '🌲'
+    }
+}
+
+
+def match_shift_leader(row_val: str, target_filter: str) -> bool:
+    """Kiểm tra một dòng dữ liệu ca có khớp với lựa chọn lọc ca trưởng hay không"""
+    if not target_filter or target_filter in ['Tất cả', 'All']:
+        return True
+    row_str = str(row_val).lower()
+    tgt = str(target_filter).lower()
+    
+    if 'ca a' in tgt or 'sắc' in tgt or 'sac' in tgt or 'hải' in tgt:
+        return bool(re.search(r'\bca a\b|sắc|sac|\bhải\b|\bhai\b', row_str))
+    if 'ca b' in tgt or 'tài' in tgt or 'tai' in tgt or 'lâm' in tgt:
+        return bool(re.search(r'\bca b\b|tài|tai|\blâm\b|\blam\b', row_str))
+    if 'ca c' in tgt or 'long' in tgt:
+        return bool(re.search(r'\bca c\b|long', row_str))
+    if 'bt' in tgt or 'bảo trì' in tgt:
+        return bool(re.search(r'bt[-_]?vs|bảo trì|bao tri', row_str))
+    if 'off' in tgt or 'nghỉ' in tgt or 'nghĩ' in tgt:
+        return bool(re.search(r'\boff\b|nghỉ|nghĩ', row_str))
+    if 'xh' in tgt or 'xuất hàng' in tgt:
+        return bool(re.search(r'\bxh\b|xuất hàng|xuat hang', row_str))
+    return tgt in row_str
+
+
 
 def clean_number(val: Any) -> float:
     """
@@ -97,9 +220,49 @@ def parse_vn_date(date_str: Any) -> Optional[datetime]:
     return None
 
 
+def get_secrets_dict() -> Dict[str, Any]:
+    """
+    Lấy cấu hình xác thực và danh sách Sheet IDs từ st.secrets (Streamlit)
+    hoặc trực tiếp từ file .streamlit/secrets.toml (môi trường script / CLI).
+    """
+    secrets_dict = {}
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and len(st.secrets) > 0:
+            for k in st.secrets:
+                secrets_dict[k] = st.secrets[k]
+            return secrets_dict
+    except Exception:
+        pass
+
+    candidates = [
+        os.path.join(os.path.dirname(__file__), ".streamlit", "secrets.toml"),
+        os.path.join(".streamlit", "secrets.toml"),
+        os.path.join("deploy_files", ".streamlit", "secrets.toml"),
+        os.path.join("..", ".streamlit", "secrets.toml"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                try:
+                    import tomllib  # Python 3.11+
+                    with open(p, "rb") as f:
+                        secrets_dict = tomllib.load(f)
+                        return secrets_dict
+                except ImportError:
+                    import toml
+                    with open(p, "r", encoding="utf-8") as f:
+                        secrets_dict = toml.load(f)
+                        return secrets_dict
+            except Exception:
+                pass
+    return secrets_dict
+
+
 class DataLoader:
     """
     Lớp quản lý kết nối Google Sheets và chuẩn hóa các bảng dữ liệu sản xuất & KPI.
+    Hỗ trợ đọc credentials và Sheet IDs tự động từ Streamlit Secrets (.streamlit/secrets.toml).
     """
     def __init__(
         self, 
@@ -113,13 +276,19 @@ class DataLoader:
         oil_spreadsheet_id: str = DEFAULT_OIL_CHANGE_SPREADSHEET_ID
     ):
         self.credentials_path = credentials_path
-        self.spreadsheet_id = spreadsheet_id
-        self.kpi_spreadsheet_id = kpi_spreadsheet_id
-        self.maint_log_spreadsheet_id = maint_log_spreadsheet_id
-        self.maint_plan_spreadsheet_id = maint_plan_spreadsheet_id
-        self.process_spreadsheet_id = process_spreadsheet_id
-        self.hr_spreadsheet_id = hr_spreadsheet_id
-        self.oil_spreadsheet_id = oil_spreadsheet_id
+
+        # Tự động nạp Sheet IDs từ .streamlit/secrets.toml nếu có
+        sec = get_secrets_dict()
+        sheet_sec = sec.get("sheets", {}) if isinstance(sec, dict) else {}
+
+        self.spreadsheet_id = sheet_sec.get("production", spreadsheet_id)
+        self.kpi_spreadsheet_id = sheet_sec.get("kpi", kpi_spreadsheet_id)
+        self.maint_log_spreadsheet_id = sheet_sec.get("maint_log", maint_log_spreadsheet_id)
+        self.maint_plan_spreadsheet_id = sheet_sec.get("maint_plan", maint_plan_spreadsheet_id)
+        self.process_spreadsheet_id = sheet_sec.get("process", process_spreadsheet_id)
+        self.hr_spreadsheet_id = sheet_sec.get("hr", hr_spreadsheet_id)
+        self.oil_spreadsheet_id = sheet_sec.get("oil_change", oil_spreadsheet_id)
+
         self.client: Optional[gspread.Client] = None
         self.spreadsheet: Optional[gspread.Spreadsheet] = None
         self.kpi_spreadsheet: Optional[gspread.Spreadsheet] = None
@@ -140,9 +309,10 @@ class DataLoader:
             ]
             # Quét các file json có dạng service account
             parent_dir = os.path.dirname(os.path.abspath(self.credentials_path))
-            for f in os.listdir(parent_dir):
-                if f.endswith(".json") and "credentials" in f.lower():
-                    candidates.append(os.path.join(parent_dir, f))
+            if os.path.exists(parent_dir):
+                for f in os.listdir(parent_dir):
+                    if f.endswith(".json") and "credentials" in f.lower():
+                        candidates.append(os.path.join(parent_dir, f))
             
             for c in candidates:
                 if os.path.exists(c):
@@ -150,27 +320,42 @@ class DataLoader:
                     break
 
     def connect(self) -> bool:
-        """Xác thực và kết nối tới cả 4 Google Spreadsheets"""
+        """Xác thực và kết nối tới toàn bộ các Google Spreadsheets qua Secrets hoặc credentials.json"""
         creds = None
-        # 1. Kiểm tra Streamlit Secrets (khi deploy lên Streamlit Community Cloud)
-        try:
-            import streamlit as st
-            if hasattr(st, "secrets"):
-                if "gcp_service_account" in st.secrets:
-                    service_account_info = dict(st.secrets["gcp_service_account"])
-                    creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-                elif "credentials" in st.secrets:
-                    # Trường hợp dán trực tiếp chuỗi json vào secret credentials
-                    raw_creds = st.secrets["credentials"]
-                    if isinstance(raw_creds, str):
-                        service_account_info = json.loads(raw_creds)
-                    else:
-                        service_account_info = dict(raw_creds)
-                    creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-        except Exception:
-            pass
+        sec = get_secrets_dict()
 
-        # 2. Nếu không có Streamlit Secrets, đọc từ file credentials.json cục bộ
+        # 1. Kiểm tra cấu hình gcp_service_account trong Secrets
+        if "gcp_service_account" in sec:
+            try:
+                service_account_info = dict(sec["gcp_service_account"])
+                if "private_key" in service_account_info and isinstance(service_account_info["private_key"], str):
+                    service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+            except Exception as e:
+                print(f"[-] Lỗi nạp gcp_service_account từ secrets: {e}")
+
+        # 2. Kiểm tra cấu hình connections.gsheets (streamlit-google-sheets)
+        if creds is None and "connections" in sec and "gsheets" in sec["connections"]:
+            try:
+                gs_info = dict(sec["connections"]["gsheets"])
+                if "private_key" in gs_info and isinstance(gs_info["private_key"], str):
+                    gs_info["private_key"] = gs_info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(gs_info, scopes=SCOPES)
+            except Exception as e:
+                print(f"[-] Lỗi nạp connections.gsheets từ secrets: {e}")
+
+        # 3. Kiểm tra khóa credentials dán chuỗi JSON
+        if creds is None and "credentials" in sec:
+            try:
+                raw_creds = sec["credentials"]
+                service_account_info = json.loads(raw_creds) if isinstance(raw_creds, str) else dict(raw_creds)
+                if "private_key" in service_account_info and isinstance(service_account_info["private_key"], str):
+                    service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+            except Exception as e:
+                print(f"[-] Lỗi nạp credentials JSON từ secrets: {e}")
+
+        # 4. Nếu không có Streamlit Secrets, đọc từ file credentials.json cục bộ
         if creds is None:
             if not os.path.exists(self.credentials_path):
                 raise FileNotFoundError(f"Không tìm thấy file xác thực hoặc Streamlit Secret: {self.credentials_path}")
@@ -178,57 +363,36 @@ class DataLoader:
         
         self.client = gspread.authorize(creds)
         
-        # 1. Bảng tính nhật ký sản xuất
-        try:
-            self.spreadsheet = self.client.open_by_key(self.spreadsheet_id)
-        except Exception as e:
-            print(f"[-] Không thể mở bảng tính sản xuất: {e}")
-            self.spreadsheet = None
-
-        # 2. Bảng tính đánh giá KPI
-        try:
-            self.kpi_spreadsheet = self.client.open_by_key(self.kpi_spreadsheet_id)
-        except Exception as e:
-            print(f"[-] Không thể mở bảng tính KPI: {e}")
-            self.kpi_spreadsheet = None
-
-        # 3. Bảng tính nhật ký bảo trì
-        try:
-            self.maint_log_spreadsheet = self.client.open_by_key(self.maint_log_spreadsheet_id)
-        except Exception as e:
-            print(f"[-] Không thể mở bảng tính nhật ký bảo trì: {e}")
-            self.maint_log_spreadsheet = None
-
-        # 4. Bảng tính kế hoạch bảo trì & 4M
-        try:
-            self.maint_plan_spreadsheet = self.client.open_by_key(self.maint_plan_spreadsheet_id)
-        except Exception as e:
-            print(f"[-] Không thể mở bảng tính kế hoạch bảo trì & 4M: {e}")
-            self.maint_plan_spreadsheet = None
-
-        try:
-            self.process_spreadsheet = self.client.open_by_key(self.process_spreadsheet_id)
-        except Exception as e:
-            try:
-                print(f"[-] Không thể mở bảng tính quy trình chế biến: {e}")
-            except Exception:
-                print(f"[-] Cannot open process spreadsheet: {e}")
-            self.process_spreadsheet = None
-
-        try:
-            self.oil_spreadsheet = self.client.open_by_key(self.oil_spreadsheet_id)
-        except Exception as e:
-            try:
-                print(f"[-] Không thể mở bảng tính lịch thay nhớt máy ép: {e}")
-            except Exception:
-                print(f"[-] Cannot open oil change spreadsheet: {e}")
-            self.oil_spreadsheet = None
+        # Kết nối các bảng tính với cơ chế bảo vệ hạn mức truy vấn Google API (Rate Limit)
+        for attr, s_id, label in [
+            ('spreadsheet', self.spreadsheet_id, 'sản xuất'),
+            ('kpi_spreadsheet', self.kpi_spreadsheet_id, 'KPI'),
+            ('maint_log_spreadsheet', self.maint_log_spreadsheet_id, 'nhật ký bảo trì'),
+            ('maint_plan_spreadsheet', self.maint_plan_spreadsheet_id, 'kế hoạch bảo trì & 4M'),
+            ('process_spreadsheet', self.process_spreadsheet_id, 'quy trình chế biến'),
+            ('oil_spreadsheet', self.oil_spreadsheet_id, 'lịch thay nhớt máy ép'),
+        ]:
+            opened = False
+            for open_att in range(2):
+                try:
+                    sheet_obj = self.client.open_by_key(s_id)
+                    setattr(self, attr, sheet_obj)
+                    opened = True
+                    break
+                except Exception as e:
+                    if open_att == 0 and '429' in str(e):
+                        time.sleep(1.5)
+                    else:
+                        print(f"[-] Không thể mở bảng tính {label} ({s_id}): {e}")
+            if not opened:
+                setattr(self, attr, None)
+            time.sleep(0.1)
 
         return True
 
     def get_sheet_values(self, sheet_name: str) -> List[List[str]]:
-        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính sản xuất với retry 3 lần"""
-        for attempt in range(3):
+        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính sản xuất với retry 4 lần kèm exponential backoff"""
+        for attempt in range(4):
             try:
                 if not self.spreadsheet:
                     self.connect()
@@ -237,15 +401,15 @@ class DataLoader:
                 ws = self.spreadsheet.worksheet(sheet_name)
                 return ws.get_all_values()
             except Exception as e:
-                print(f"[-] Lỗi đọc sheet '{sheet_name}' (lần {attempt+1}/3): {e}")
-                if attempt < 2:
-                    wait_sec = 2.5 * (attempt + 1) if '429' in str(e) else 0.8 * (attempt + 1)
+                print(f"[-] Lỗi đọc sheet '{sheet_name}' (lần {attempt+1}/4): {e}")
+                if attempt < 3:
+                    wait_sec = (1.5 ** attempt) + (2.0 if '429' in str(e) else 0.5)
                     time.sleep(wait_sec)
         return []
 
     def get_kpi_sheet_values(self, sheet_name: str) -> List[List[str]]:
-        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính đánh giá KPI với retry 3 lần"""
-        for attempt in range(3):
+        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính đánh giá KPI với retry 4 lần kèm exponential backoff"""
+        for attempt in range(4):
             try:
                 if not self.kpi_spreadsheet:
                     self.connect()
@@ -254,9 +418,9 @@ class DataLoader:
                 ws = self.kpi_spreadsheet.worksheet(sheet_name)
                 return ws.get_all_values()
             except Exception as e:
-                print(f"[-] Lỗi đọc KPI sheet '{sheet_name}' (lần {attempt+1}/3): {e}")
-                if attempt < 2:
-                    wait_sec = 2.5 * (attempt + 1) if '429' in str(e) else 0.8 * (attempt + 1)
+                print(f"[-] Lỗi đọc KPI sheet '{sheet_name}' (lần {attempt+1}/4): {e}")
+                if attempt < 3:
+                    wait_sec = (1.5 ** attempt) + (2.0 if '429' in str(e) else 0.5)
                     time.sleep(wait_sec)
         return []
 
@@ -291,85 +455,134 @@ class DataLoader:
                         print(f"[-] Lỗi đọc cache {cp}: {e}")
             return pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
 
-        # Tự động nhận diện dòng bắt đầu dữ liệu (Product_Data bắt đầu từ dòng 3, Product cũ bắt đầu từ dòng 7)
-        start_idx = 2
-        for idx in range(min(10, len(raw_rows))):
-            if raw_rows[idx] and len(raw_rows[idx]) > 0 and parse_vn_date(raw_rows[idx][0].strip()):
-                start_idx = idx
-                break
-
         records = []
-        for r_idx, r in enumerate(raw_rows[start_idx:], start=start_idx + 1):
-            if not r or not r[0].strip():
-                continue
-            
-            date_raw = r[0].strip()
-            date_dt = parse_vn_date(date_raw)
-            if not date_dt:
+        for r_idx, r in enumerate(raw_rows[1:], start=2):
+            if not r or len(r) < 4:
                 continue
 
-            # Bỏ qua các dòng tương lai không có sản lượng hoặc giờ máy chạy
-            san_luong = clean_number(r[10] if len(r) > 10 else 0)
-            gio_ep_tong = clean_number(r[34] if len(r) > 34 else 0)
-            ca_truong = r[3].strip() if len(r) > 3 else ''
+            # Tự động nhận diện định dạng sheet:
+            # Sheet 'Product_Data' mới: Col 0 là ID ('PRD-1'), Col 1 là Ngày, Col 2 là Tuần, Col 3 là Tháng, Col 4 là Ca Trưởng...
+            # Sheet 'Product' cũ: Col 0 là Ngày, Col 1 là Tháng, Col 2 là Tuần, Col 3 là Ca Trưởng...
+            dt_from_col1 = parse_vn_date(r[1].strip()) if len(r) > 1 else None
+            dt_from_col0 = parse_vn_date(r[0].strip()) if len(r) > 0 else None
 
-            if san_luong == 0 and gio_ep_tong == 0 and ca_truong in ['Nghĩ', '']:
-                # Dòng trống hoặc ca nghỉ không hoạt động
+            if dt_from_col1:
+                date_dt = dt_from_col1
+                week_val = int(clean_number(r[2])) if len(r) > 2 and clean_number(r[2]) > 0 else date_dt.isocalendar()[1]
+                month_val = int(clean_number(r[3])) if len(r) > 3 and clean_number(r[3]) > 0 else date_dt.month
+                ca_truong = r[4].strip() if len(r) > 4 else ''
+                
+                nl_dot_spoon = clean_number(r[5] if len(r) > 5 else 0)
+                nl_dot_tan = clean_number(r[7] if len(r) > 7 else 0)
+                nghien_tho_spoon = clean_number(r[8] if len(r) > 8 else 0)
+                nghien_tho_tan = clean_number(r[10] if len(r) > 10 else 0)
+
+                san_luong = clean_number(r[11] if len(r) > 11 else 0)
+                chi_tieu = clean_number(r[12] if len(r) > 12 else 0)
+                xuat_hang = clean_number(r[13] if len(r) > 13 else 0)
+                ton_kho = clean_number(r[14] if len(r) > 14 else 0)
+                ti_le_nl_dot = clean_number(r[15] if len(r) > 15 else 0)
+
+                dien_kwh = clean_number(r[16] if len(r) > 16 else 0)
+                tien_dien = clean_number(r[17] if len(r) > 17 else 0)
+                dien_tb = clean_number(r[18] if len(r) > 18 else 0)
+
+                h_HM118 = clean_number(r[19] if len(r) > 19 else 0)
+                h_HM218 = clean_number(r[20] if len(r) > 20 else 0)
+                h_HM318 = clean_number(r[21] if len(r) > 21 else 0)
+                h_DR124 = clean_number(r[22] if len(r) > 22 else 0)
+                h_DR224 = clean_number(r[23] if len(r) > 23 else 0)
+                h_HM147 = clean_number(r[24] if len(r) > 24 else 0)
+                h_HM247 = clean_number(r[25] if len(r) > 25 else 0)
+                h_HM347 = clean_number(r[26] if len(r) > 26 else 0)
+
+                pe_hours = [clean_number(r[27 + i] if len(r) > 27 + i else 0) for i in range(8)]
+                gio_ep_tong = clean_number(r[35] if len(r) > 35 else 0)
+                if gio_ep_tong == 0 and sum(pe_hours) > 0:
+                    gio_ep_tong = sum(pe_hours)
+                nang_suat = clean_number(r[36] if len(r) > 36 else 0)
+                if nang_suat == 0 and gio_ep_tong > 0 and san_luong > 0:
+                    nang_suat = round(san_luong / gio_ep_tong, 2)
+            elif dt_from_col0:
+                date_dt = dt_from_col0
+                month_val = int(clean_number(r[1])) if len(r) > 1 and clean_number(r[1]) > 0 else date_dt.month
+                week_val = int(clean_number(r[2])) if len(r) > 2 and clean_number(r[2]) > 0 else date_dt.isocalendar()[1]
+                ca_truong = r[3].strip() if len(r) > 3 else ''
+
+                nl_dot_spoon = clean_number(r[4] if len(r) > 4 else 0)
+                nl_dot_tan = clean_number(r[6] if len(r) > 6 else 0)
+                nghien_tho_spoon = clean_number(r[7] if len(r) > 7 else 0)
+                nghien_tho_tan = clean_number(r[9] if len(r) > 9 else 0)
+
+                san_luong = clean_number(r[10] if len(r) > 10 else 0)
+                chi_tieu = clean_number(r[11] if len(r) > 11 else 0)
+                xuat_hang = clean_number(r[12] if len(r) > 12 else 0)
+                ton_kho = clean_number(r[13] if len(r) > 13 else 0)
+                ti_le_nl_dot = clean_number(r[14] if len(r) > 14 else 0)
+
+                dien_kwh = clean_number(r[15] if len(r) > 15 else 0)
+                tien_dien = clean_number(r[16] if len(r) > 16 else 0)
+                dien_tb = clean_number(r[17] if len(r) > 17 else 0)
+
+                h_HM118 = clean_number(r[18] if len(r) > 18 else 0)
+                h_HM218 = clean_number(r[19] if len(r) > 19 else 0)
+                h_HM318 = clean_number(r[20] if len(r) > 20 else 0)
+                h_DR124 = clean_number(r[21] if len(r) > 21 else 0)
+                h_DR224 = clean_number(r[22] if len(r) > 22 else 0)
+                h_HM147 = clean_number(r[23] if len(r) > 23 else 0)
+                h_HM247 = clean_number(r[24] if len(r) > 24 else 0)
+                h_HM347 = clean_number(r[25] if len(r) > 25 else 0)
+
+                pe_hours = [clean_number(r[26 + i] if len(r) > 26 + i else 0) for i in range(8)]
+                gio_ep_tong = clean_number(r[34] if len(r) > 34 else 0)
+                if gio_ep_tong == 0 and sum(pe_hours) > 0:
+                    gio_ep_tong = sum(pe_hours)
+                nang_suat = clean_number(r[35] if len(r) > 35 else 0)
+                if nang_suat == 0 and gio_ep_tong > 0 and san_luong > 0:
+                    nang_suat = round(san_luong / gio_ep_tong, 2)
+            else:
+                continue
+
+            if san_luong == 0 and gio_ep_tong == 0 and ca_truong in ['Nghĩ', 'OFF', '']:
                 continue
 
             record = {
                 'row_index': r_idx,
                 'date': date_dt,
                 'date_str': date_dt.strftime('%d/%m/%Y'),
-                'month': int(clean_number(r[1])) if len(r) > 1 and r[1].strip().isdigit() else date_dt.month,
-                'week': int(clean_number(r[2])) if len(r) > 2 and r[2].strip().isdigit() else date_dt.isocalendar()[1],
+                'month': month_val,
+                'week': week_val,
                 'shift_leader': ca_truong,
-                
-                # Nguyên liệu
-                'nl_dot_spoon': clean_number(r[4] if len(r) > 4 else 0),
-                'nl_dot_tan': clean_number(r[6] if len(r) > 6 else 0),
-                'nghien_tho_spoon': clean_number(r[7] if len(r) > 7 else 0),
-                'nghien_tho_tan': clean_number(r[9] if len(r) > 9 else 0),
-                
-                # Sản lượng & Tiêu thụ
+                'nl_dot_spoon': nl_dot_spoon,
+                'nl_dot_tan': nl_dot_tan,
+                'nghien_tho_spoon': nghien_tho_spoon,
+                'nghien_tho_tan': nghien_tho_tan,
                 'san_luong_tan': san_luong,
-                'chi_tieu_tan': clean_number(r[11] if len(r) > 11 else 0),
-                'xuat_hang_tan': clean_number(r[12] if len(r) > 12 else 0),
-                'ton_kho_tan': clean_number(r[13] if len(r) > 13 else 0),
-                'ti_le_nl_dot_pct': clean_number(r[14] if len(r) > 14 else 0),
-                
-                # Điện năng
-                'dien_kwh': clean_number(r[15] if len(r) > 15 else 0),
-                'tien_dien_vnd': clean_number(r[16] if len(r) > 16 else 0),
-                'dien_tb_kwh_tan': clean_number(r[17] if len(r) > 17 else 0),
-
-                # Giờ máy chạy - Máy nghiền búa thô
-                'h_HM118': clean_number(r[18] if len(r) > 18 else 0),
-                'h_HM218': clean_number(r[19] if len(r) > 19 else 0),
-                'h_HM318': clean_number(r[20] if len(r) > 20 else 0),
-
-                # Giờ máy chạy - Trống sấy
-                'h_DR124': clean_number(r[21] if len(r) > 21 else 0),
-                'h_DR224': clean_number(r[22] if len(r) > 22 else 0),
-
-                # Giờ máy chạy - Máy nghiền búa tinh
-                'h_HM147': clean_number(r[23] if len(r) > 23 else 0),
-                'h_HM247': clean_number(r[24] if len(r) > 24 else 0),
-                'h_HM347': clean_number(r[25] if len(r) > 25 else 0),
-
-                # Giờ máy chạy - 8 Máy ép viên (PE1 -> PE8)
-                'h_PE1': clean_number(r[26] if len(r) > 26 else 0),
-                'h_PE2': clean_number(r[27] if len(r) > 27 else 0),
-                'h_PE3': clean_number(r[28] if len(r) > 28 else 0),
-                'h_PE4': clean_number(r[29] if len(r) > 29 else 0),
-                'h_PE5': clean_number(r[30] if len(r) > 30 else 0),
-                'h_PE6': clean_number(r[31] if len(r) > 31 else 0),
-                'h_PE7': clean_number(r[32] if len(r) > 32 else 0),
-                'h_PE8': clean_number(r[33] if len(r) > 33 else 0),
-
-                # Tổng giờ & Năng suất ép
+                'chi_tieu_tan': chi_tieu,
+                'xuat_hang_tan': xuat_hang,
+                'ton_kho_tan': ton_kho,
+                'ti_le_nl_dot_pct': ti_le_nl_dot,
+                'dien_kwh': dien_kwh,
+                'tien_dien_vnd': tien_dien,
+                'dien_tb_kwh_tan': dien_tb,
+                'h_HM118': h_HM118,
+                'h_HM218': h_HM218,
+                'h_HM318': h_HM318,
+                'h_DR124': h_DR124,
+                'h_DR224': h_DR224,
+                'h_HM147': h_HM147,
+                'h_HM247': h_HM247,
+                'h_HM347': h_HM347,
+                'h_PE1': pe_hours[0],
+                'h_PE2': pe_hours[1],
+                'h_PE3': pe_hours[2],
+                'h_PE4': pe_hours[3],
+                'h_PE5': pe_hours[4],
+                'h_PE6': pe_hours[5],
+                'h_PE7': pe_hours[6],
+                'h_PE8': pe_hours[7],
                 'tong_gio_ep': gio_ep_tong,
-                'nang_suat_tph': clean_number(r[35] if len(r) > 35 else 0),
+                'nang_suat_tph': nang_suat,
             }
             records.append(record)
 
@@ -575,11 +788,11 @@ class DataLoader:
         mask_date = df_kcs['date'].dt.date == t_date
         s_clean = str(shift_name).strip().lower()
         
-        # Ánh xạ ca tương đương nếu có
+        # Ánh xạ ca tương đương theo danh mục mã hóa chính thức
         shift_aliases = {
-            'ca a': ['ca a', 'thành', 'thanh', 'hải', 'hai'],
-            'ca b': ['ca b', 'lâm', 'lam', 'sắc', 'sac'],
-            'ca c': ['ca c', 'long', 'tài', 'tai']
+            'ca a': ['ca a', 'sắc', 'sac', 'hải', 'hai'],
+            'ca b': ['ca b', 'tài', 'tai', 'lâm', 'lam'],
+            'ca c': ['ca c', 'long']
         }
         target_keys = [s_clean]
         for k, aliases in shift_aliases.items():
@@ -870,9 +1083,9 @@ class DataLoader:
         """
         target_sheet = leader_name
         alias_map = {
-            'Long': 'Ca C', 'Tài': 'Ca C', 'Ca C': 'Ca C',
-            'Sắc': 'Ca B', 'Lâm': 'Ca B', 'Ca B': 'Ca B',
-            'Thành': 'Ca A', 'Hải': 'Ca A', 'Ca A': 'Ca A'
+            'Sắc': 'Ca A', 'Hải': 'Ca A', 'Ca A': 'Ca A',
+            'Tài': 'Ca B', 'Lâm': 'Ca B', 'Ca B': 'Ca B',
+            'Long': 'Ca C', 'Ca C': 'Ca C'
         }
         rows = self.get_kpi_sheet_values(target_sheet)
         if not rows and target_sheet in alias_map:
@@ -1219,6 +1432,13 @@ class DataLoader:
         """
         rows = self.get_sheet_values('Su co')
         if not rows or len(rows) < 2:
+            if self.maint_log_spreadsheet:
+                try:
+                    ws_sc = self.maint_log_spreadsheet.worksheet('Su co')
+                    rows = ws_sc.get_all_values()
+                except Exception as e_sc:
+                    print(f"[-] Lỗi đọc sheet Su co từ maint spreadsheet: {e_sc}")
+        if not rows or len(rows) < 2:
             return pd.DataFrame()
 
         records = []
@@ -1229,16 +1449,32 @@ class DataLoader:
             incident_id = r[0].strip()
             date_raw = r[1].strip() if len(r) > 1 else ''
             date_dt = parse_vn_date(date_raw)
-            shift_leader = r[2].strip() if len(r) > 2 else ''
-            equipment_raw = r[3].strip() if len(r) > 3 else ''
+
+            # Cấu trúc chuẩn Google Sheets 'Su co' (13 cột):
+            # Col 0: ID, Col 1: Ngày, Col 2: Tuần, Col 3: Tháng, Col 4: Trưởng ca, Col 5: Thiết bị,
+            # Col 6: Mã sensor, Col 7: Hoạt động, Col 8: Mô tả, Col 9: Xử lý, Col 10: Người làm, Col 11: Giờ, Col 12: Trạng thái
+            if len(r) >= 12:
+                shift_leader = r[4].strip() if len(r) > 4 else ''
+                equipment_raw = r[5].strip() if len(r) > 5 else ''
+                sensor_code = r[6].strip() if len(r) > 6 else ''
+                activity = r[7].strip() if len(r) > 7 else 'bảo trì sự cố'
+                description = r[8].strip() if len(r) > 8 else ''
+                solution = r[9].strip() if len(r) > 9 else ''
+                performer = r[10].strip() if len(r) > 10 else ''
+                duration_h = clean_number(r[11]) if len(r) > 11 else 0.0
+                status = r[12].strip() if len(r) > 12 else ''
+            else:
+                shift_leader = r[2].strip() if len(r) > 2 else ''
+                equipment_raw = r[3].strip() if len(r) > 3 else ''
+                sensor_code = r[4].strip() if len(r) > 4 else ''
+                activity = r[5].strip() if len(r) > 5 else 'bảo trì sự cố'
+                description = r[6].strip() if len(r) > 6 else ''
+                solution = r[7].strip() if len(r) > 7 else ''
+                performer = r[8].strip() if len(r) > 8 else ''
+                duration_h = clean_number(r[9]) if len(r) > 9 else 0.0
+                status = r[10].strip() if len(r) > 10 else ''
+
             eq_list = [eq.strip() for eq in equipment_raw.replace(';', ',').split(',') if eq.strip()] if equipment_raw else []
-            sensor_code = r[4].strip() if len(r) > 4 else ''
-            activity = r[5].strip() if len(r) > 5 else 'bảo trì sự cố'
-            description = r[6].strip() if len(r) > 6 else ''
-            solution = r[7].strip() if len(r) > 7 else ''
-            performer = r[8].strip() if len(r) > 8 else ''
-            duration_h = clean_number(r[9]) if len(r) > 9 else 0.0
-            status = r[10].strip() if len(r) > 10 else ''
             if not status and (description or equipment_raw):
                 status = 'Hoàn thành'
 
@@ -1270,17 +1506,35 @@ class DataLoader:
 
     def load_maintenance_log(self) -> pd.DataFrame:
         """
-        Đọc và chuẩn hóa dữ liệu từ file '2026 BẢO TRÌ BVN' (sheet 'Nhật kí bảo trì').
+        Đọc và chuẩn hóa dữ liệu từ file 'Maninternance BVNQB' / '2026 BẢO TRÌ BVN' (sheet 'Data' hoặc 'Nhật kí bảo trì').
+        Cấu trúc 12 cột chuẩn của sheet 'Data':
+        Col 0: ID (BT-0001)
+        Col 1: Ngày (27/06/2026)
+        Col 2: Tuần (26)
+        Col 3: Tháng (6)
+        Col 4: Ca (Ca B)
+        Col 5: Mã thiết bị (HM118, DC1311, rulo...)
+        Col 6: Mã khuôn
+        Col 7: Hoạt động (Bảo trì chủ động, Phục hồi rulo, Gia công, Lắp ráp, Tháo gỡ, Vệ sinh...)
+        Col 8: Nội dung hành động / Mô tả
+        Col 9: Thời gian xử lí (giờ)
+        Col 10: Người thực hiện
+        Col 11: Trạng thái (OK, Hoàn thành, Chưa hoàn thành...)
         """
         if not self.maint_log_spreadsheet:
             return pd.DataFrame()
 
+        rows = []
         try:
-            ws = self.maint_log_spreadsheet.worksheet('Nhật kí bảo trì')
+            ws = self.maint_log_spreadsheet.worksheet('Data')
             rows = ws.get_all_values()
-        except Exception as e:
-            print(f"[-] Lỗi đọc sheet Nhật kí bảo trì: {e}")
-            return pd.DataFrame()
+        except Exception:
+            try:
+                ws = self.maint_log_spreadsheet.worksheet('Nhật kí bảo trì')
+                rows = ws.get_all_values()
+            except Exception as e:
+                print(f"[-] Lỗi đọc sheet Data / Nhật kí bảo trì: {e}")
+                return pd.DataFrame()
 
         if len(rows) < 2:
             return pd.DataFrame()
@@ -1288,34 +1542,61 @@ class DataLoader:
         records = []
         last_seen_date = None
 
-        for r_idx, r in enumerate(rows[2:], start=3):
-            if not r or len(r) == 0:
-                continue
-            
-            date_raw = r[0].strip() if len(r) > 0 else ''
-            date_dt = parse_vn_date(date_raw)
-            if date_dt:
-                last_seen_date = date_dt
-            
-            ca = r[1].strip() if len(r) > 1 else ''
-            eq = r[2].strip() if len(r) > 2 else ''
-            die_code = r[3].strip() if len(r) > 3 else ''
-            act = r[4].strip() if len(r) > 4 else ''
-            desc = r[5].strip() if len(r) > 5 else ''
-            duration = r[6].strip() if len(r) > 6 else ''
-            duration_h = clean_number(duration)
-            performer = r[7].strip() if len(r) > 7 else ''
-            status = r[8].strip() if len(r) > 8 else 'Hoàn thành'
+        header_line = [c.strip().lower() for c in rows[0]]
+        is_data_format = any(k in header_line for k in ['id', 'mã thiết bị', 'mã khuôn', 'nội dung hành động'])
 
-            if not eq and not act and not desc:
+        for r_idx, r in enumerate(rows[1:], start=2):
+            if not r or not any(r):
+                continue
+
+            if is_data_format and len(r) >= 10:
+                m_id = r[0].strip() if len(r) > 0 else f"BT-{r_idx:04d}"
+                date_raw = r[1].strip() if len(r) > 1 else ''
+                date_dt = parse_vn_date(date_raw)
+                if date_dt:
+                    last_seen_date = date_dt
+
+                week_raw = r[2].strip() if len(r) > 2 else ''
+                month_raw = r[3].strip() if len(r) > 3 else ''
+                week_num = int(clean_number(week_raw)) if clean_number(week_raw) > 0 else (date_dt.isocalendar()[1] if date_dt else (last_seen_date.isocalendar()[1] if last_seen_date else 0))
+                month_num = int(clean_number(month_raw)) if clean_number(month_raw) > 0 else (date_dt.month if date_dt else (last_seen_date.month if last_seen_date else 0))
+
+                ca = r[4].strip() if len(r) > 4 else ''
+                eq = r[5].strip() if len(r) > 5 else ''
+                die_code = r[6].strip() if len(r) > 6 else ''
+                act = r[7].strip() if len(r) > 7 else ''
+                desc = r[8].strip() if len(r) > 8 else ''
+                duration = r[9].strip() if len(r) > 9 else ''
+                duration_h = clean_number(duration)
+                performer = r[10].strip() if len(r) > 10 else ''
+                status = r[11].strip() if len(r) > 11 else 'Hoàn thành'
+            else:
+                m_id = f"BT-{r_idx:04d}"
+                date_raw = r[0].strip() if len(r) > 0 else ''
+                date_dt = parse_vn_date(date_raw)
+                if date_dt:
+                    last_seen_date = date_dt
+                ca = r[1].strip() if len(r) > 1 else ''
+                eq = r[2].strip() if len(r) > 2 else ''
+                die_code = r[3].strip() if len(r) > 3 else ''
+                act = r[4].strip() if len(r) > 4 else ''
+                desc = r[5].strip() if len(r) > 5 else ''
+                duration = r[6].strip() if len(r) > 6 else ''
+                duration_h = clean_number(duration)
+                performer = r[7].strip() if len(r) > 7 else ''
+                status = r[8].strip() if len(r) > 8 else 'Hoàn thành'
+                eff_dt = date_dt if date_dt else last_seen_date
+                week_num = eff_dt.isocalendar()[1] if eff_dt else 0
+                month_num = eff_dt.month if eff_dt else 0
+
+            if not eq and not act and not desc and not m_id:
                 continue
 
             eff_date = date_dt if date_dt else last_seen_date
-            week_num = eff_date.isocalendar()[1] if eff_date else 0
-            month_num = eff_date.month if eff_date else 0
 
             records.append({
                 'row_index': r_idx,
+                'id': m_id,
                 'date': eff_date,
                 'date_str': eff_date.strftime('%d/%m/%Y') if eff_date else (date_raw or 'N/A'),
                 'week': week_num,
@@ -1331,6 +1612,101 @@ class DataLoader:
                 'duration_str': duration,
                 'performer': performer,
                 'status': status if status else 'Hoàn thành'
+            })
+
+        return pd.DataFrame(records)
+
+    def load_tpm_improvements(self) -> Dict[str, Any]:
+        """
+        Đọc dữ liệu Quản trị TPM và Cải tiến từ sheet 'TPM và cai tien' (ID: 1hInwQQgN3zXWFEXC1qaFgaXeIiogXUJtm0cPgP3PlX8).
+        """
+        if not self.maint_log_spreadsheet:
+            return {'summary': {}, 'tasks': pd.DataFrame()}
+
+        try:
+            ws = self.maint_log_spreadsheet.worksheet('TPM và cai tien')
+            rows = ws.get_all_values()
+        except Exception as e:
+            print(f"[-] Lỗi đọc sheet TPM và cai tien: {e}")
+            return {'summary': {}, 'tasks': pd.DataFrame()}
+
+        if len(rows) < 6:
+            return {'summary': {}, 'tasks': pd.DataFrame()}
+
+        # Hàng tổng hợp (row 3, index 2)
+        summary = {
+            'total': int(clean_number(rows[2][1])) if len(rows) > 2 and len(rows[2]) > 1 else 0,
+            'completed': int(clean_number(rows[2][3])) if len(rows) > 2 and len(rows[2]) > 3 else 0,
+            'in_progress': int(clean_number(rows[2][5])) if len(rows) > 2 and len(rows[2]) > 5 else 0,
+            'not_started': int(clean_number(rows[2][7])) if len(rows) > 2 and len(rows[2]) > 7 else 0
+        }
+
+        tasks = []
+        for r in rows[6:]:
+            if not r or not any(r):
+                continue
+            task_name = r[1].strip() if len(r) > 1 else ''
+            if not task_name:
+                continue
+            tasks.append({
+                'task': task_name,
+                'equipment_code': r[2].strip() if len(r) > 2 else '',
+                'priority': r[3].strip() if len(r) > 3 else 'Trung bình',
+                'person_in_charge': r[4].strip() if len(r) > 4 else '',
+                'status': r[5].strip() if len(r) > 5 else 'Chưa bắt đầu',
+                'start_date': r[6].strip() if len(r) > 6 else '',
+                'end_date': r[7].strip() if len(r) > 7 else '',
+                'total_days': clean_number(r[8]) if len(r) > 8 else 0,
+                'materials': r[9].strip() if len(r) > 9 else '',
+                'note': r[10].strip() if len(r) > 10 else ''
+            })
+
+        df_tasks = pd.DataFrame(tasks)
+        if summary['total'] == 0 and not df_tasks.empty:
+            summary['total'] = len(df_tasks)
+            summary['completed'] = len(df_tasks[df_tasks['status'].str.contains('Hoàn thành|Đã xong', case=False, na=False)])
+            summary['in_progress'] = len(df_tasks[df_tasks['status'].str.contains('Đang thực hiện|Đang làm', case=False, na=False)])
+            summary['not_started'] = len(df_tasks[df_tasks['status'].str.contains('Chưa bắt đầu|Chưa làm', case=False, na=False)])
+
+        return {'summary': summary, 'tasks': df_tasks}
+
+    def load_pm30_grease_data(self) -> pd.DataFrame:
+        """
+        Đọc và phân tích dữ liệu kiểm tra định lượng mỡ bôi trơn máy ép PM30-6 (sheet 'Check Grease for PM30_6').
+        """
+        if not self.maint_log_spreadsheet:
+            return pd.DataFrame()
+
+        try:
+            ws = self.maint_log_spreadsheet.worksheet('Check Grease for PM30_6')
+            rows = ws.get_all_values()
+        except Exception as e:
+            print(f"[-] Lỗi đọc sheet Check Grease for PM30_6: {e}")
+            return pd.DataFrame()
+
+        if len(rows) < 3:
+            return pd.DataFrame()
+
+        records = []
+        for r in rows[2:]:
+            if not r or not any(r):
+                continue
+            date_raw = r[0].strip() if len(r) > 0 else ''
+            date_dt = parse_vn_date(date_raw)
+            eq = r[2].strip() if len(r) > 2 else ''
+            if not eq:
+                continue
+            records.append({
+                'date': date_dt,
+                'date_str': date_dt.strftime('%d/%m/%Y') if date_dt else date_raw,
+                'leader': r[1].strip() if len(r) > 1 else '',
+                'equipment': eq,
+                'circle': clean_number(r[3]) if len(r) > 3 else 0,
+                'left_roller_g': clean_number(r[4]) if len(r) > 4 else 0.0,
+                'right_roller_g': clean_number(r[5]) if len(r) > 5 else 0.0,
+                'main_shaft_g': clean_number(r[6]) if len(r) > 6 else 0.0,
+                'total_g': clean_number(r[7]) if len(r) > 7 else 0.0,
+                'pulses': clean_number(r[9]) if len(r) > 9 else 0
             })
 
         return pd.DataFrame(records)
@@ -1773,6 +2149,76 @@ class DataLoader:
         except Exception as e:
             return False, f"Lỗi ghi dữ liệu Google Sheets: {e}"
 
+    def delete_shift_record(self, date_val: Any, shift_leader: str) -> Tuple[bool, str]:
+        """
+        Xóa bản ghi báo cáo ca sản xuất khỏi Google Sheets ('Product_Data' và 'Product')
+        dựa trên ngày và ca trưởng.
+        """
+        if not self.client:
+            self.connect()
+
+        if not self.client or not self.spreadsheet:
+            return False, "Chưa kết nối được với Google Sheets sản xuất."
+
+        try:
+            date_dt = date_val
+            if isinstance(date_dt, str):
+                date_dt = parse_vn_date(date_dt)
+            if not date_dt:
+                date_dt = datetime.now()
+
+            d_iso = date_dt.strftime('%Y-%m-%d')
+            d_str = date_dt.strftime('%d/%m/%Y')
+            d_short = f"{date_dt.day}/{date_dt.month}/{date_dt.year}"
+            ca_truong = str(shift_leader).strip()
+
+            deleted_any = False
+            # 1. Xóa trong Product_Data và Product
+            for sheet_name in ['Product_Data', 'Product']:
+                try:
+                    ws = self.spreadsheet.worksheet(sheet_name)
+                    vals = ws.get_all_values()
+                    target_row = None
+                    for idx, r in enumerate(vals):
+                        if r and (d_iso in r[0] or d_str in r[0] or d_short in r[0] or (len(r) > 1 and (d_iso in r[1] or d_str in r[1] or d_short in r[1]))):
+                            leader_in_row = ""
+                            if len(r) > 4:
+                                leader_in_row = r[4].strip() or r[3].strip()
+                            elif len(r) > 3:
+                                leader_in_row = r[3].strip()
+
+                            if ca_truong in leader_in_row or leader_in_row in ca_truong or match_shift_leader(leader_in_row, ca_truong):
+                                target_row = idx + 1
+                                break
+                    if target_row:
+                        ws.delete_rows(target_row)
+                        deleted_any = True
+                except Exception as e_del:
+                    print(f"[-] Lỗi khi xóa trên {sheet_name}: {e_del}")
+
+            if deleted_any:
+                # Xóa trong cache parquet nếu có
+                cache_paths = [
+                    os.path.join(os.path.dirname(__file__), "assets", "cache_shifts.parquet"),
+                    os.path.join("assets", "cache_shifts.parquet"),
+                    os.path.join("deploy_files", "assets", "cache_shifts.parquet"),
+                ]
+                for cp in cache_paths:
+                    if os.path.exists(cp):
+                        try:
+                            df_c = pd.read_parquet(cp)
+                            mask = (df_c['date_str'] == d_str) & (df_c['shift_leader'].apply(lambda val: match_shift_leader(val, ca_truong)))
+                            if mask.any():
+                                df_c = df_c[~mask].reset_index(drop=True)
+                                df_c.to_parquet(cp, index=False)
+                        except Exception:
+                            pass
+                return True, f"Đã xóa thành công báo cáo ca ngày {d_str} của {ca_truong} trên Google Sheets!"
+            else:
+                return False, f"Không tìm thấy bản ghi ngày {d_str} của {ca_truong} để xóa trên Google Sheets."
+        except Exception as e:
+            return False, f"Lỗi xóa dữ liệu trên Google Sheets: {e}"
+
     def save_kcs_record(self, record: Dict[str, Any]) -> Tuple[bool, str]:
         """
         Ghi dữ liệu kết quả đo kiểm chất lượng KCS vào Google Sheets 'Data KCS' (file KPI) và 'KCS' (file sản xuất).
@@ -1907,6 +2353,150 @@ class DataLoader:
         if saved_any:
             return True, f"Đã lưu thành công mẫu kiểm nghiệm KCS lúc {record.get('time_sample')} ngày {d_str} vào {', '.join(msg_parts)}!"
         return False, "Không thể kết nối để ghi dữ liệu KCS."
+
+    def save_maintenance_record(self, record: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Ghi dữ liệu nhật ký bảo trì vào Google Sheets '2026 BẢO TRÌ BVN' (sheet 'Data').
+        Cấu trúc cột:
+        ID, Ngày, Tuần, Tháng, Ca, Mã thiết bị, Mã khuôn, Hoạt động, Nội dung hành động, Thời gian xử lí, Người thực hiện, Trạng thái
+        """
+        if not self.client:
+            self.connect()
+
+        date_dt = record.get('date')
+        if isinstance(date_dt, str):
+            date_dt = parse_vn_date(date_dt)
+        if not date_dt:
+            date_dt = datetime.now()
+
+        d_str = date_dt.strftime('%d/%m/%Y')
+        week_val = date_dt.isocalendar()[1]
+        month_val = date_dt.month
+
+        saved = False
+        row_id = ""
+
+        if self.maint_log_spreadsheet:
+            try:
+                try:
+                    ws = self.maint_log_spreadsheet.worksheet('Data')
+                except Exception:
+                    ws = self.maint_log_spreadsheet.worksheet('Nhật kí bảo trì')
+                
+                all_ids = ws.col_values(1)
+                row_id = f"BT-{len(all_ids):04d}"
+                duration_val = str(record.get('duration_hours', '')).replace('.', ',')
+
+                row_data = [
+                    row_id,
+                    d_str,
+                    str(week_val),
+                    str(month_val),
+                    str(record.get('shift', 'Ca 1')),
+                    str(record.get('equipment', '')),
+                    str(record.get('die_code', '')),
+                    str(record.get('activity', 'Bảo trì chủ động')),
+                    str(record.get('description', '')),
+                    duration_val,
+                    str(record.get('performer', 'Bảo trì')),
+                    str(record.get('status', 'OK'))
+                ]
+                ws.append_row(row_data, value_input_option='USER_ENTERED')
+                saved = True
+            except Exception as e_m:
+                print(f"[-] Lỗi ghi sheet Data bảo trì: {e_m}")
+
+        if saved:
+            return True, f"Đã ghi nhận thành công nhật ký bảo trì [{row_id}] thiết bị {record.get('equipment')} ngày {d_str} lên Google Sheets!"
+        elif not self.maint_log_spreadsheet:
+            return True, f"Đã ghi nhận nhật ký bảo trì thiết bị {record.get('equipment')} ngày {d_str} (Hệ thống đang hoạt động ở chế độ ngoại tuyến)."
+        else:
+            return False, "Không thể ghi dữ liệu bảo trì vào Google Sheets. Vui lòng thử lại."
+
+    def save_chipper_record(self, record: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Ghi dữ liệu báo cáo vận hành tổ băm (Chipper) vào Google Sheets và cập nhật bộ đệm.
+        """
+        if not self.client:
+            self.connect()
+
+        date_dt = record.get('date')
+        if isinstance(date_dt, str):
+            date_dt = parse_vn_date(date_dt)
+        if not date_dt:
+            date_dt = datetime.now()
+
+        d_str = date_dt.strftime('%d/%m/%Y')
+        team = str(record.get('team', 'QL tổ băm'))
+        shift_choice = str(record.get('shift', 'Ca 1'))
+        go_cay = float(record.get('go_cay_tan', 0.0))
+        dam_ra = float(record.get('dam_ra_tan', 0.0))
+
+        saved = False
+        if self.spreadsheet:
+            try:
+                ws_chipper = None
+                try:
+                    ws_chipper = self.spreadsheet.worksheet('Chipper')
+                except Exception:
+                    try:
+                        ws_chipper = self.spreadsheet.worksheet('Băm dăm')
+                    except Exception:
+                        pass
+
+                if ws_chipper is not None:
+                    row_data = [
+                        d_str,
+                        shift_choice,
+                        team,
+                        str(go_cay).replace('.', ','),
+                        str(dam_ra).replace('.', ','),
+                        str(record.get('h_chipper1', 0.0)).replace('.', ','),
+                        str(record.get('h_chipper2', 0.0)).replace('.', ','),
+                        str(record.get('dien_kwh', 0.0)).replace('.', ','),
+                        str(record.get('dau_do_lit', 0.0)).replace('.', ','),
+                        str(record.get('knife_status', 'Bình thường')),
+                        str(record.get('magnet_status', 'Tốt')),
+                        str(record.get('notes', ''))
+                    ]
+                    ws_chipper.append_row(row_data, value_input_option='USER_ENTERED')
+                    saved = True
+            except Exception as e_c:
+                print(f"[-] Lỗi ghi sheet Chipper: {e_c}")
+
+        try:
+            cache_file = os.path.join(os.path.dirname(__file__), "assets", "cache_chipper_records.json")
+            records = []
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as f:
+                        records = json.load(f)
+                except Exception:
+                    records = []
+            records.append({
+                'date': d_str,
+                'shift': shift_choice,
+                'team': team,
+                'go_cay_tan': go_cay,
+                'dam_ra_tan': dam_ra,
+                'h_chipper1': float(record.get('h_chipper1', 0.0)),
+                'h_chipper2': float(record.get('h_chipper2', 0.0)),
+                'dien_kwh': float(record.get('dien_kwh', 0.0)),
+                'dau_do_lit': float(record.get('dau_do_lit', 0.0)),
+                'knife_status': str(record.get('knife_status', 'Bình thường')),
+                'magnet_status': str(record.get('magnet_status', 'Tốt')),
+                'notes': str(record.get('notes', ''))
+            })
+            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(records, f, ensure_ascii=False, indent=2)
+            saved = True
+        except Exception as e_cj:
+            print(f"[-] Lỗi lưu cache Chipper JSON: {e_cj}")
+
+        if saved:
+            return True, f"Đã lưu thành công báo cáo ca băm dăm ({team} - {shift_choice}) ngày {d_str}!"
+        return False, "Không thể lưu dữ liệu ca băm. Vui lòng kiểm tra lại."
 
     def load_oil_change_data(self) -> Dict[str, Any]:
         """
