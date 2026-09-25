@@ -235,7 +235,8 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
     # Nguyên liệu
     total_nl_tho = float(day_shifts['nghien_tho_tan'].sum())
     total_nl_dot = float(day_shifts['nl_dot_tan'].sum())
-    processing_ratio = (total_nl_tho / total_output) if total_output > 0 and total_nl_tho > 0 else 0.0
+    total_nl_all = total_nl_tho + total_nl_dot
+    processing_ratio = (total_nl_all / total_output) if total_output > 0 and total_nl_all > 0 else 0.0
 
     # Nếu có df_daily, đối soát lấy thêm tỷ lệ chế biến, độ ẩm và tỷ trọng viên
     daily_record = {}
@@ -243,8 +244,8 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
         daily_match = df_daily[df_daily['date'].dt.date == target_date.date()]
         if not daily_match.empty:
             daily_record = daily_match.iloc[0].to_dict()
-            if processing_ratio == 0 and daily_record.get('ty_le_che_bien', 0) > 0:
-                processing_ratio = daily_record.get('ty_le_che_bien', 0)
+            if daily_record.get('ty_le_che_bien', 0) > 0:
+                processing_ratio = float(daily_record.get('ty_le_che_bien', 0))
 
     # Lấy độ ẩm trung bình và tỷ trọng viên từ df_daily
     do_am_tb = float(daily_record.get('do_am_tb_pct', 0.0))
@@ -975,7 +976,7 @@ def get_all_leaders_dashboard_summary(
         
         nl_tho = float(p_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in p_shifts.columns else 0.0
         nl_dot = float(p_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in p_shifts.columns else 0.0
-        ratio = (nl_tho / output) if output > 0 and nl_tho > 0 else 0.0
+        ratio = ((nl_tho + nl_dot) / output) if output > 0 and (nl_tho + nl_dot) > 0 else 0.0
 
         # Nếu chưa có điện kwh trong p_shifts nhưng có ở chart_dien
         if kwh_ton == 0 and df_chart_dien is not None and not df_chart_dien.empty and target_date is not None:
@@ -1033,7 +1034,7 @@ def get_all_leaders_dashboard_summary(
         latest_shift_hours = float(latest_shift['tong_gio_ep']) if latest_shift is not None and 'tong_gio_ep' in latest_shift and pd.notna(latest_shift['tong_gio_ep']) else 0.0
         latest_shift_nl_tho = float(latest_shift['nghien_tho_tan']) if latest_shift is not None and 'nghien_tho_tan' in latest_shift and pd.notna(latest_shift['nghien_tho_tan']) else 0.0
         latest_shift_nl_dot = float(latest_shift['nl_dot_tan']) if latest_shift is not None and 'nl_dot_tan' in latest_shift and pd.notna(latest_shift['nl_dot_tan']) else 0.0
-        latest_shift_ratio = (latest_shift_nl_tho / latest_shift_out) if latest_shift_out > 0 and latest_shift_nl_tho > 0 else 0.0
+        latest_shift_ratio = ((latest_shift_nl_tho + latest_shift_nl_dot) / latest_shift_out) if latest_shift_out > 0 and (latest_shift_nl_tho + latest_shift_nl_dot) > 0 else 0.0
 
         # 3. Tính toán thống kê đa kỳ chuẩn xác: NGÀY / TUẦN / THÁNG của ca trưởng
         if target_date is not None:
@@ -1058,8 +1059,9 @@ def get_all_leaders_dashboard_summary(
         d_kwh_ton = (d_kwh / d_out) if d_out > 0 else 0.0
         d_tph = (d_out / d_hours) if d_hours > 0 else 0.0
         d_shifts_cnt = len(d_act) if len(d_act) > 0 else len(d_shifts)
-        d_ratio = float(d_shifts['nghien_tho_tan'].sum() / d_out) if d_out > 0 and 'nghien_tho_tan' in d_shifts.columns else 0.0
+        d_nl_tho = float(d_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in d_shifts.columns else 0.0
         d_nl_dot = float(d_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in d_shifts.columns else 0.0
+        d_ratio = float((d_nl_tho + d_nl_dot) / d_out) if d_out > 0 else 0.0
         d_label = ref_d.strftime('%d/%m')
         d_full_date = ref_d.strftime('%d/%m/%Y')
 
@@ -1072,8 +1074,9 @@ def get_all_leaders_dashboard_summary(
         w_kwh_ton = (w_kwh / w_out) if w_out > 0 else 0.0
         w_tph = (w_out / w_hours) if w_hours > 0 else 0.0
         w_shifts_cnt = len(w_act)
-        w_ratio = float(w_shifts['nghien_tho_tan'].sum() / w_out) if w_out > 0 and 'nghien_tho_tan' in w_shifts.columns else 0.0
+        w_nl_tho = float(w_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in w_shifts.columns else 0.0
         w_nl_dot = float(w_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in w_shifts.columns else 0.0
+        w_ratio = float((w_nl_tho + w_nl_dot) / w_out) if w_out > 0 else 0.0
         w_label = f"W{ref_w}"
 
         # C. Kỳ THÁNG của ca trưởng
@@ -1084,8 +1087,9 @@ def get_all_leaders_dashboard_summary(
         m_kwh_ton = (m_kwh / m_out) if m_out > 0 else 0.0
         m_tph = (m_out / m_hours) if m_hours > 0 else 0.0
         m_count = len(m_shifts)
-        m_ratio = float(m_shifts['nghien_tho_tan'].sum() / m_out) if m_out > 0 and 'nghien_tho_tan' in m_shifts.columns else 0.0
+        m_nl_tho = float(m_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in m_shifts.columns else 0.0
         m_nl_dot = float(m_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in m_shifts.columns else 0.0
+        m_ratio = float((m_nl_tho + m_nl_dot) / m_out) if m_out > 0 else 0.0
         m_label = f"T{ref_m}"
 
         # 4. Điểm thi đua KPI

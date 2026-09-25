@@ -1138,7 +1138,15 @@ if is_week_mode and selected_week_sidebar:
     tot_kwh = float(w_shifts['dien_kwh'].sum())
     avg_e = tot_kwh / tot_out if tot_out > 0 else 0.0
     avg_p = tot_out / tot_h if tot_h > 0 else 0.0
-    ratio_w = float(w_shifts['nghien_tho_tan'].sum() / tot_out) if tot_out > 0 and 'nghien_tho_tan' in w_shifts.columns else 0.0
+    tot_nl_tho_w = float(w_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in w_shifts.columns else 0.0
+    tot_nl_dot_w = float(w_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in w_shifts.columns else 0.0
+    ratio_w = float((tot_nl_tho_w + tot_nl_dot_w) / tot_out) if tot_out > 0 else 0.0
+    if (selected_leader in ["Tất cả", "All"]) and df_weekly is not None and not df_weekly.empty and 'week' in df_weekly.columns:
+        w_match = df_weekly[df_weekly['week'] == w_num]
+        if not w_match.empty and 'ty_le_che_bien' in w_match.columns:
+            w_ratio_sheet = float(w_match.iloc[0]['ty_le_che_bien'])
+            if w_ratio_sheet > 0:
+                ratio_w = w_ratio_sheet
 
     eq_w = {}
     for code, info in EQUIPMENT_INFO.items():
@@ -1219,7 +1227,16 @@ elif is_month_mode and selected_month_sidebar:
     tot_kwh = float(m_shifts['dien_kwh'].sum())
     avg_e = tot_kwh / tot_out if tot_out > 0 else 0.0
     avg_p = tot_out / tot_h if tot_h > 0 else 0.0
-    ratio_m = float(m_shifts['nghien_tho_tan'].sum() / tot_out) if tot_out > 0 and 'nghien_tho_tan' in m_shifts.columns else 0.0
+    tot_nl_tho_m = float(m_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in m_shifts.columns else 0.0
+    tot_nl_dot_m = float(m_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in m_shifts.columns else 0.0
+    ratio_m = float((tot_nl_tho_m + tot_nl_dot_m) / tot_out) if tot_out > 0 else 0.0
+    if (selected_leader in ["Tất cả", "All"]) and df_monthly is not None and not df_monthly.empty:
+        m_str_match = f"{m_num:02d}/{y_num}"
+        m_match = df_monthly[df_monthly['month_label'].astype(str).str.contains(m_str_match, na=False)]
+        if not m_match.empty and 'ty_le_che_bien' in m_match.columns:
+            m_ratio_sheet = float(m_match.iloc[0]['ty_le_che_bien'])
+            if m_ratio_sheet > 0:
+                ratio_m = m_ratio_sheet
 
     eq_m = {}
     for code, info in EQUIPMENT_INFO.items():
@@ -1300,7 +1317,9 @@ elif is_year_mode:
     tot_kwh = float(y_shifts['dien_kwh'].sum())
     avg_e = tot_kwh / tot_out if tot_out > 0 else 0.0
     avg_p = tot_out / tot_h if tot_h > 0 else 0.0
-    ratio_y = float(y_shifts['nghien_tho_tan'].sum() / tot_out) if tot_out > 0 and 'nghien_tho_tan' in y_shifts.columns else 0.0
+    tot_nl_tho_y = float(y_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in y_shifts.columns else 0.0
+    tot_nl_dot_y = float(y_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in y_shifts.columns else 0.0
+    ratio_y = float((tot_nl_tho_y + tot_nl_dot_y) / tot_out) if tot_out > 0 else 0.0
 
     eq_y = {}
     for code, info in EQUIPMENT_INFO.items():
@@ -1383,7 +1402,9 @@ elif is_range_mode and date_range:
     tot_kwh = float(r_shifts['dien_kwh'].sum())
     avg_e = tot_kwh / tot_out if tot_out > 0 else 0.0
     avg_p = tot_out / tot_h if tot_h > 0 else 0.0
-    ratio_r = float(r_shifts['nghien_tho_tan'].sum() / tot_out) if tot_out > 0 and 'nghien_tho_tan' in r_shifts.columns else 0.0
+    tot_nl_tho_r = float(r_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in r_shifts.columns else 0.0
+    tot_nl_dot_r = float(r_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in r_shifts.columns else 0.0
+    ratio_r = float((tot_nl_tho_r + tot_nl_dot_r) / tot_out) if tot_out > 0 else 0.0
 
     eq_r = {}
     for code, info in EQUIPMENT_INFO.items():
@@ -3041,144 +3062,474 @@ elif task_num == 2:
 
     st.markdown("---")
 
-    # 3. Biểu đồ so sánh 3 ca trưởng theo ngày
-    st.markdown(f'<div class="section-title">{t("📈 Xu Hướng Đối Sánh Trực Tiếp 3 Ca Trưởng Theo Ngày", "📈 Daily Direct Comparison Trends of 3 Shift Leaders")}</div>', unsafe_allow_html=True)
-    
-    tab_c1, tab_c2, tab_c3, tab_c4 = st.tabs([
+    # 3. Biểu đồ so sánh 3 ca trưởng theo Ngày / Tuần / Tháng
+    c_hdr_t, c_hdr_sel = st.columns([3, 2])
+    with c_hdr_sel:
+        compare_period_mode = st.radio(
+            t("Chu kỳ hiển thị đồ thị:", "Chart Time Granularity:"),
+            [t("📅 Theo Ngày", "📅 Daily"), t("📆 Theo Tuần", "📆 Weekly"), t("🗓️ Theo Tháng", "🗓️ Monthly")],
+            horizontal=True,
+            key="kpi_direct_compare_mode"
+        )
+    with c_hdr_t:
+        mode_label = t("Theo Ngày", "Daily") if "Ngày" in compare_period_mode or "Daily" in compare_period_mode else (
+            t("Theo Tuần", "Weekly") if "Tuần" in compare_period_mode or "Weekly" in compare_period_mode else t("Theo Tháng", "Monthly")
+        )
+        st.markdown(f'<div class="section-title">{t("📈 Xu Hướng Đối Sánh Trực Tiếp 3 Ca Trưởng", "📈 Direct Comparison Trends of 3 Shift Leaders")} ({mode_label})</div>', unsafe_allow_html=True)
+
+    is_chart_daily = "Ngày" in compare_period_mode or "Daily" in compare_period_mode
+    is_chart_weekly = "Tuần" in compare_period_mode or "Weekly" in compare_period_mode
+    is_chart_monthly = "Tháng" in compare_period_mode or "Monthly" in compare_period_mode
+
+    # Bảng màu và ánh xạ tên ca trưởng chuẩn hóa
+    colors_ldr = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
+    display_ca_map = {
+        'Ca A': 'Ca A (Sắc)',
+        'Ca B': 'Ca B (Tài)',
+        'Ca C': 'Ca C (Long)',
+        'Sắc': 'Ca Trưởng Sắc (Ca A)',
+        'Tài': 'Ca Trưởng Tài (Ca B)',
+        'Long': 'Ca Trưởng Long (Ca C)'
+    }
+
+    tab_c1, tab_c2, tab_c3, tab_c4, tab_c5, tab_c6 = st.tabs([
         t("⚡ Suất Điện Năng (kWh/tấn)", "⚡ Power Specific Rate (kWh/ton)"), 
         t("🚀 Năng Suất Ép (tấn/h)", "🚀 Press Productivity (t/h)"), 
         t("💧 Độ Ẩm Viên Nén (%)", "💧 Pellet Moisture (%)"),
-        t("📦 Sản Lượng & Chỉ Tiêu (Tấn)", "📦 Actual Output & Target (Tons)")
+        t("📦 Sản Lượng & Chỉ Tiêu (Tấn)", "📦 Actual Output & Target (Tons)"),
+        t("🔄 Tỷ Lệ Chế Biến (lần)", "🔄 Processing Ratio (x)"),
+        t("🏆 Điểm Thi Đua KPI (Điểm)", "🏆 KPI Score (Points)")
     ])
 
     with tab_c1:
-        if not df_chart_dien.empty:
-            fig_cd = go.Figure()
-            colors = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
-            display_ca_map = {
-                'Ca A': 'Ca A (Sắc)',
-                'Ca B': 'Ca B (Tài)',
-                'Ca C': 'Ca C (Long)',
-                'Sắc': 'Ca Trưởng Sắc (Ca A)',
-                'Tài': 'Ca Trưởng Tài (Ca B)',
-                'Long': 'Ca Trưởng Long (Ca C)'
-            }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_dien.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
-            for name in target_cas:
-                if name in df_chart_dien.columns:
-                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
-                    fig_cd.add_trace(go.Scatter(
-                        x=df_chart_dien['date_str'], y=df_chart_dien[name],
-                        mode='lines+markers', name=lbl,
-                        line=dict(color=colors.get(name, '#64748b'), width=2)
-                    ))
-            # Đường line chuẩn 175 kWh/tấn (theo Danh mục mới)
-            fig_cd.add_hline(y=175, line_dash="dash", line_color="red", annotation_text=t("Định mức 175 kWh/tấn", "Standard 175 kWh/ton"), annotation_position="top right")
-            fig_cd.update_layout(
-                title=t("Suất Tiêu Hao Điện Năng (kWh/tấn) Theo Ca (So Với Chuẩn 175)", "Specific Power Consumption (kWh/ton) by Shift (vs Std 175)"),
-                xaxis_title=t("Ngày", "Date"), yaxis_title=t("kWh/tấn", "kWh/ton"), height=380, hovermode="x unified"
-            )
-            st.plotly_chart(fig_cd, use_container_width=True)
-        else:
-            st.info(t("Chưa có dữ liệu biểu đồ điện năng ca.", "No shift power data available."))
+        if is_chart_daily:
+            if not df_chart_dien.empty:
+                fig_cd = go.Figure()
+                target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_dien.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
+                for name in target_cas:
+                    if name in df_chart_dien.columns:
+                        lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
+                        fig_cd.add_trace(go.Scatter(
+                            x=df_chart_dien['date_str'], y=df_chart_dien[name],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(name, '#64748b'), width=2),
+                            marker=dict(size=4)
+                        ))
+                fig_cd.add_hline(y=175, line_dash="dash", line_color="red", annotation_text=t("Định mức trần 175 kWh/tấn", "Standard Ceiling 175 kWh/ton"), annotation_position="top right")
+                fig_cd.add_hline(y=170, line_dash="dot", line_color="green", annotation_text=t("Mức sàn 170 kWh/tấn", "Standard Floor 170 kWh/ton"), annotation_position="bottom right")
+                fig_cd.update_layout(
+                    title=t("Suất Tiêu Hao Điện Năng (kWh/tấn) Theo Ca Từng Ngày (So Với Chuẩn 170 - 175)", "Daily Specific Power Consumption (kWh/ton) by Shift (vs Std 170 - 175)"),
+                    xaxis_title=t("Ngày", "Date"), yaxis_title=t("kWh/tấn", "kWh/ton"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cd, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu biểu đồ điện năng ca theo ngày.", "No daily shift power data available."))
+        elif is_chart_weekly:
+            if not df_leaders_w.empty:
+                fig_cw_dien = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_w[df_leaders_w['ca_truong'] == ca].sort_values('week')
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cw_dien.add_trace(go.Scatter(
+                            x=sub['week_label'], y=sub['dien_tb'],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=7)
+                        ))
+                fig_cw_dien.add_hline(y=175, line_dash="dash", line_color="red", annotation_text=t("Định mức trần 175 kWh/tấn", "Standard Ceiling 175 kWh/ton"), annotation_position="top right")
+                fig_cw_dien.add_hline(y=170, line_dash="dot", line_color="green", annotation_text=t("Mức sàn 170 kWh/tấn", "Standard Floor 170 kWh/ton"), annotation_position="bottom right")
+                fig_cw_dien.update_layout(
+                    title=t("Suất Tiêu Hao Điện Năng TB (kWh/tấn) Theo Ca Từng Tuần (Tuần 1 - Tuần 39)", "Weekly Average Specific Power Consumption by Shift (W1 - W39)"),
+                    xaxis_title=t("Tuần", "Week"), yaxis_title=t("kWh/tấn", "kWh/ton"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cw_dien, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu suất điện năng theo tuần.", "No weekly power data available."))
+        elif is_chart_monthly:
+            if not df_leaders_m.empty:
+                fig_cm_dien = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_m[df_leaders_m['ca_truong'] == ca]
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cm_dien.add_trace(go.Scatter(
+                            x=sub['month_label'], y=sub['dien_tb'],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=8)
+                        ))
+                fig_cm_dien.add_hline(y=175, line_dash="dash", line_color="red", annotation_text=t("Định mức trần 175 kWh/tấn", "Standard Ceiling 175 kWh/ton"), annotation_position="top right")
+                fig_cm_dien.add_hline(y=170, line_dash="dot", line_color="green", annotation_text=t("Mức sàn 170 kWh/tấn", "Standard Floor 170 kWh/ton"), annotation_position="bottom right")
+                fig_cm_dien.update_layout(
+                    title=t("Suất Tiêu Hao Điện Năng TB (kWh/tấn) Theo Ca Từng Tháng (Tháng 1 - Tháng 9)", "Monthly Average Specific Power Consumption by Shift (Month 1 - 9)"),
+                    xaxis_title=t("Tháng", "Month"), yaxis_title=t("kWh/tấn", "kWh/ton"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cm_dien, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu suất điện năng theo tháng.", "No monthly power data available."))
 
     with tab_c2:
-        if not df_chart_cap.empty:
-            fig_cc = go.Figure()
-            colors = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
-            display_ca_map = {
-                'Ca A': 'Ca A (Sắc)',
-                'Ca B': 'Ca B (Tài)',
-                'Ca C': 'Ca C (Long)',
-                'Sắc': 'Ca Trưởng Sắc (Ca A)',
-                'Tài': 'Ca Trưởng Tài (Ca B)',
-                'Long': 'Ca Trưởng Long (Ca C)'
-            }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_cap.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
-            for name in target_cas:
-                if name in df_chart_cap.columns:
-                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
-                    fig_cc.add_trace(go.Scatter(
-                        x=df_chart_cap['date_str'], y=df_chart_cap[name],
-                        mode='lines+markers', name=lbl,
-                        line=dict(color=colors.get(name, '#64748b'), width=2)
-                    ))
-            fig_cc.add_hline(y=4.0, line_dash="dash", line_color="green", annotation_text=t("Chỉ tiêu ≥ 4.0 tấn/h", "Target ≥ 4.0 tons/h"), annotation_position="top left")
-            fig_cc.update_layout(
-                title=t("Năng Suất Ép Trung Bình (tấn/h) Theo Ca (So Với Chỉ Tiêu 4.0)", "Average Press Productivity (t/h) by Shift (vs Target 4.0)"),
-                xaxis_title=t("Ngày", "Date"), yaxis_title=t("Tấn/giờ", "Tons/hour"), height=380, hovermode="x unified"
-            )
-            st.plotly_chart(fig_cc, use_container_width=True)
-        else:
-            st.info(t("Chưa có dữ liệu biểu đồ năng suất ca.", "No shift productivity data available."))
+        if is_chart_daily:
+            if not df_chart_cap.empty:
+                fig_cc = go.Figure()
+                target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_cap.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
+                for name in target_cas:
+                    if name in df_chart_cap.columns:
+                        lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
+                        fig_cc.add_trace(go.Scatter(
+                            x=df_chart_cap['date_str'], y=df_chart_cap[name],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(name, '#64748b'), width=2),
+                            marker=dict(size=4)
+                        ))
+                fig_cc.add_hline(y=4.0, line_dash="dash", line_color="green", annotation_text=t("Chỉ tiêu ≥ 4.0 tấn/h", "Target ≥ 4.0 tons/h"), annotation_position="top left")
+                fig_cc.update_layout(
+                    title=t("Năng Suất Ép Trung Bình (tấn/h) Theo Ca Từng Ngày (So Với Chỉ Tiêu 4.0)", "Daily Average Press Productivity (t/h) by Shift (vs Target 4.0)"),
+                    xaxis_title=t("Ngày", "Date"), yaxis_title=t("Tấn/giờ", "Tons/hour"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cc, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu biểu đồ năng suất theo ngày.", "No daily productivity data available."))
+        elif is_chart_weekly:
+            if not df_leaders_w.empty:
+                fig_cw_cap = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_w[df_leaders_w['ca_truong'] == ca].sort_values('week')
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cw_cap.add_trace(go.Scatter(
+                            x=sub['week_label'], y=sub['nang_suat_tb'],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=7)
+                        ))
+                fig_cw_cap.add_hline(y=4.0, line_dash="dash", line_color="green", annotation_text=t("Chỉ tiêu ≥ 4.0 tấn/h", "Target ≥ 4.0 tons/h"), annotation_position="top left")
+                fig_cw_cap.update_layout(
+                    title=t("Năng Suất Ép Trung Bình (tấn/h) Theo Ca Từng Tuần (Chỉ Tiêu ≥ 4.0)", "Weekly Average Press Productivity (t/h) by Shift (Target ≥ 4.0)"),
+                    xaxis_title=t("Tuần", "Week"), yaxis_title=t("Tấn/giờ", "Tons/hour"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cw_cap, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu năng suất theo tuần.", "No weekly productivity data available."))
+        elif is_chart_monthly:
+            if not df_leaders_m.empty:
+                fig_cm_cap = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_m[df_leaders_m['ca_truong'] == ca]
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cm_cap.add_trace(go.Scatter(
+                            x=sub['month_label'], y=sub['nang_suat_tb'],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=8)
+                        ))
+                fig_cm_cap.add_hline(y=4.0, line_dash="dash", line_color="green", annotation_text=t("Chỉ tiêu ≥ 4.0 tấn/h", "Target ≥ 4.0 tons/h"), annotation_position="top left")
+                fig_cm_cap.update_layout(
+                    title=t("Năng Suất Ép Trung Bình (tấn/h) Theo Ca Từng Tháng (Chỉ Tiêu ≥ 4.0)", "Monthly Average Press Productivity (t/h) by Shift (Target ≥ 4.0)"),
+                    xaxis_title=t("Tháng", "Month"), yaxis_title=t("Tấn/giờ", "Tons/hour"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cm_cap, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu năng suất theo tháng.", "No monthly productivity data available."))
 
     with tab_c3:
-        if not df_chart_moist.empty:
-            fig_cm = go.Figure()
-            colors = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
-            display_ca_map = {
-                'Ca A': 'Ca A (Sắc)',
-                'Ca B': 'Ca B (Tài)',
-                'Ca C': 'Ca C (Long)',
-                'Sắc': 'Ca Trưởng Sắc (Ca A)',
-                'Tài': 'Ca Trưởng Tài (Ca B)',
-                'Long': 'Ca Trưởng Long (Ca C)'
-            }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_moist.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
-            for name in target_cas:
-                if name in df_chart_moist.columns:
-                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
-                    fig_cm.add_trace(go.Scatter(
-                        x=df_chart_moist['date_str'], y=df_chart_moist[name],
-                        mode='lines+markers', name=lbl,
-                        line=dict(color=colors.get(name, '#64748b'), width=2)
-                    ))
-            fig_cm.add_hline(y=9.0, line_dash="dash", line_color="red", annotation_text=t("Tiêu chuẩn 9.0%", "Standard 9.0%"), annotation_position="top right")
-            fig_cm.update_layout(
-                title=t("Độ Ẩm Trung Bình (%) Theo Ca (Dữ Liệu Đo Kiểm Data KCS)", "Average Moisture (%) by Shift (Data KCS)"),
-                xaxis_title=t("Ngày", "Date"), yaxis_title="%", height=380, hovermode="x unified"
-            )
-            st.plotly_chart(fig_cm, use_container_width=True)
-        else:
-            st.info(t("Chưa có dữ liệu biểu đồ độ ẩm ca.", "No shift moisture data available."))
+        if is_chart_daily:
+            if not df_chart_moist.empty:
+                fig_cm = go.Figure()
+                target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_chart_moist.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
+                for name in target_cas:
+                    if name in df_chart_moist.columns:
+                        lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
+                        fig_cm.add_trace(go.Scatter(
+                            x=df_chart_moist['date_str'], y=df_chart_moist[name],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(name, '#64748b'), width=2),
+                            marker=dict(size=4)
+                        ))
+                fig_cm.add_hline(y=9.0, line_dash="dash", line_color="red", annotation_text=t("Tiêu chuẩn 9.0%", "Standard 9.0%"), annotation_position="top right")
+                fig_cm.update_layout(
+                    title=t("Độ Ẩm Trung Bình (%) Theo Ca (Dữ Liệu Đo Kiểm Data KCS)", "Average Moisture (%) by Shift (Data KCS)"),
+                    xaxis_title=t("Ngày", "Date"), yaxis_title="%", height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cm, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu biểu đồ độ ẩm ca theo ngày.", "No daily shift moisture data available."))
+        elif is_chart_weekly:
+            if not df_leaders_w.empty:
+                fig_cw_m = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_w[df_leaders_w['ca_truong'] == ca].sort_values('week')
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cw_m.add_trace(go.Scatter(
+                            x=sub['week_label'], y=sub['do_am_tb'],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=7)
+                        ))
+                fig_cw_m.add_hline(y=9.0, line_dash="dash", line_color="red", annotation_text=t("Mức trần 9.0%", "Ceiling 9.0%"), annotation_position="top right")
+                fig_cw_m.add_hline(y=8.0, line_dash="dot", line_color="green", annotation_text=t("Mức sàn 8.0%", "Floor 8.0%"), annotation_position="bottom right")
+                fig_cw_m.update_layout(
+                    title=t("Độ Ẩm Trung Bình (%) Theo Ca Từng Tuần (Tiêu Chuẩn 8.0 - 9.0%)", "Weekly Average Moisture (%) by Shift (Standard 8.0 - 9.0%)"),
+                    xaxis_title=t("Tuần", "Week"), yaxis_title="%", height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cw_m, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu độ ẩm theo tuần.", "No weekly moisture data available."))
+        elif is_chart_monthly:
+            if not df_leaders_m.empty:
+                fig_cm_m = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_m[df_leaders_m['ca_truong'] == ca]
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cm_m.add_trace(go.Scatter(
+                            x=sub['month_label'], y=sub['do_am_tb'],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=8)
+                        ))
+                fig_cm_m.add_hline(y=9.0, line_dash="dash", line_color="red", annotation_text=t("Mức trần 9.0%", "Ceiling 9.0%"), annotation_position="top right")
+                fig_cm_m.add_hline(y=8.0, line_dash="dot", line_color="green", annotation_text=t("Mức sàn 8.0%", "Floor 8.0%"), annotation_position="bottom right")
+                fig_cm_m.update_layout(
+                    title=t("Độ Ẩm Trung Bình (%) Theo Ca Từng Tháng (Tiêu Chuẩn 8.0 - 9.0%)", "Monthly Average Moisture (%) by Shift (Standard 8.0 - 9.0%)"),
+                    xaxis_title=t("Tháng", "Month"), yaxis_title="%", height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cm_m, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu độ ẩm theo tháng.", "No monthly moisture data available."))
 
     with tab_c4:
-        if not df_chart_sl.empty:
-            fig_csl = go.Figure()
-            colors_actual = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Sac': '#16a34a', 'Tài': '#ea580c', 'Tai': '#ea580c', 'Long': '#2563eb'}
-            colors_target = {'Ca A': '#86efac', 'Ca B': '#fdba74', 'Ca C': '#93c5fd', 'Sắc': '#86efac', 'Sac': '#86efac', 'Tài': '#fdba74', 'Tai': '#fdba74', 'Long': '#93c5fd'}
-            pairs = [
-                ('Ca A', 'Ca A (Sắc)'),
-                ('Ca B', 'Ca B (Tài)'),
-                ('Ca C', 'Ca C (Long)')
-            ] if any(f'{c}_actual' in df_chart_sl.columns for c in ['Ca A', 'Ca B', 'Ca C']) else [
-                ('Sac', 'Ca Sắc (Ca A)'),
-                ('Tai', 'Ca Tài (Ca B)'),
-                ('Long', 'Ca Long (Ca C)')
-            ]
-            for code, name in pairs:
-                act_col = f'{code}_actual'
-                tgt_col = f'{code}_target'
-                if act_col in df_chart_sl.columns:
-                    fig_csl.add_trace(go.Bar(
-                        x=df_chart_sl['date_str'], y=df_chart_sl[act_col],
-                        name=f"{t('SL Thực Tế', 'Actual')} - {name}",
-                        marker_color=colors_actual.get(code, '#16a34a')
-                    ))
-                if tgt_col in df_chart_sl.columns:
-                    fig_csl.add_trace(go.Scatter(
-                        x=df_chart_sl['date_str'], y=df_chart_sl[tgt_col],
-                        mode='lines', name=f"{t('Chỉ Tiêu', 'Target')} - {name}",
-                        line=dict(color=colors_target.get(code, '#86efac'), dash='dot', width=2)
-                    ))
-            fig_csl.update_layout(
-                title=t("Sản Lượng Thực Tế vs Chỉ Tiêu Từng Ca (Từ Data KPI)", "Actual Output vs Target by Shift (From Data KPI)"),
-                xaxis_title=t("Ngày", "Date"), yaxis_title=t("Tấn", "Tons"), height=380, hovermode="x unified",
-                barmode='group'
-            )
-            st.plotly_chart(fig_csl, use_container_width=True)
-        else:
-            st.info(t("Chưa có dữ liệu biểu đồ sản lượng ca.", "No shift output data available."))
+        if is_chart_daily:
+            if not df_chart_sl.empty:
+                fig_csl = go.Figure()
+                colors_actual = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Sac': '#16a34a', 'Tài': '#ea580c', 'Tai': '#ea580c', 'Long': '#2563eb'}
+                colors_target = {'Ca A': '#86efac', 'Ca B': '#fdba74', 'Ca C': '#93c5fd', 'Sắc': '#86efac', 'Sac': '#86efac', 'Tài': '#fdba74', 'Tai': '#fdba74', 'Long': '#93c5fd'}
+                pairs = [
+                    ('Ca A', 'Ca A (Sắc)'),
+                    ('Ca B', 'Ca B (Tài)'),
+                    ('Ca C', 'Ca C (Long)')
+                ] if any(f'{c}_actual' in df_chart_sl.columns for c in ['Ca A', 'Ca B', 'Ca C']) else [
+                    ('Sac', 'Ca Sắc (Ca A)'),
+                    ('Tai', 'Ca Tài (Ca B)'),
+                    ('Long', 'Ca Long (Ca C)')
+                ]
+                for code, name in pairs:
+                    act_col = f'{code}_actual'
+                    tgt_col = f'{code}_target'
+                    if act_col in df_chart_sl.columns:
+                        fig_csl.add_trace(go.Bar(
+                            x=df_chart_sl['date_str'], y=df_chart_sl[act_col],
+                            name=f"{t('SL Thực Tế', 'Actual')} - {name}",
+                            marker_color=colors_actual.get(code, '#16a34a')
+                        ))
+                    if tgt_col in df_chart_sl.columns:
+                        fig_csl.add_trace(go.Scatter(
+                            x=df_chart_sl['date_str'], y=df_chart_sl[tgt_col],
+                            mode='lines', name=f"{t('Chỉ Tiêu', 'Target')} - {name}",
+                            line=dict(color=colors_target.get(code, '#86efac'), dash='dot', width=2)
+                        ))
+                fig_csl.update_layout(
+                    title=t("Sản Lượng Thực Tế vs Chỉ Tiêu Từng Ca Theo Ngày (Tấn)", "Actual Output vs Target by Shift Daily (Tons)"),
+                    xaxis_title=t("Ngày", "Date"), yaxis_title=t("Tấn", "Tons"), height=390, hovermode="x unified",
+                    barmode='group'
+                )
+                st.plotly_chart(fig_csl, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu biểu đồ sản lượng ca theo ngày.", "No daily shift output data available."))
+        elif is_chart_weekly:
+            if not df_leaders_w.empty:
+                fig_cw_sl = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_w[df_leaders_w['ca_truong'] == ca].sort_values('week')
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cw_sl.add_trace(go.Bar(
+                            x=sub['week_label'], y=sub['sl_thuc_te'],
+                            name=f"{t('Thực tế', 'Actual')} - {lbl}",
+                            marker_color=colors_ldr.get(ca, '#16a34a')
+                        ))
+                        fig_cw_sl.add_trace(go.Scatter(
+                            x=sub['week_label'], y=sub['chi_tieu_sl'],
+                            mode='lines+markers', name=f"{t('Chỉ tiêu', 'Target')} - {lbl}",
+                            line=dict(dash='dot', width=2),
+                            marker=dict(size=6)
+                        ))
+                fig_cw_sl.update_layout(
+                    title=t("Sản Lượng Thực Tế vs Chỉ Tiêu Từng Ca Theo Tuần (Tấn)", "Actual Output vs Target by Shift Weekly (Tons)"),
+                    xaxis_title=t("Tuần", "Week"), yaxis_title=t("Tấn", "Tons"), height=390, hovermode="x unified",
+                    barmode='group'
+                )
+                st.plotly_chart(fig_cw_sl, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu sản lượng theo tuần.", "No weekly output data available."))
+        elif is_chart_monthly:
+            if not df_leaders_m.empty:
+                fig_cm_sl = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_m[df_leaders_m['ca_truong'] == ca]
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cm_sl.add_trace(go.Bar(
+                            x=sub['month_label'], y=sub['sl_thuc_te'],
+                            name=f"{t('Thực tế', 'Actual')} - {lbl}",
+                            marker_color=colors_ldr.get(ca, '#16a34a')
+                        ))
+                        fig_cm_sl.add_trace(go.Scatter(
+                            x=sub['month_label'], y=sub['chi_tieu_sl'],
+                            mode='lines+markers', name=f"{t('Chỉ tiêu', 'Target')} - {lbl}",
+                            line=dict(dash='dot', width=2),
+                            marker=dict(size=8)
+                        ))
+                fig_cm_sl.update_layout(
+                    title=t("Sản Lượng Thực Tế vs Chỉ Tiêu Từng Ca Theo Tháng (Tấn)", "Actual Output vs Target by Shift Monthly (Tons)"),
+                    xaxis_title=t("Tháng", "Month"), yaxis_title=t("Tấn", "Tons"), height=390, hovermode="x unified",
+                    barmode='group'
+                )
+                st.plotly_chart(fig_cm_sl, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu sản lượng theo tháng.", "No monthly output data available."))
+
+    with tab_c5:
+        if is_chart_daily:
+            if not df_shifts.empty and 'san_luong_tan' in df_shifts.columns:
+                p_shifts = df_shifts[df_shifts['san_luong_tan'] > 0].copy()
+                p_shifts['ratio'] = (p_shifts['nghien_tho_tan'] + p_shifts['nl_dot_tan']) / p_shifts['san_luong_tan']
+                pv_d = p_shifts.pivot_table(index=['date', 'date_str'], columns='shift_leader', values='ratio', aggfunc='mean').reset_index()
+                pv_d = pv_d.sort_values('date').reset_index(drop=True)
+                fig_cd_ratio = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    if ca in pv_d.columns:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cd_ratio.add_trace(go.Scatter(
+                            x=pv_d['date_str'], y=pv_d[ca],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=2),
+                            marker=dict(size=4)
+                        ))
+                fig_cd_ratio.add_hline(y=2.1, line_dash="dash", line_color="red", annotation_text=t("Trần định mức 2.1", "Standard Ceiling 2.1"), annotation_position="top right")
+                fig_cd_ratio.add_hline(y=1.8, line_dash="dot", line_color="green", annotation_text=t("Sàn định mức 1.8", "Standard Floor 1.8"), annotation_position="bottom right")
+                fig_cd_ratio.update_layout(
+                    title=t("Tỷ Lệ Chế Biến Nguyên Liệu Theo Ca Từng Ngày (Định Mức 1.8 - 2.1 Lần)", "Daily Material Processing Ratio by Shift (Standard 1.8 - 2.1)"),
+                    xaxis_title=t("Ngày", "Date"), yaxis_title=t("Tỷ lệ (lần)", "Ratio (x)"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cd_ratio, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu tỷ lệ chế biến theo ngày.", "No daily processing ratio data available."))
+        elif is_chart_weekly:
+            if not df_shifts.empty and 'week' in df_shifts.columns:
+                weeks_list = sorted(df_shifts['week'].dropna().unique())
+                fig_cw_ratio = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    r_vals = []
+                    x_lbls = []
+                    for w in weeks_list:
+                        sub = df_shifts[(df_shifts['week'] == w) & (df_shifts['shift_leader'] == ca)]
+                        tot_sl = float(sub['san_luong_tan'].sum())
+                        tot_tho = float(sub['nghien_tho_tan'].sum())
+                        tot_dot = float(sub['nl_dot_tan'].sum())
+                        if tot_sl > 0:
+                            r_vals.append(round((tot_tho + tot_dot) / tot_sl, 2))
+                            x_lbls.append(f"Tuần {int(w)}")
+                    if r_vals:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cw_ratio.add_trace(go.Scatter(
+                            x=x_lbls, y=r_vals,
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=7)
+                        ))
+                fig_cw_ratio.add_hline(y=2.1, line_dash="dash", line_color="red", annotation_text=t("Trần định mức 2.1", "Standard Ceiling 2.1"), annotation_position="top right")
+                fig_cw_ratio.add_hline(y=1.8, line_dash="dot", line_color="green", annotation_text=t("Sàn định mức 1.8", "Standard Floor 1.8"), annotation_position="bottom right")
+                fig_cw_ratio.update_layout(
+                    title=t("Tỷ Lệ Chế Biến Nguyên Liệu Theo Ca Từng Tuần (Định Mức 1.8 - 2.1 Lần)", "Weekly Material Processing Ratio by Shift (Standard 1.8 - 2.1)"),
+                    xaxis_title=t("Tuần", "Week"), yaxis_title=t("Tỷ lệ (lần)", "Ratio (x)"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cw_ratio, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu tỷ lệ chế biến theo tuần.", "No weekly processing ratio data available."))
+        elif is_chart_monthly:
+            if not df_shifts.empty and 'month' in df_shifts.columns:
+                months_list = sorted(df_shifts['month'].dropna().unique())
+                fig_cm_ratio = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    r_vals = []
+                    x_lbls = []
+                    for m in months_list:
+                        sub = df_shifts[(df_shifts['month'] == m) & (df_shifts['shift_leader'] == ca)]
+                        tot_sl = float(sub['san_luong_tan'].sum())
+                        tot_tho = float(sub['nghien_tho_tan'].sum())
+                        tot_dot = float(sub['nl_dot_tan'].sum())
+                        if tot_sl > 0:
+                            r_vals.append(round((tot_tho + tot_dot) / tot_sl, 2))
+                            x_lbls.append(f"Tháng {int(m)}")
+                    if r_vals:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cm_ratio.add_trace(go.Scatter(
+                            x=x_lbls, y=r_vals,
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=8)
+                        ))
+                fig_cm_ratio.add_hline(y=2.1, line_dash="dash", line_color="red", annotation_text=t("Trần định mức 2.1", "Standard Ceiling 2.1"), annotation_position="top right")
+                fig_cm_ratio.add_hline(y=1.8, line_dash="dot", line_color="green", annotation_text=t("Sàn định mức 1.8", "Standard Floor 1.8"), annotation_position="bottom right")
+                fig_cm_ratio.update_layout(
+                    title=t("Tỷ Lệ Chế Biến Nguyên Liệu Theo Ca Từng Tháng (Định Mức 1.8 - 2.1 Lần)", "Monthly Material Processing Ratio by Shift (Standard 1.8 - 2.1)"),
+                    xaxis_title=t("Tháng", "Month"), yaxis_title=t("Tỷ lệ (lần)", "Ratio (x)"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cm_ratio, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu tỷ lệ chế biến theo tháng.", "No monthly processing ratio data available."))
+
+    with tab_c6:
+        if is_chart_daily:
+            st.info(t("ℹ️ Điểm thi đua KPI được tổng hợp và xếp hạng chính thức theo chu kỳ Tuần (W-M KPI) và Tháng theo Quy chế nhà máy. Vui lòng bấm chọn '📆 Theo Tuần' hoặc '🗓️ Theo Tháng' ở phía trên để theo dõi biến động điểm thi đua.", "ℹ️ Shift leader KPI scores are officially evaluated on Weekly and Monthly cycles. Please select '📆 Weekly' or '🗓️ Monthly' above to monitor KPI ranking trends."))
+        elif is_chart_weekly:
+            if not df_leaders_w.empty and 'diem_kpi' in df_leaders_w.columns:
+                fig_cw_kpi = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_w[df_leaders_w['ca_truong'] == ca].sort_values('week')
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cw_kpi.add_trace(go.Scatter(
+                            x=sub['week_label'], y=sub['diem_kpi'],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=7)
+                        ))
+                fig_cw_kpi.add_hline(y=100, line_dash="dash", line_color="gold", annotation_text=t("Mục tiêu 100 điểm", "Goal 100 pts"), annotation_position="top right")
+                fig_cw_kpi.add_hline(y=80, line_dash="dot", line_color="#94a3b8", annotation_text=t("Mức đạt 80 điểm", "Pass 80 pts"), annotation_position="bottom right")
+                fig_cw_kpi.update_layout(
+                    title=t("Điểm Thi Đua KPI Từng Ca Theo Tuần (Thang Điểm 100)", "Weekly Shift Leader KPI Scores (100-pt Scale)"),
+                    xaxis_title=t("Tuần", "Week"), yaxis_title=t("Điểm thi đua", "KPI Score"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cw_kpi, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu điểm KPI theo tuần.", "No weekly KPI score data available."))
+        elif is_chart_monthly:
+            if not df_leaders_m.empty and 'diem_kpi' in df_leaders_m.columns:
+                fig_cm_kpi = go.Figure()
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_m[df_leaders_m['ca_truong'] == ca]
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_cm_kpi.add_trace(go.Scatter(
+                            x=sub['month_label'], y=sub['diem_kpi'],
+                            mode='lines+markers', name=lbl,
+                            line=dict(color=colors_ldr.get(ca, '#64748b'), width=3),
+                            marker=dict(size=8)
+                        ))
+                fig_cm_kpi.add_hline(y=100, line_dash="dash", line_color="gold", annotation_text=t("Mục tiêu 100 điểm", "Goal 100 pts"), annotation_position="top right")
+                fig_cm_kpi.add_hline(y=80, line_dash="dot", line_color="#94a3b8", annotation_text=t("Mức đạt 80 điểm", "Pass 80 pts"), annotation_position="bottom right")
+                fig_cm_kpi.update_layout(
+                    title=t("Điểm Thi Đua KPI Từng Ca Theo Tháng (Thang Điểm 100)", "Monthly Shift Leader KPI Scores (100-pt Scale)"),
+                    xaxis_title=t("Tháng", "Month"), yaxis_title=t("Điểm thi đua", "KPI Score"), height=390, hovermode="x unified"
+                )
+                st.plotly_chart(fig_cm_kpi, use_container_width=True)
+            else:
+                st.info(t("Chưa có dữ liệu điểm KPI theo tháng.", "No monthly KPI score data available."))
 
     # 4. Bảng tổng hợp điểm các tuần
     st.markdown(f'<div class="section-title">{t("📋 Bảng Tổng Hợp Điểm Thi Đua Các Tuần & Tháng (W-M KPI)", "📋 Weekly & Monthly KPI Ranking Summary Tables (W-M KPI)")}</div>', unsafe_allow_html=True)
