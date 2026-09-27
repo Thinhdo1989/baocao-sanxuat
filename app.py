@@ -309,6 +309,29 @@ def load_all_factory_data():
     # Dữ liệu từ file KPI mới (2026 Nhat ky KPI)
     df_wm_weekly, df_wm_monthly = loader.load_wm_kpi_scores()
     leaders_kpi = loader.load_all_leaders_kpi()
+
+    # Đồng bộ điểm số chính xác từ các sheet chi tiết (Ca A, Ca B, Ca C) nếu có
+    if leaders_kpi and 'weekly' in leaders_kpi and not leaders_kpi['weekly'].empty:
+        df_lw = leaders_kpi['weekly']
+        if 'ca_truong' in df_lw.columns and 'diem_kpi' in df_lw.columns and 'week' in df_lw.columns:
+            p_w = df_lw.pivot_table(index='week', columns='ca_truong', values='diem_kpi')
+            for ca in ['Ca A', 'Ca B', 'Ca C']:
+                if ca in p_w.columns and not df_wm_weekly.empty and 'week' in df_wm_weekly.columns:
+                    df_wm_weekly[ca] = df_wm_weekly['week'].map(p_w[ca])
+                    if ca == 'Ca A': df_wm_weekly['Sắc'] = df_wm_weekly[ca]
+                    elif ca == 'Ca B': df_wm_weekly['Tài'] = df_wm_weekly[ca]
+                    elif ca == 'Ca C': df_wm_weekly['Long'] = df_wm_weekly[ca]
+
+    if leaders_kpi and 'monthly' in leaders_kpi and not leaders_kpi['monthly'].empty:
+        df_lm = leaders_kpi['monthly']
+        if 'ca_truong' in df_lm.columns and 'diem_kpi' in df_lm.columns and 'month_label' in df_lm.columns:
+            p_m = df_lm.pivot_table(index='month_label', columns='ca_truong', values='diem_kpi')
+            for ca in ['Ca A', 'Ca B', 'Ca C']:
+                if ca in p_m.columns and not df_wm_monthly.empty and 'month_label' in df_wm_monthly.columns:
+                    df_wm_monthly[ca] = df_wm_monthly['month_label'].map(p_m[ca])
+                    if ca == 'Ca A': df_wm_monthly['Sắc'] = df_wm_monthly[ca]
+                    elif ca == 'Ca B': df_wm_monthly['Tài'] = df_wm_monthly[ca]
+                    elif ca == 'Ca C': df_wm_monthly['Long'] = df_wm_monthly[ca]
     df_chart_moist = loader.load_kpi_chart_data('Chart moisture')
     df_chart_dien = loader.load_kpi_chart_data('Chart dien')
     df_chart_cap = loader.load_kpi_chart_data('Chart capacity')
@@ -2895,13 +2918,15 @@ elif task_num == 2:
             elif not w_has_kpi:
                 st.caption(f"{t('Chưa có dữ liệu sản xuất ca trong', 'No shift production data in')} {sel_kpi_week}.")
 
-        if not df_wm_weekly.empty:
+        if not df_wm_weekly.empty or (not df_leaders_w.empty and 'diem_kpi' in df_leaders_w.columns):
             st.markdown("---")
-            min_w_label = df_wm_weekly['week_label'].iloc[0] if not df_wm_weekly.empty else "Tuần 32"
-            max_w_label = df_wm_weekly['week_label'].iloc[-1] if not df_wm_weekly.empty else "Tuần 38"
+            min_w_label = sorted_kpi_weeks_order[0] if sorted_kpi_weeks_order else (df_wm_weekly['week_label'].iloc[0] if not df_wm_weekly.empty else "Tuần 1")
+            max_w_label = sorted_kpi_weeks_order[-1] if sorted_kpi_weeks_order else (df_wm_weekly['week_label'].iloc[-1] if not df_wm_weekly.empty else "Tuần 40")
             st.markdown(f"#### 📈 {t('Diễn Biến Tổng Điểm KPI Ca Trưởng Qua Các Tuần', 'Shift Leader KPI Trend Across Weeks')} ({min_w_label} - {max_w_label})")
             fig_trend_w = go.Figure()
             colors_l = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
+            symbols_l = {'Ca A': 'circle', 'Ca B': 'diamond', 'Ca C': 'square', 'Sắc': 'circle', 'Tài': 'diamond', 'Long': 'square'}
+            text_pos_l = {'Ca A': 'top left', 'Ca B': 'top right', 'Ca C': 'bottom center', 'Sắc': 'top left', 'Tài': 'top right', 'Long': 'bottom center'}
             display_ca_map = {
                 'Ca A': 'Ca A (Sắc)',
                 'Ca B': 'Ca B (Tài)',
@@ -2910,22 +2935,39 @@ elif task_num == 2:
                 'Tài': 'Ca Trưởng Tài (Ca B)',
                 'Long': 'Ca Trưởng Long (Ca C)'
             }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_weekly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
-            for name in target_cas:
-                if name in df_wm_weekly.columns:
-                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
-                    fig_trend_w.add_trace(go.Scatter(
-                        x=df_wm_weekly['week_label'],
-                        y=df_wm_weekly[name],
-                        mode='lines+markers+text',
-                        name=lbl,
-                        text=[f"{v:.1f}" if pd.notna(v) else "" for v in df_wm_weekly[name]],
-                        textposition="top center",
-                        line=dict(color=colors_l.get(name, '#64748b'), width=2.5)
-                    ))
+            if not df_leaders_w.empty and 'diem_kpi' in df_leaders_w.columns:
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_w[df_leaders_w['ca_truong'] == ca].sort_values('week')
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_trend_w.add_trace(go.Scatter(
+                            x=sub['week_label'],
+                            y=sub['diem_kpi'],
+                            mode='lines+markers+text',
+                            name=lbl,
+                            text=[f"{v:.1f}" if pd.notna(v) and v > 0 else "" for v in sub['diem_kpi']],
+                            textposition=text_pos_l.get(ca, 'top center'),
+                            line=dict(color=colors_l.get(ca, '#64748b'), width=3 if ca == 'Ca A' else 2.5),
+                            marker=dict(size=7, symbol=symbols_l.get(ca, 'circle'))
+                        ))
+            else:
+                target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_weekly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
+                for name in target_cas:
+                    if name in df_wm_weekly.columns:
+                        lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
+                        fig_trend_w.add_trace(go.Scatter(
+                            x=df_wm_weekly['week_label'],
+                            y=df_wm_weekly[name],
+                            mode='lines+markers+text',
+                            name=lbl,
+                            text=[f"{v:.1f}" if pd.notna(v) and v > 0 else "" for v in df_wm_weekly[name]],
+                            textposition=text_pos_l.get(name, 'top center'),
+                            line=dict(color=colors_l.get(name, '#64748b'), width=3 if name in ['Ca A', 'Sắc'] else 2.5),
+                            marker=dict(size=7, symbol=symbols_l.get(name, 'circle'))
+                        ))
             fig_trend_w.update_layout(
                 yaxis_title=t("Tổng Điểm KPI (/100)", "Total KPI Score (/100)"),
-                height=350,
+                height=370,
                 hovermode="x unified",
                 margin=dict(t=30, b=20, l=20, r=20)
             )
@@ -2976,9 +3018,9 @@ elif task_num == 2:
             elif not m_has_kpi:
                 st.caption(f"{t('Chưa có dữ liệu sản xuất ca trong', 'No shift production data in')} {sel_kpi_month}.")
 
-        if not df_wm_monthly.empty:
+        if not df_wm_monthly.empty or (not df_leaders_m.empty and 'diem_kpi' in df_leaders_m.columns):
             st.markdown("---")
-            all_m_labels = " vs ".join(df_wm_monthly['month_label'].tolist()) if not df_wm_monthly.empty else "Tháng 8 vs Tháng 9"
+            all_m_labels = " vs ".join(sorted_kpi_months_order) if sorted_kpi_months_order else (" vs ".join(df_wm_monthly['month_label'].tolist()) if not df_wm_monthly.empty else "Tháng 8 vs Tháng 9")
             st.markdown(f"#### 📈 {t('So Sánh Tổng Điểm KPI Qua Các Tháng', 'KPI Score Comparison Across Months')} ({all_m_labels})")
             fig_trend_m = go.Figure()
             colors_l = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
@@ -2990,18 +3032,32 @@ elif task_num == 2:
                 'Tài': 'Ca Trưởng Tài (Ca B)',
                 'Long': 'Ca Trưởng Long (Ca C)'
             }
-            target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_monthly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
-            for name in target_cas:
-                if name in df_wm_monthly.columns:
-                    lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
-                    fig_trend_m.add_trace(go.Bar(
-                        x=df_wm_monthly['month_label'],
-                        y=df_wm_monthly[name],
-                        name=lbl,
-                        text=[f"{v:.2f} {t('đ', 'pts')}" if pd.notna(v) else "" for v in df_wm_monthly[name]],
-                        textposition="outside",
-                        marker_color=colors_l.get(name, '#64748b')
-                    ))
+            if not df_leaders_m.empty and 'diem_kpi' in df_leaders_m.columns:
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    sub = df_leaders_m[df_leaders_m['ca_truong'] == ca]
+                    if not sub.empty:
+                        lbl = display_ca_map.get(ca, ca)
+                        fig_trend_m.add_trace(go.Bar(
+                            x=sub['month_label'],
+                            y=sub['diem_kpi'],
+                            name=lbl,
+                            text=[f"{v:.2f} {t('đ', 'pts')}" if pd.notna(v) and v > 0 else "" for v in sub['diem_kpi']],
+                            textposition="outside",
+                            marker_color=colors_l.get(ca, '#64748b')
+                        ))
+            else:
+                target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_monthly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
+                for name in target_cas:
+                    if name in df_wm_monthly.columns:
+                        lbl = display_ca_map.get(name, f'{t("Ca", "Shift")} {format_person_name(name)}')
+                        fig_trend_m.add_trace(go.Bar(
+                            x=df_wm_monthly['month_label'],
+                            y=df_wm_monthly[name],
+                            name=lbl,
+                            text=[f"{v:.2f} {t('đ', 'pts')}" if pd.notna(v) else "" for v in df_wm_monthly[name]],
+                            textposition="outside",
+                            marker_color=colors_l.get(name, '#64748b')
+                        ))
             fig_trend_m.update_layout(
                 barmode='group',
                 yaxis_title=t("Tổng Điểm KPI (/100)", "Total KPI Score (/100)"),
