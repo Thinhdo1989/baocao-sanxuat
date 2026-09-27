@@ -1052,9 +1052,6 @@ def render_viewer_lock_screen(logo_b64: str = ""):
                 with c_ab2:
                     st.caption(t("💡 Nhập xong nhấn Enter ↵ để vào ngay", "💡 Press Enter ↵ after typing to enter immediately"))
 
-            with st.popover(t("ℹ️ PIN Admin mặc định", "ℹ️ Default Admin PIN")):
-                st.markdown(t("Mã PIN Admin mặc định là: `9999`", "Default Admin PIN is: `9999`"))
-
             if submit_admin:
                 users = load_user_pins()
                 admin_u = users.get("manager", {"pin": "9999"})
@@ -1092,9 +1089,6 @@ def render_viewer_lock_screen(logo_b64: str = ""):
                     )
                 with c_btn2:
                     st.caption(t("💡 Nhập xong nhấn Enter ↵ để vào ngay", "💡 Press Enter ↵ after typing to enter immediately"))
-
-            with st.popover(t("ℹ️ Mã bảo mật ban đầu", "ℹ️ Initial Access Key")):
-                st.markdown(t(f"Mã bảo mật cho `{AUTHORIZED_VIEWER_EMAIL}` là: `{DEFAULT_VIEWER_KEY}`", f"Access key for `{AUTHORIZED_VIEWER_EMAIL}` is: `{DEFAULT_VIEWER_KEY}`"))
 
             if submit_viewer:
                 if in_key.strip() in [DEFAULT_VIEWER_KEY, "9999"]:
