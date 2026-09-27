@@ -5163,5 +5163,5 @@ elif task_num == 14:
 
 # Footer
 st.markdown("---")
-st.caption(t("Hệ Thống Báo Cáo Sản Xuất Tự Động Viên Nén Gỗ | Dữ liệu cập nhật thời gian thực từ Google Sheets | Phiên bản 1.0", "Automated Wood Pellet Production Reporting System | Real-time data from Google Sheets | Version 1.0"))
+st.caption(t("Hệ Thống Báo Cáo Sản Xuất Tự Động Viên Nén Gỗ | Dữ liệu cập nhật thời gian thực từ Google Sheets | Phiên bản 2.0", "Automated Wood Pellet Production Reporting System | Real-time data from Google Sheets | Version 2.0"))
 
