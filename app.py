@@ -2836,6 +2836,15 @@ elif task_num == 2:
     df_leaders_w = leaders_kpi.get('weekly', pd.DataFrame())
     df_leaders_m = leaders_kpi.get('monthly', pd.DataFrame())
 
+    sorted_kpi_weeks_order = []
+    if not df_leaders_w.empty and 'week' in df_leaders_w.columns and 'week_label' in df_leaders_w.columns:
+        sorted_kpi_weeks_order = df_leaders_w[['week', 'week_label']].drop_duplicates().sort_values('week')['week_label'].tolist()
+
+    sorted_kpi_months_order = []
+    if not df_leaders_m.empty and 'month_label' in df_leaders_m.columns:
+        import re
+        sorted_kpi_months_order = sorted(df_leaders_m['month_label'].unique(), key=lambda x: int(re.search(r'\d+', str(x)).group(0)) if re.search(r'\d+', str(x)) else 999)
+
     # Các Tabs chuyên biệt cho Tuần và Tháng - Click chọn trực tiếp
     subtab_kpi_w, subtab_kpi_m, subtab_kpi_all = st.tabs([
         t("📅 BẢNG XẾP HẠNG KPI THEO TUẦN", "📅 WEEKLY KPI RANKING"),
@@ -2920,6 +2929,8 @@ elif task_num == 2:
                 hovermode="x unified",
                 margin=dict(t=30, b=20, l=20, r=20)
             )
+            if sorted_kpi_weeks_order:
+                fig_trend_w.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_weeks_order)
             st.plotly_chart(fig_trend_w, use_container_width=True, key="fig_trend_w_line")
 
     # ===== SUBTAB 2: KPI THEO THÁNG =====
@@ -2998,6 +3009,8 @@ elif task_num == 2:
                 height=350,
                 margin=dict(t=30, b=20, l=20, r=20)
             )
+            if sorted_kpi_months_order:
+                fig_trend_m.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_months_order)
             st.plotly_chart(fig_trend_m, use_container_width=True, key="fig_trend_m_bar")
 
     # ===== SUBTAB 3: XEM SONG SONG CẢ TUẦN & THÁNG =====
@@ -3140,9 +3153,11 @@ elif task_num == 2:
                 fig_cw_dien.add_hline(y=175, line_dash="dash", line_color="red", annotation_text=t("Định mức trần 175 kWh/tấn", "Standard Ceiling 175 kWh/ton"), annotation_position="top right")
                 fig_cw_dien.add_hline(y=170, line_dash="dot", line_color="green", annotation_text=t("Mức sàn 170 kWh/tấn", "Standard Floor 170 kWh/ton"), annotation_position="bottom right")
                 fig_cw_dien.update_layout(
-                    title=t("Suất Tiêu Hao Điện Năng TB (kWh/tấn) Theo Ca Từng Tuần (Tuần 1 - Tuần 39)", "Weekly Average Specific Power Consumption by Shift (W1 - W39)"),
+                    title=t("Suất Tiêu Hao Điện Năng TB (kWh/tấn) Theo Ca Từng Tuần", "Weekly Average Specific Power Consumption by Shift"),
                     xaxis_title=t("Tuần", "Week"), yaxis_title=t("kWh/tấn", "kWh/ton"), height=390, hovermode="x unified"
                 )
+                if sorted_kpi_weeks_order:
+                    fig_cw_dien.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_weeks_order)
                 st.plotly_chart(fig_cw_dien, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu suất điện năng theo tuần.", "No weekly power data available."))
@@ -3162,9 +3177,11 @@ elif task_num == 2:
                 fig_cm_dien.add_hline(y=175, line_dash="dash", line_color="red", annotation_text=t("Định mức trần 175 kWh/tấn", "Standard Ceiling 175 kWh/ton"), annotation_position="top right")
                 fig_cm_dien.add_hline(y=170, line_dash="dot", line_color="green", annotation_text=t("Mức sàn 170 kWh/tấn", "Standard Floor 170 kWh/ton"), annotation_position="bottom right")
                 fig_cm_dien.update_layout(
-                    title=t("Suất Tiêu Hao Điện Năng TB (kWh/tấn) Theo Ca Từng Tháng (Tháng 1 - Tháng 9)", "Monthly Average Specific Power Consumption by Shift (Month 1 - 9)"),
+                    title=t("Suất Tiêu Hao Điện Năng TB (kWh/tấn) Theo Ca Từng Tháng", "Monthly Average Specific Power Consumption by Shift"),
                     xaxis_title=t("Tháng", "Month"), yaxis_title=t("kWh/tấn", "kWh/ton"), height=390, hovermode="x unified"
                 )
+                if sorted_kpi_months_order:
+                    fig_cm_dien.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_months_order)
                 st.plotly_chart(fig_cm_dien, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu suất điện năng theo tháng.", "No monthly power data available."))
@@ -3209,6 +3226,8 @@ elif task_num == 2:
                     title=t("Năng Suất Ép Trung Bình (tấn/h) Theo Ca Từng Tuần (Chỉ Tiêu ≥ 4.0)", "Weekly Average Press Productivity (t/h) by Shift (Target ≥ 4.0)"),
                     xaxis_title=t("Tuần", "Week"), yaxis_title=t("Tấn/giờ", "Tons/hour"), height=390, hovermode="x unified"
                 )
+                if sorted_kpi_weeks_order:
+                    fig_cw_cap.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_weeks_order)
                 st.plotly_chart(fig_cw_cap, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu năng suất theo tuần.", "No weekly productivity data available."))
@@ -3230,6 +3249,8 @@ elif task_num == 2:
                     title=t("Năng Suất Ép Trung Bình (tấn/h) Theo Ca Từng Tháng (Chỉ Tiêu ≥ 4.0)", "Monthly Average Press Productivity (t/h) by Shift (Target ≥ 4.0)"),
                     xaxis_title=t("Tháng", "Month"), yaxis_title=t("Tấn/giờ", "Tons/hour"), height=390, hovermode="x unified"
                 )
+                if sorted_kpi_months_order:
+                    fig_cm_cap.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_months_order)
                 st.plotly_chart(fig_cm_cap, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu năng suất theo tháng.", "No monthly productivity data available."))
@@ -3275,6 +3296,8 @@ elif task_num == 2:
                     title=t("Độ Ẩm Trung Bình (%) Theo Ca Từng Tuần (Tiêu Chuẩn 8.0 - 9.0%)", "Weekly Average Moisture (%) by Shift (Standard 8.0 - 9.0%)"),
                     xaxis_title=t("Tuần", "Week"), yaxis_title="%", height=390, hovermode="x unified"
                 )
+                if sorted_kpi_weeks_order:
+                    fig_cw_m.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_weeks_order)
                 st.plotly_chart(fig_cw_m, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu độ ẩm theo tuần.", "No weekly moisture data available."))
@@ -3297,6 +3320,8 @@ elif task_num == 2:
                     title=t("Độ Ẩm Trung Bình (%) Theo Ca Từng Tháng (Tiêu Chuẩn 8.0 - 9.0%)", "Monthly Average Moisture (%) by Shift (Standard 8.0 - 9.0%)"),
                     xaxis_title=t("Tháng", "Month"), yaxis_title="%", height=390, hovermode="x unified"
                 )
+                if sorted_kpi_months_order:
+                    fig_cm_m.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_months_order)
                 st.plotly_chart(fig_cm_m, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu độ ẩm theo tháng.", "No monthly moisture data available."))
@@ -3362,6 +3387,8 @@ elif task_num == 2:
                     xaxis_title=t("Tuần", "Week"), yaxis_title=t("Tấn", "Tons"), height=390, hovermode="x unified",
                     barmode='group'
                 )
+                if sorted_kpi_weeks_order:
+                    fig_cw_sl.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_weeks_order)
                 st.plotly_chart(fig_cw_sl, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu sản lượng theo tuần.", "No weekly output data available."))
@@ -3388,6 +3415,8 @@ elif task_num == 2:
                     xaxis_title=t("Tháng", "Month"), yaxis_title=t("Tấn", "Tons"), height=390, hovermode="x unified",
                     barmode='group'
                 )
+                if sorted_kpi_months_order:
+                    fig_cm_sl.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_months_order)
                 st.plotly_chart(fig_cm_sl, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu sản lượng theo tháng.", "No monthly output data available."))
@@ -3447,6 +3476,8 @@ elif task_num == 2:
                     title=t("Tỷ Lệ Chế Biến Nguyên Liệu Theo Ca Từng Tuần (Định Mức 1.8 - 2.1 Lần)", "Weekly Material Processing Ratio by Shift (Standard 1.8 - 2.1)"),
                     xaxis_title=t("Tuần", "Week"), yaxis_title=t("Tỷ lệ (lần)", "Ratio (x)"), height=390, hovermode="x unified"
                 )
+                sorted_ratio_w = [f"Tuần {int(w)}" for w in weeks_list]
+                fig_cw_ratio.update_xaxes(categoryorder='array', categoryarray=sorted_ratio_w)
                 st.plotly_chart(fig_cw_ratio, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu tỷ lệ chế biến theo tuần.", "No weekly processing ratio data available."))
@@ -3479,6 +3510,8 @@ elif task_num == 2:
                     title=t("Tỷ Lệ Chế Biến Nguyên Liệu Theo Ca Từng Tháng (Định Mức 1.8 - 2.1 Lần)", "Monthly Material Processing Ratio by Shift (Standard 1.8 - 2.1)"),
                     xaxis_title=t("Tháng", "Month"), yaxis_title=t("Tỷ lệ (lần)", "Ratio (x)"), height=390, hovermode="x unified"
                 )
+                sorted_ratio_m = [f"Tháng {int(m)}" for m in months_list]
+                fig_cm_ratio.update_xaxes(categoryorder='array', categoryarray=sorted_ratio_m)
                 st.plotly_chart(fig_cm_ratio, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu tỷ lệ chế biến theo tháng.", "No monthly processing ratio data available."))
@@ -3505,6 +3538,8 @@ elif task_num == 2:
                     title=t("Điểm Thi Đua KPI Từng Ca Theo Tuần (Thang Điểm 100)", "Weekly Shift Leader KPI Scores (100-pt Scale)"),
                     xaxis_title=t("Tuần", "Week"), yaxis_title=t("Điểm thi đua", "KPI Score"), height=390, hovermode="x unified"
                 )
+                if sorted_kpi_weeks_order:
+                    fig_cw_kpi.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_weeks_order)
                 st.plotly_chart(fig_cw_kpi, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu điểm KPI theo tuần.", "No weekly KPI score data available."))
@@ -3527,6 +3562,8 @@ elif task_num == 2:
                     title=t("Điểm Thi Đua KPI Từng Ca Theo Tháng (Thang Điểm 100)", "Monthly Shift Leader KPI Scores (100-pt Scale)"),
                     xaxis_title=t("Tháng", "Month"), yaxis_title=t("Điểm thi đua", "KPI Score"), height=390, hovermode="x unified"
                 )
+                if sorted_kpi_months_order:
+                    fig_cm_kpi.update_xaxes(categoryorder='array', categoryarray=sorted_kpi_months_order)
                 st.plotly_chart(fig_cm_kpi, use_container_width=True)
             else:
                 st.info(t("Chưa có dữ liệu điểm KPI theo tháng.", "No monthly KPI score data available."))
