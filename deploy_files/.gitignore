@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+credentials.json
+secrets_for_streamlit_cloud.txt
+*.log

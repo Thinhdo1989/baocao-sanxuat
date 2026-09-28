@@ -1,0 +1,107 @@
+﻿NHÀ MÁY BVN QUẢNG BÌNH — QUY TRÌNH CÔNG NGHỆ SẢN XUẤT VIÊN NÉN GỖ
+QUY TRÌNH CÔNG NGHỆ SẢN XUẤT VIÊN NÉN GỖ
+NHÀ MÁY BVN QUẢNG BÌNH
+Tài liệu Kỹ thuật Vận hành Chuẩn (SOP) — Định chuẩn theo Sơ đồ Mã hóa Công đoạn 0 đến 7
+Cơ sở Thiết bị: ANDRITZ (Đan Mạch/Áo) • PDI (Mỹ) • GreCon (Đức)
+
+
+ĐÍNH CHÍNH QUAN TRỌNG VỀ TRÌNH TỰ CÔNG NGHỆ:
+Quy trình công nghệ tại Nhà máy BVN Quảng Bình tuân thủ nghiêm ngặt trình tự vật lý của dòng nguyên liệu theo đúng Sơ đồ Mã hóa Công đoạn (từ Mã 0 đến Mã 7):
+B băm dăm (Mã 0) ➔ Nghiền thô dăm ướt (Mã 1) ➔ Sấy dăm/bột ướt (Mã 2) ➔ Nghiền tinh bột khô (Mã 4) ➔ Trộn nhão & Ép viên (Mã 5) ➔ Làm mát & Sàng (Mã 6) ➔ Đóng bao Jumbo & Xuất hàng (Mã 7).
+Điểm mấu chốt là khâu NGHIỀN THÔ diễn ra TRƯỚC SẤY đối với dăm tươi/ướt, và NGHIỀN TINH diễn ra SAU SẤY đối với vật liệu khô nhằm tối ưu hóa hiệu suất sấy và chất lượng bột ép viên.
+	
+
+CHƯƠNG 1: TỔNG QUAN TỔ CHỨC DÂY CHUYỀN SẢN XUẤT
+Nhà máy Sản xuất Viên nén gỗ BVN Quảng Bình được thiết kế với tổng công suất 150.000 tấn/năm (thực tế sau 1 năm vận hành chính thức đạt 100.000 tấn). Nhà máy sở hữu dây chuyền hiện đại khép kín, được tích hợp từ các nhà cung cấp thiết bị sinh khối hàng đầu thế giới: cụm máy nghiền và máy ép viên ANDRITZ (Đan Mạch/Áo), hệ thống trống sấy PDI (Mỹ), và hệ thống an toàn phòng chống cháy nổ GreCon (Đức).
+Để đảm bảo việc quản lý vận hành chính xác, toàn bộ dây chuyền nhà máy được mã hóa phân vùng thiết bị theo mã số công đoạn từ 0 đến 7 trên hệ thống sơ đồ kỹ thuật và SCADA điều khiển trung tâm:
+Mã Vùng
+	Tên Công Đoạn
+	Thiết Bị Cốt Lõi Trọng Yếu
+	Mục Tiêu Công Nghệ
+	Mã 0
+	Băm Dăm Nguyên Liệu
+	Máy băm CM108-CM2011, Băng tải BE, Xích tải DC
+	Chuyển gỗ cây/gỗ khúc thành dăm gỗ kích thước chuẩn
+	Mã 1
+	Nghiền Thô Dăm Ướt
+	Máy nghiền búa HM118-HM418 (400-450kW), Feeder FD
+	Hạ kích thước dăm tươi/ướt trước khi đưa vào sấy
+	Mã 2
+	Sấy Dăm/Bột Ướt
+	Trống sấy quay DR124/DR224, Lò đốt Burner PDI, Quạt FA
+	Giảm độ ẩm vật liệu từ ~45% xuống còn 12-15%
+	Mã 4
+	Nghiền Tinh Bột Khô
+	Máy nghiền tinh HM147-HM347 (450kW), Lọc bụi FI
+	Nghiền bột gỗ khô đạt độ mịn đều chuẩn bị ép viên
+	Mã 5
+	Ép Viên & Phụ Trợ
+	8 máy ép ANDRITZ PM30-6 (PE1510-8510), Condition CD
+	Ép định hình viên nén sinh khối, làm mát dầu/bôi trơn
+	Mã 6
+	Làm Mát & Sàng
+	Tháp làm mát Cooler MD1520/2520, Sàng rung ST167/267
+	Hạ nhiệt viên nén, ổn định độ cứng và tách bụi vụn
+	Mã 7
+	Đóng Bao & Xuất Hàng
+	Nam châm RMN, Máy dò kim loại, Cân Jumbo LC169-469
+	Kiểm soát tạp chất kim loại cuối, đóng bao & xuất bến
+	
+
+CHƯƠNG 2: QUY TRÌNH CÔNG NGHỆ CHUYÊN SÂU THEO TRÌNH TỰ VẬN HÀNH (7 BƯỚC)
+Bước 1 (Mã Vùng 0): Tiếp Nhận Nguyên Liệu, Băm Dăm & Tách Tạp Chất Sơ Cấp
+* Nguồn nguyên liệu đầu vào: Cây gỗ và phế phụ phẩm lâm nghiệp có đầy đủ chứng chỉ FSC, được kiểm soát chặt chẽ bởi đội KCS nguyên liệu từ khâu thu mua, hạ tải đến phân loại.
+* Công đoạn băm dăm: Cẩu gắp nạp gỗ vào tuyến máy băm CM108–CM1011 (Line 1) và CM208–CM2011 (Line 2). Hệ thống dao băm quay tốc độ cao cắt gỗ thành các lát dăm kích thước đồng đều.
+* Vận chuyển & Chứa liệu: Dăm gỗ băm ra rơi xuống hệ thống xích tải DC203, DC204, DC206 và băng tải BE207, BE1013, BE1014 đưa về kho chứa dăm tươi trang bị sàn trượt thủy lực HP137, HP138, HP139.
+* Kiểm soát tạp chất sơ cấp: Bố trí 4 cụm nam châm tách từ sơ cấp ngay trên tuyến băng tải dăm gỗ băm kết hợp Bẫy đá khí động học (Stone Drawer) nhằm loại bỏ mạt sắt lớn, đinh rác và sỏi đá lẫn vào, bảo vệ an toàn cho hệ thống máy nghiền phía sau.
+Bước 2 (Mã Vùng 1): Nghiền Thô Dăm Ướt (Wet Grinding Area)
+* Cấp liệu dăm ướt: Dăm gỗ tươi/ướt từ kho chứa dăm được sàn trượt thủy lực đẩy sang vít tải SC112, SC211, SC212 và vít cấp liệu FD115-FD117, FD215-FD217 để nạp vào cụm máy nghiền thô.
+* Công nghệ nghiền dăm ướt: Sử dụng cụm máy nghiền búa ANDRITZ HM418 (hoặc máy nghiền SHT) công suất lớn 400kW - 450kW. Động cơ đánh tan các lát dăm gỗ ẩm thành hạt nhỏ xốp. Việc nghiền thô dăm ướt trước khi sấy giúp làm tăng diện tích bề mặt tiếp xúc nhiệt, tăng gấp đôi hiệu suất bốc hơi nước khi đi vào trống sấy.
+* Bảo vệ tách từ: Tại khu vực nghiền thô bố trí tới 13 vị trí nam châm lọc sắt (chiếm mật độ cao nhất trong nhà máy) nhằm triệt hạ tối đa dị vật kim loại gãy vỡ từ khâu băm dăm trước khi đưa liệu vào trống sấy.
+Bước 3 (Mã Vùng 2): Sấy Dăm/Bột Ướt (Dryer Area — Công Nghệ PDI Mỹ)
+* Nạp liệu vào trống sấy: Vật liệu xốp ẩm sau nghiền thô được xích tải đưa vào trống sấy quay DR124 (Line 1) và DR224 (Line 2) công suất 315kW.
+* Cung cấp nhiệt & Khí sấy: Lò đốt PDI Burner 1 & Burner 2 cấp khí nóng trực tiếp. Nhiệt độ đỉnh lò T122 được kiểm soát qua van làm nguội DP1214 (ngưỡng ngắt an toàn T121 ≤ 1200°C). Quạt thổi FA1211 duy trì áp suất lò P121 = 9–10 mbar.
+* Điều khiển quá trình sấy: Quạt hút quăng FA127 (hoặc FA227) công suất lớn duy trì chênh áp P124 = 10 mbar. Nhiệt độ ngõ ra trống sấy được tự động khống chế dưới 149°C thông qua van PID DP1217. Khí nóng tuần hoàn hồi tiếp qua van DP1216 (áp suất thoát P123 = 7.5 mbar) giúp tiết kiệm tối đa nhiên liệu đốt.
+* Kết quả độ ẩm & Tách từ: Độ ẩm nguyên liệu đầu ra trống sấy được hạ từ ~45% xuống đạt chuẩn 12% - 15%. Bố trí 3 cụm nam châm tách từ tính trên tuyến sấy để loại bỏ tạp chất kim loại phát sinh do ma sát nhiệt.
+Bước 4 (Mã Vùng 4): Nghiền Tinh Bột Khô (Dry Grinding Area)
+* Phân phối liệu khô: Vật liệu khô sau sấy đi qua xích tải DC133, xích tải phân phối SC141, van sao cách gió Airlock AL và vít cấp liệu FD143, FD243, FD343 đưa vào hệ thống máy nghiền tinh.
+* Nghiền mịn bột gỗ: Hệ thống gồm 3 tuyến máy nghiền tinh ANDRITZ HM147, HM247, HM347 (công suất 450kW/máy). Rô-to quay tốc độ cao nghiền hạt gỗ khô thành bột gỗ mịn đồng đều, đạt kích thước hạt nhỏ hơn đường kính lỗ khuôn ép.
+* Thu hồi bột & Lọc bụi: Mỗi máy nghiền tinh đi kèm hệ thống quạt hút FA1410-FA3410 (110kW) và bộ lọc túi khí nén Pulse-jet Filter FI1410-FI3410 để thu hồi toàn bộ bột gỗ mịn và làm sạch khí thải, tránh thất thoát nguyên liệu.
+Bước 5 (Mã Vùng 5): Trộn Nhão, Ép Viên Nén & Các Hệ Thống Phụ Trợ (Pelleting Area)
+* Cấp liệu máy ép: Bột gỗ mịn khô từ xích tải DC1412, DC1413 được đưa vào vít tải cấp liệu SC151 nạp vào 8 tuyến máy ép viên ANDRITZ PE1510 đến PE8510.
+* Điều hòa độ ẩm (Conditioning): Bột gỗ đi qua máy trộn nhão Conditioner CD156-CD856 (11kW) kết hợp hệ thống bơm nước WP phun sương bổ sung độ ẩm tối ưu (đạt 9-11% khi vào khuôn). Sau đó, vít ép lực Force Screw FS đưa bột nhão nạp đều vào buồng ép.
+* Công nghệ ép viên ANDRITZ PM30-6: 8 máy ép viên ANDRITZ PM30-6 (công suất 355kW/máy) trang bị hộp số giảm tốc kép tỷ số 10:1 hiệu suất cao. Rulo ép ép chặt bột gỗ qua lỗ khuôn Die định hình viên nén đường kính 6mm - 8mm. Dao cắt điều chỉnh độ dài cắt viên nén thành phẩm.
+* Lọc sắt & Bôi trơn tự động: Trang bị 9 vị trí nam châm tách từ ngay trước cửa vào buồng ép. Hệ thống Chiller CH137-CH139 giải nhiệt dầu hộp số; Bơm mỡ tự động khí nén 1LP-8LP kết hợp cảm biến xung mỡ 1PS-8PS và cảm biến báo hết mỡ 1EL-8EL tự động bơm mỡ bôi trơn cho trục chính (Main shaft) và ổ trục rulo.
+Bước 6 (Mã Vùng 6): Làm Mát & Sàng Phân Loại Viên Nén (Cooling & Screening Area)
+* Vận chuyển viên nóng: Viên nén bước ra khỏi máy ép có nhiệt độ cao (80°C - 90°C) được gàu tải BC1514, BC2514 vận chuyển đưa lên đỉnh tháp làm mát Cooler MD1520, MD2520.
+* Làm mát hạ nhiệt: Không khí mát được quạt hút FA132, FA153 thổi ngược chiều qua lớp viên nén, làm giảm nhiệt độ viên xuống gần bằng nhiệt độ môi trường, giúp nhựa gỗ tự nhiên đông đặc, định hình viên nén đạt độ cứng rắn tối đa.
+* Sàng phân loại bụi vụn: Viên nén sau làm mát xả xuống sàng rung ST167, ST267. Tỷ lệ vụn vỡ và bụi gỗ được sàng tách hoàn toàn và được quạt hút hút tuần hoàn quay trở lại khâu ép viên. Khu vực sàng trang bị 3 vị trí nam châm tách từ.
+Bước 7 (Mã Vùng 7): Dò Kim Loại, Cân Đóng Bao Jumbo & Xuất Kho (Packaging & Shipping Store)
+* Vận chuyển thành phẩm: Viên nén đạt chuẩn đi qua băng tải BE171, BE173 về kho thành phẩm Packing Store.
+* Kiểm soát kim loại tinh: Trước khi đi vào phễu đóng bao, viên nén đi qua Nam châm quay Rotary Magnet RMN và Máy dò kim loại chuyên dụng (Magnetic Testing Machine) để bảo đảm 100% không còn bất kỳ mạt sắt hay tạp chất kim loại nhỏ nào sót lại.
+* Cân đóng bao Jumbo tự động: Viên nén nạp vào phễu chứa có cảm biến báo mức đầy HL166/HL266. Van 2 ngả TW1517, TW167 và cửa trượt SL169 điều tiết liệu xuống hệ thống cân điện tử Load cell LC169, LC269, LC369, LC469 thực hiện đóng bao Jumbo (1.000 kg/bao) tự động.
+* Xuất hàng & Lọc sắt tại Cảng: Bao Jumbo thành phẩm được cẩu gắp xếp kho hoặc nạp lên xe xe tải bạt. Khi vận chuyển xuất hàng ra Cảng Vũng Áng, băng tải bốc xếp lên tàu tiếp tục trang bị nam châm treo trên băng tải để lọc từ tính lần cuối trước khi xuống hầm tàu.
+
+
+CHƯƠNG 3: CÁC HỆ THỐNG AN TOÀN, BẢO VỆ VÀ KIỂM SOÁT CHẤT LƯỢNG
+1. Hệ Thống Phòng Chống Cháy Nổ Tự Động GreCon (Đức)
+Đặc thù sản xuất bột gỗ khô rất dễ gây ra nguy cơ cháy nổ bụi. Nhà máy BVN Quảng Bình đầu tư toàn bộ hệ thống phát hiện và dập tắt tia lửa GreCon lắp đặt trên các tuyến ống vận chuyển bột gỗ (Line L01 đến L07):
+* Phát hiện tia lửa siêu nhạy: Đầu dò cảm biến hồng ngoại FM 1/8 và DLD 1/9 phát hiện tia lửa ma sát nhỏ nhất trong ống dẫn.
+* Tự động dập lửa tức thì: Tủ trung tâm Control Console CC7016 kích hoạt cụm dập lửa gồm bơm tăng áp, 2 bình tích áp màng khép kín 500L và vòi phun sương góc mở 120° phun nước dập tắt tia lửa trong thời gian cực ngắn t = 0.25 giây.
+* Tính toán khoảng cách an toàn: S = v × t = 30 m/s × 0.25 s = 7.5 mét. Đầu dò GreCon được bố trí cách vòi phun dập lửa tối thiểu 7.5m trên đường ống.
+* Cơ chế ngắt dừng máy khẩn cấp: Nếu cảm biến đếm được số tia lửa vượt quá 20 tia/lần phát hiện hoặc tần suất báo cháy > 10 lần/30 phút, hệ thống GreCon lập tức phát tín hiệu ngắt khẩn cấp G147, G247, G347 dừng ngay lập tức máy nghiền tinh và lò đốt để ngăn ngừa thảm họa.
+2. Hệ Thống Tách Từ Tính 32 Vị Trí Nam Châm Bảo Vệ Toàn Diện
+Để chinh phục các thị trường xuất khẩu khó tính như Nhật Bản và Châu Âu, nhà máy thiết kế hệ thống tách tạp chất kim loại 5 lớp với tổng cộng 32 vị trí nam châm:
+* Phân bố vị trí tách từ: Khu vực Băm dăm: 4 cụm nam châm băng tải.
+* — Khu vực Nghiền thô dăm ướt: 13 cụm nam châm cửa buồng nghiền & phễu cấp.
+* — Khu vực Sấy dăm: 3 cụm nam châm đường sấy.
+* — Khu vực Ép viên nén: 9 cụm nam châm trước buồng ép ANDRITZ PM30-6.
+* — Khu vực Sàng & Đóng bao: 3 cụm nam châm quay RMN & máy dò kim loại.
+3. Kiểm Soát Chất Lượng KCS & Giám Sát Độ Âm SCADA Online
+* Đo ẩm Online HU301: Sử dụng bộ cảm biến đo độ ẩm trực tuyến HU301 gắn trực tiếp trên dây chuyền sấy và vận chuyển bột gỗ. Đồ thị độ ẩm được truyền về màn hình điều khiển trung tâm SCADA và đồng bộ thời gian thực qua phần mềm quản lý.
+* Phòng KCS & Kiểm định VinaControl: Phòng KCS trang bị đầy đủ máy đo ẩm quét phổ, máy đo độ tro, máy đo tỷ trọng viên nén, cân tiểu ly phân tích. Hàng tháng, mẫu viên nén thành phẩm được gửi đến Trung tâm Kiểm định VinaControl để kiểm tra độc lập các chỉ tiêu tỷ trọng, độ bền cơ học (DU), hàm lượng tro và nhiệt lượng.
+
+
+QUẢNG BÌNH, NGÀY 17 THÁNG 09 NĂM 2026
+BAN GIÁM ĐỐC KỸ THUẬT & VẬN HÀNH NHÀ MÁY
+Quy trình Vận hành Tiêu chuẩn (SOP) — Trang
