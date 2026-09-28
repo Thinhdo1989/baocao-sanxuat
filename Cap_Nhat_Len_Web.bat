@@ -4,7 +4,7 @@ title Dong Bo & Cap Nhat Bao Cao San Xuat Len Web Streamlit Cloud
 cd /d "%~dp0"
 
 echo =====================================================================
-echo    DONG BO & CAP NHAT HE THONG BAO CAO LEN WEB STREAMLIT CLOUD
+echo    DONG BO VA CAP NHAT HE THONG BAO CAO LEN WEB STREAMLIT CLOUD
 echo =====================================================================
 echo.
 echo [1/3] Kiem tra va dong bo file moi nhat vao deploy_files...
