@@ -427,28 +427,74 @@ except Exception as e:
 # ==============================================================================
 # BỘ CÔNG CỤ TÌM KIẾM & TRA CỨU TÙY BIẾN TOÀN HỆ THỐNG (UNIVERSAL SEARCH ENGINE)
 # ==============================================================================
+def normalize_compact_token(text: str) -> str:
+    """Loại bỏ dấu gạch nối, gạch dưới, khoảng trắng, dấu chấm, dấu phẩy để đối soát mã như BT-1892 vs BT1892, SC2210 vs SC 2210"""
+    return re.sub(r'[\s\-_\./\\,]+', '', strip_accents(str(text)).lower())
+
+
 def search_df(df: pd.DataFrame, query: str, search_cols: Optional[List[str]] = None) -> pd.DataFrame:
     """
-    Tìm kiếm nhanh không phân biệt hoa/thường và không phân biệt dấu tiếng Việt trên DataFrame.
+    Bộ tìm kiếm thông minh đa năng toàn hệ thống:
+    1. Không phân biệt chữ hoa / thường.
+    2. Không phân biệt dấu tiếng Việt (strip_accents).
+    3. Hỗ trợ tìm kiếm không dấu gạch nối / khoảng cách (gõ 'BT1892' vẫn tìm thấy 'BT-1892', 'SC 2210' khớp 'SC2210').
+    4. Tìm kiếm đa từ khóa không phụ thuộc thứ tự (AND logic): gõ 'vít SC2210' tìm thấy dòng có SC2210 và mô tả 'Thay vít đáy lò'.
+    5. Hỗ trợ tìm ngày tháng linh hoạt: gõ '28/2026' hoặc '02/08' hoặc '28 2026' đều khớp dòng ngày tương ứng.
     """
     if df is None or not isinstance(df, pd.DataFrame) or df.empty or not query:
         return df
-    q_str = str(query).strip().lower()
+    q_str = str(query).strip()
     if not q_str:
         return df
-    q_no = strip_accents(q_str).lower()
 
     target_cols = [c for c in (search_cols or list(df.columns)) if c in df.columns]
     if not target_cols:
         return df
     try:
+        # Chuỗi văn bản đầy đủ có khoảng cách giữa các cột
         row_text = df[target_cols[0]].fillna('').astype(str)
+        # Chuỗi compact chuẩn hóa từng cột riêng biệt để tránh dính số tuần & tháng với nhau
+        row_compact = df[target_cols[0]].apply(normalize_compact_token)
         for c in target_cols[1:]:
-            row_text = row_text + " " + df[c].fillna('').astype(str)
-        row_text = row_text.str.lower()
-        row_text_no = row_text.apply(strip_accents).str.lower()
-        mask = row_text.str.contains(q_str, regex=False, na=False) | row_text_no.str.contains(q_no, regex=False, na=False)
-        return df[mask]
+            col_str = df[c].fillna('').astype(str)
+            row_text = row_text + " " + col_str
+            row_compact = row_compact + " " + col_str.apply(normalize_compact_token)
+
+        row_raw = row_text.str.lower()
+        row_no = row_text.apply(strip_accents).str.lower()
+
+        q_raw = q_str.lower()
+        q_no = strip_accents(q_str).lower()
+        q_compact = normalize_compact_token(q_str)
+
+        # 1. Trực tiếp khớp cả cụm nguyên bản hoặc compact (vd: BT1892 khớp BT-1892)
+        base_mask = (
+            row_raw.str.contains(q_raw, regex=False, na=False) |
+            row_no.str.contains(q_no, regex=False, na=False)
+        )
+        if q_compact and len(q_compact) >= 3:
+            base_mask = base_mask | row_compact.str.contains(q_compact, regex=False, na=False)
+
+        # 2. Khớp đa từ khóa (AND logic) - chia theo khoảng trắng và dấu gạch chéo
+        # Vd: 'vít SC2210' -> 'vít' VÀ 'SC2210'
+        # Vd: '28/2026' -> '28' VÀ '2026'
+        tokens = [t.strip() for t in re.split(r'[\s/]+', q_str) if t.strip()]
+        if len(tokens) > 1:
+            token_mask = pd.Series(True, index=df.index)
+            for tok in tokens:
+                tok_raw = tok.lower()
+                tok_no = strip_accents(tok).lower()
+                tok_compact = normalize_compact_token(tok)
+                m_tok = (
+                    row_raw.str.contains(tok_raw, regex=False, na=False) |
+                    row_no.str.contains(tok_no, regex=False, na=False)
+                )
+                if tok_compact and len(tok_compact) >= 3:
+                    m_tok = m_tok | row_compact.str.contains(tok_compact, regex=False, na=False)
+                token_mask = token_mask & m_tok
+            base_mask = base_mask | token_mask
+
+        return df[base_mask]
     except Exception:
         return df
 
@@ -460,29 +506,28 @@ def search_shifts_df(df_shifts: pd.DataFrame, query: str) -> pd.DataFrame:
     """
     if df_shifts is None or not isinstance(df_shifts, pd.DataFrame) or df_shifts.empty or not query:
         return df_shifts
-    q_str = str(query).strip().lower()
+    q_str = str(query).strip()
     if not q_str:
         return df_shifts
     q_no = strip_accents(q_str).lower()
 
     try:
-        str_cols = [c for c in ['date_str', 'shift_leader', 'week', 'month', 'date'] if c in df_shifts.columns]
+        str_cols = [c for c in ['date_str', 'shift_leader', 'week', 'month', 'date', 'ghi_chu', 'note'] if c in df_shifts.columns]
         if not str_cols:
             str_cols = list(df_shifts.columns)
-        row_text = df_shifts[str_cols[0]].fillna('').astype(str)
-        for c in str_cols[1:]:
-            row_text = row_text + " " + df_shifts[c].fillna('').astype(str)
-        row_text = row_text.str.lower()
-        row_text_no = row_text.apply(strip_accents).str.lower()
-        mask = row_text.str.contains(q_str, regex=False, na=False) | row_text_no.str.contains(q_no, regex=False, na=False)
 
-        q_upper = query.strip().upper()
+        # Sử dụng search_df thông minh cho các cột chuỗi
+        df_text_matched = search_df(df_shifts, q_str, search_cols=str_cols)
+        mask = df_shifts.index.isin(df_text_matched.index)
+
+        # Tìm theo mã máy vận hành (PE1, PE2, DR124...)
+        q_upper = q_str.strip().upper()
         if f"h_{q_upper}" in df_shifts.columns:
             mask = mask | (df_shifts[f"h_{q_upper}"] > 0)
         elif q_upper in df_shifts.columns:
             mask = mask | (df_shifts[q_upper] > 0)
 
-        # 3. Tìm theo tên ca trưởng (Sắc -> Ca A, Tài -> Ca B, Long -> Ca C)
+        # Tìm theo tên ca trưởng (Sắc -> Ca A, Tài -> Ca B, Long -> Ca C)
         if 'shift_leader' in df_shifts.columns:
             if any(k in q_no for k in ['sac', 'ca a', 'hai']):
                 mask = mask | df_shifts['shift_leader'].apply(lambda val: match_shift_leader(val, 'Ca A'))
@@ -662,9 +707,23 @@ def render_universal_search_panel(search_res: dict):
 
         with st_tabs[1]:
             if not res_ml.empty:
-                cols_ml = ['id', 'date', 'equipment', 'activity', 'description', 'duration_hours', 'performer', 'status']
-                avail_cols = [c for c in cols_ml if c in res_ml.columns]
-                st.dataframe(res_ml[avail_cols], hide_index=True, use_container_width=True)
+                df_ml_disp = res_ml.copy()
+                cols_ml = ['id', 'date_str', 'ca', 'equipment', 'activity', 'description', 'duration_hours', 'performer', 'status']
+                avail_cols = [c for c in cols_ml if c in df_ml_disp.columns]
+                df_show = df_ml_disp[avail_cols].copy()
+                if is_en():
+                    df_show.rename(columns={
+                        'id': 'Job ID', 'date_str': 'Date', 'ca': 'Shift', 'equipment': 'Equipment',
+                        'activity': 'Activity', 'description': 'Work Description',
+                        'duration_hours': 'Hours', 'performer': 'Assignee', 'status': 'Status'
+                    }, inplace=True)
+                else:
+                    df_show.rename(columns={
+                        'id': 'Mã BT', 'date_str': 'Ngày', 'ca': 'Ca', 'equipment': 'Mã Thiết Bị',
+                        'activity': 'Hoạt Động', 'description': 'Nội Dung Công Việc',
+                        'duration_hours': 'Giờ (h)', 'performer': 'Người Làm', 'status': 'Trạng Thái'
+                    }, inplace=True)
+                st.dataframe(df_show, hide_index=True, use_container_width=True)
             else:
                 st.info(t("Không có bản ghi bảo trì nào khớp với từ khóa.", "No maintenance records matching keyword."))
 
@@ -1567,11 +1626,11 @@ pct_off = (sb_off / tot_denom) * 100.0
 st.markdown(f"""
 <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-left: 5px solid #22c55e; border-radius: 8px; padding: 8px 16px; margin: 6px 0 14px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
     <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap;">
-        <span style="color: #94a3b8; font-weight: 600;">⏱️ {t("Trạng thái ca kỳ:", "Shift status:")}</span>
+        <span style="color: #94a3b8; font-weight: 600;">⏱️ {t("Trạng thái ca vận hành xưởng:", "Plant shift operation:")}</span>
         <code style="background: #0f172a; border: 1px solid #475569; padding: 2px 8px; border-radius: 6px; color: #38bdf8; font-weight: 700; font-family: monospace; font-size: 11.5px;">{sb_date}</code>
         <span style="color: #475569;">|</span>
         <span style="color: #86efac; font-weight: 700; background: rgba(34, 197, 94, 0.15); border: 1px solid #22c55e; padding: 2px 10px; border-radius: 12px; font-size: 11.5px;">🏭 {sb_prod} {t("ca sản xuất", "prod shifts")} ({pct_prod:.0f}%)</span>
-        <span style="color: #fde68a; font-weight: 700; background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; padding: 2px 10px; border-radius: 12px; font-size: 11.5px;">🔧 {sb_maint} {t("ca bảo trì", "maint shifts")} ({pct_maint:.0f}%)</span>
+        <span title="{t('Ca trực sản xuất chuyển sang chế độ dừng máy bảo trì vệ sinh xưởng (sheet Product_Data). Để xem chi tiết các lượt bảo dưỡng thiết bị, xem Tab 10.', 'Production shift idle for maintenance/cleaning (sheet Product_Data). For equipment repair records, see Tab 10.')}" style="color: #fde68a; font-weight: 700; background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; padding: 2px 10px; border-radius: 12px; font-size: 11.5px; cursor: help;">🔧 {sb_maint} {t("ca trực BT-VS", "shift maint/idle")} ({pct_maint:.0f}%)</span>
         <span style="color: #cbd5e1; font-weight: 700; background: rgba(148, 163, 184, 0.15); border: 1px solid #94a3b8; padding: 2px 10px; border-radius: 12px; font-size: 11.5px;">☕ {sb_off} {t("ca nghỉ", "idle shifts")} ({pct_off:.0f}%)</span>
         <span style="color: #475569;">|</span>
         <span style="color: #38bdf8; font-weight: 800; background: rgba(14, 165, 233, 0.18); border: 1px solid #0284c7; padding: 2px 12px; border-radius: 12px; font-size: 11.5px; box-shadow: 0 0 10px rgba(56,189,248,0.2); display: inline-flex; align-items: center; gap: 5px;">
@@ -4180,9 +4239,7 @@ elif task_num == 5:
             st.markdown(f"##### 📋 {t('Bảng Chi Tiết Các Vụ Sự Cố Đã Ghi Nhận', 'Detailed Incident Log Table')}")
             df_show_inc = inc_stats['df_filtered']
             if global_search_kw and not df_show_inc.empty:
-                inc_match = search_df(df_show_inc, global_search_kw)
-                if not inc_match.empty:
-                    df_show_inc = inc_match
+                df_show_inc = search_df(df_show_inc, global_search_kw)
             if not df_show_inc.empty:
                 cols_inc_disp = ['id_su_co', 'date_str', 'shift_leader', 'equipment_raw', 'description', 'solution', 'performer', 'duration_hours', 'status']
                 avail_c_inc = [c for c in cols_inc_disp if c in df_show_inc.columns]
@@ -4257,8 +4314,8 @@ elif task_num == 6:
         with c_rep_sel:
             if "Tháng" in rep_type or "Monthly" in rep_type:
                 available_months = sorted(list(set(
-                    ([int(m) for m in df_ml_sub['month'].dropna().unique() if int(m) > 0] if not df_ml_sub.empty and 'month' in df_ml_sub else []) +
-                    ([int(m) for m in df_inc_sub['month'].dropna().unique() if int(m) > 0] if not df_inc_sub.empty and 'month' in df_inc_sub else [])
+                    ([int(m) for m in pd.to_numeric(df_ml_sub['month'], errors='coerce').dropna().unique() if int(m) > 0] if not df_ml_sub.empty and 'month' in df_ml_sub else []) +
+                    ([int(m) for m in pd.to_numeric(df_inc_sub['month'], errors='coerce').dropna().unique() if int(m) > 0] if not df_inc_sub.empty and 'month' in df_inc_sub else [])
                 )))
                 if not available_months:
                     available_months = [2, 5, 6, 7, 8, 9]
@@ -4270,14 +4327,14 @@ elif task_num == 6:
                 period_title = f"{t('Tháng', 'Month')} {sel_m_num}"
 
                 if not df_inc_sub.empty and 'month' in df_inc_sub:
-                    df_inc_sub = df_inc_sub[df_inc_sub['month'] == sel_m_num]
+                    df_inc_sub = df_inc_sub[pd.to_numeric(df_inc_sub['month'], errors='coerce') == sel_m_num]
                 if not df_ml_sub.empty and 'month' in df_ml_sub:
-                    df_ml_sub = df_ml_sub[df_ml_sub['month'] == sel_m_num]
+                    df_ml_sub = df_ml_sub[pd.to_numeric(df_ml_sub['month'], errors='coerce') == sel_m_num]
 
             elif "Tuần" in rep_type or "Weekly" in rep_type:
                 available_weeks = sorted(list(set(
-                    ([int(w) for w in df_ml_sub['week'].dropna().unique() if int(w) > 0] if not df_ml_sub.empty and 'week' in df_ml_sub else []) +
-                    ([int(w) for w in df_inc_sub['week'].dropna().unique() if int(w) > 0] if not df_inc_sub.empty and 'week' in df_inc_sub else [])
+                    ([int(w) for w in pd.to_numeric(df_ml_sub['week'], errors='coerce').dropna().unique() if int(w) > 0] if not df_ml_sub.empty and 'week' in df_ml_sub else []) +
+                    ([int(w) for w in pd.to_numeric(df_inc_sub['week'], errors='coerce').dropna().unique() if int(w) > 0] if not df_inc_sub.empty and 'week' in df_inc_sub else [])
                 )))
                 if not available_weeks:
                     available_weeks = list(range(1, 53))
@@ -4289,9 +4346,9 @@ elif task_num == 6:
                 period_title = f"{t('Tuần', 'Week')} {sel_w_num}"
 
                 if not df_inc_sub.empty and 'week' in df_inc_sub:
-                    df_inc_sub = df_inc_sub[df_inc_sub['week'] == sel_w_num]
+                    df_inc_sub = df_inc_sub[pd.to_numeric(df_inc_sub['week'], errors='coerce') == sel_w_num]
                 if not df_ml_sub.empty and 'week' in df_ml_sub:
-                    df_ml_sub = df_ml_sub[df_ml_sub['week'] == sel_w_num]
+                    df_ml_sub = df_ml_sub[pd.to_numeric(df_ml_sub['week'], errors='coerce') == sel_w_num]
 
             else:
                 available_dates = []
@@ -4323,27 +4380,27 @@ elif task_num == 6:
                 period_title = f"{t('Ngày', 'Date')} {sel_d_str}"
 
                 if not df_inc_sub.empty:
+                    m_inc = pd.Series(False, index=df_inc_sub.index)
                     if 'date' in df_inc_sub:
-                        df_inc_sub = df_inc_sub[pd.to_datetime(df_inc_sub['date'], errors='coerce').dt.date == sel_d_obj]
-                    elif 'date_str' in df_inc_sub:
-                        df_inc_sub = df_inc_sub[df_inc_sub['date_str'] == sel_d_str]
+                        m_inc = m_inc | (pd.to_datetime(df_inc_sub['date'], dayfirst=True, errors='coerce').dt.date == sel_d_obj)
+                    if 'date_str' in df_inc_sub:
+                        m_inc = m_inc | (df_inc_sub['date_str'].astype(str).str.strip() == sel_d_str)
+                    df_inc_sub = df_inc_sub[m_inc]
 
                 if not df_ml_sub.empty:
+                    m_ml = pd.Series(False, index=df_ml_sub.index)
                     if 'date' in df_ml_sub:
-                        df_ml_sub = df_ml_sub[pd.to_datetime(df_ml_sub['date'], errors='coerce').dt.date == sel_d_obj]
-                    elif 'date_str' in df_ml_sub:
-                        df_ml_sub = df_ml_sub[df_ml_sub['date_str'] == sel_d_str]
+                        m_ml = m_ml | (pd.to_datetime(df_ml_sub['date'], dayfirst=True, errors='coerce').dt.date == sel_d_obj)
+                    if 'date_str' in df_ml_sub:
+                        m_ml = m_ml | (df_ml_sub['date_str'].astype(str).str.strip() == sel_d_str)
+                    df_ml_sub = df_ml_sub[m_ml]
 
         # Tinh chỉnh theo từ khóa tìm kiếm nếu có
         if global_search_kw:
             if not df_inc_sub.empty:
-                inc_m = search_df(df_inc_sub, global_search_kw)
-                if not inc_m.empty:
-                    df_inc_sub = inc_m
+                df_inc_sub = search_df(df_inc_sub, global_search_kw)
             if not df_ml_sub.empty:
-                ml_m = search_df(df_ml_sub, global_search_kw)
-                if not ml_m.empty:
-                    df_ml_sub = ml_m
+                df_ml_sub = search_df(df_ml_sub, global_search_kw)
 
         # 3 Thẻ Metric then chốt chuẩn theo Google Sheets Monthly_Report
         tot_inc_cases = len(df_inc_sub)
@@ -4484,27 +4541,50 @@ elif task_num == 6:
         st.caption(f"{t('Tổng hợp 2.264+ lượt bảo trì máy ép, nghiền, sấy, chipper, rulo, dao băm từ Google Sheets.', 'Consolidated 2,264+ maintenance records for pellet mills, hammer mills, dryers, chipper, rollers, knives.')}")
 
         if not df_maint_log.empty:
-            c_ml_f1, c_ml_f2, c_ml_f3, c_ml_f4 = st.columns(4)
             all_lbl = t("Tất cả", "All")
+
+            c_ml_f1, c_ml_f2, c_ml_f3, c_ml_f4 = st.columns(4)
             with c_ml_f1:
-                all_acts = [all_lbl] + sorted([a for a in df_maint_log['activity'].unique() if a])
-                sel_act = st.selectbox(t("Loại hoạt động:", "Activity:"), all_acts, key="sb_ml_act_t2")
+                m_vals = sorted([int(m) for m in pd.to_numeric(df_maint_log['month'], errors='coerce').dropna().unique() if int(m) > 0])
+                month_choices = [all_lbl] + [f"Tháng {m}" for m in m_vals]
+                sel_month_t2 = st.selectbox(t("📅 Lọc theo Tháng:", "📅 Filter by Month:"), month_choices, key="sb_ml_month_t2")
             with c_ml_f2:
-                all_eqs = [all_lbl] + sorted([e for e in df_maint_log['equipment'].unique() if e])
-                sel_eq = st.selectbox(t("Thiết bị:", "Equipment:"), all_eqs, key="sb_ml_eq_t2")
+                w_vals = sorted([int(w) for w in pd.to_numeric(df_maint_log['week'], errors='coerce').dropna().unique() if int(w) > 0])
+                week_choices = [all_lbl] + [f"Tuần {w}" for w in w_vals]
+                sel_week_t2 = st.selectbox(t("📆 Lọc theo Tuần:", "📆 Filter by Week:"), week_choices, key="sb_ml_week_t2")
             with c_ml_f3:
-                all_status = [all_lbl] + sorted([s for s in df_maint_log['status'].unique() if s])
-                sel_status = st.selectbox(t("Trạng thái:", "Status:"), all_status, key="sb_ml_status_t2")
+                all_eqs = [all_lbl] + sorted([str(e).strip() for e in df_maint_log['equipment'].unique() if e and str(e).strip()])
+                sel_eq = st.selectbox(t("⚙️ Thiết bị:", "⚙️ Equipment:"), all_eqs, key="sb_ml_eq_t2")
             with c_ml_f4:
-                search_kw = st.text_input(t("Tìm kiếm từ khóa:", "Search keyword:"), placeholder=t("Gõ tên dao, rulo, người làm...", "Type knife, roller, name..."), key="txt_ml_kw")
+                all_status = [all_lbl] + sorted([str(s).strip() for s in df_maint_log['status'].unique() if s and str(s).strip()])
+                sel_status = st.selectbox(t("📌 Trạng thái:", "📌 Status:"), all_status, key="sb_ml_status_t2")
+
+            c_ml_f5, c_ml_f6 = st.columns([1, 2])
+            with c_ml_f5:
+                all_acts = [all_lbl] + sorted([str(a).strip() for a in df_maint_log['activity'].unique() if a and str(a).strip()])
+                sel_act = st.selectbox(t("🛠️ Loại hoạt động:", "🛠️ Activity:"), all_acts, key="sb_ml_act_t2")
+            with c_ml_f6:
+                search_kw = st.text_input(
+                    t("🔍 Tìm kiếm từ khóa đa năng (Mã BT, SC2210, vít, người làm, ngày tháng):", "🔍 Smart Keyword Search (Job ID, SC2210, screw, worker, date):"),
+                    placeholder=t("Vd: BT1892, SC2210, vít, thay vít đáy lò 2, Phan Nhớ, 02/08...", "E.g.: BT1892, SC2210, screw, replace bottom screw 2, 02/08..."),
+                    key="txt_ml_kw"
+                )
 
             df_ml_filt = df_maint_log.copy()
+            if sel_month_t2 != all_lbl:
+                m_match = re.search(r'\d+', sel_month_t2)
+                if m_match:
+                    df_ml_filt = df_ml_filt[pd.to_numeric(df_ml_filt['month'], errors='coerce') == int(m_match.group())]
+            if sel_week_t2 != all_lbl:
+                w_match = re.search(r'\d+', sel_week_t2)
+                if w_match:
+                    df_ml_filt = df_ml_filt[pd.to_numeric(df_ml_filt['week'], errors='coerce') == int(w_match.group())]
             if sel_act != all_lbl:
-                df_ml_filt = df_ml_filt[df_ml_filt['activity'] == sel_act]
+                df_ml_filt = df_ml_filt[df_ml_filt['activity'].astype(str).str.strip().str.lower() == sel_act.strip().lower()]
             if sel_eq != all_lbl:
-                df_ml_filt = df_ml_filt[df_ml_filt['equipment'] == sel_eq]
+                df_ml_filt = df_ml_filt[df_ml_filt['equipment'].astype(str).str.strip().str.lower() == sel_eq.strip().lower()]
             if sel_status != all_lbl:
-                df_ml_filt = df_ml_filt[df_ml_filt['status'] == sel_status]
+                df_ml_filt = df_ml_filt[df_ml_filt['status'].astype(str).str.strip().str.lower() == sel_status.strip().lower()]
             eff_kw = search_kw.strip() if search_kw.strip() else global_search_kw
             if eff_kw:
                 df_ml_filt = search_df(df_ml_filt, eff_kw)

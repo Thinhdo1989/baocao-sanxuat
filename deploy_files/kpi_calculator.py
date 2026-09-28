@@ -3,6 +3,7 @@ Module tính toán các chỉ số sản xuất (KPI), suất tiêu hao và gắ
 """
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
+import re
 import pandas as pd
 import numpy as np
 
@@ -665,17 +666,21 @@ def get_incident_statistics(
         if isinstance(target_date, datetime):
             target_d_str = target_date.strftime('%d/%m/%Y')
         else:
-            target_d_str = str(target_date)
-        df_filt = df_filt[df_filt['date_str'] == target_d_str]
+            target_d_str = str(target_date).strip()
+        m_d = pd.Series(False, index=df_filt.index)
+        if 'date_str' in df_filt.columns:
+            m_d = m_d | (df_filt['date_str'].astype(str).str.strip() == target_d_str)
+        if 'date' in df_filt.columns:
+            m_d = m_d | (pd.to_datetime(df_filt['date'], dayfirst=True, errors='coerce').dt.strftime('%d/%m/%Y') == target_d_str)
+        df_filt = df_filt[m_d]
     elif target_week:
-        w_num = int(str(target_week).replace("Tuần ", "").strip()) if str(target_week).replace("Tuần ", "").strip().isdigit() else None
-        if w_num:
-            df_filt = df_filt[df_filt['week'] == w_num]
+        w_match = re.search(r'\d+', str(target_week))
+        if w_match:
+            df_filt = df_filt[pd.to_numeric(df_filt['week'], errors='coerce') == int(w_match.group())]
     elif target_month:
-        clean_m = str(target_month).replace("Tháng ", "").strip()
-        m_num = int(clean_m.split('/')[0]) if clean_m.split('/')[0].isdigit() else None
-        if m_num:
-            df_filt = df_filt[df_filt['month'] == m_num]
+        m_match = re.search(r'\d+', str(target_month))
+        if m_match:
+            df_filt = df_filt[pd.to_numeric(df_filt['month'], errors='coerce') == int(m_match.group())]
 
     total_incidents = len(df_filt)
     total_hours = round(float(df_filt['duration_hours'].sum()), 1)
@@ -756,12 +761,17 @@ def get_equipment_incident_alerts(
 
     df_filt = df_incidents.copy()
     if target_week:
-        w_num = int(str(target_week).replace("Tuần ", "").strip()) if str(target_week).replace("Tuần ", "").strip().isdigit() else None
-        if w_num:
-            df_filt = df_filt[df_filt['week'] == w_num]
+        w_match = re.search(r'\d+', str(target_week))
+        if w_match:
+            df_filt = df_filt[pd.to_numeric(df_filt['week'], errors='coerce') == int(w_match.group())]
     elif target_date:
-        d_str = target_date.strftime('%d/%m/%Y') if isinstance(target_date, datetime) else str(target_date)
-        df_filt = df_filt[df_filt['date_str'] == d_str]
+        d_str = target_date.strftime('%d/%m/%Y') if isinstance(target_date, datetime) else str(target_date).strip()
+        m_d = pd.Series(False, index=df_filt.index)
+        if 'date_str' in df_filt.columns:
+            m_d = m_d | (df_filt['date_str'].astype(str).str.strip() == d_str)
+        if 'date' in df_filt.columns:
+            m_d = m_d | (pd.to_datetime(df_filt['date'], dayfirst=True, errors='coerce').dt.strftime('%d/%m/%Y') == d_str)
+        df_filt = df_filt[m_d]
     else:
         latest_w = df_filt['week'].max() if 'week' in df_filt.columns else 0
         if latest_w > 0:
