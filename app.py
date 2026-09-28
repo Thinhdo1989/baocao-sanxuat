@@ -32,6 +32,7 @@ from data_entry import (
 )
 from i18n import (
     get_lang, set_lang, apply_language_change, is_en, t, translate_eval, strip_accents, format_person_name,
+    format_shift_display_label,
     translate_comparison_df, translate_wm_weekly, translate_wm_monthly, translate_shift_leader_kpis,
     get_op_tasks, get_static_tasks, get_entry_tasks, get_all_tasks,
     map_task_name, get_time_modes, map_time_mode,
@@ -381,7 +382,7 @@ def load_all_factory_data():
         'oil_title': loader.oil_spreadsheet.title if loader.oil_spreadsheet else "Lịch thay nhớt hộp số máy ép"
     }
 
-# ================= KIỂM TRA KHÓA CHẾ ĐỘ PUBLIC (CHỈ CẤP QUYỀN CHO SANGMCC1@GMAIL.COM) =================
+# ================= KIỂM TRA KHÓA CHẾ ĐỘ PUBLIC (CẤP QUYỀN XEM CHO: GĐ, QĐ, CA A, CA B, CA C, CHIPPER, QC, ADMIN & SANGMCC1@GMAIL.COM) =================
 if not check_viewer_authorization():
     render_viewer_lock_screen(logo_b64=logo_b64)
     st.stop()
@@ -679,10 +680,10 @@ def render_universal_search_panel(search_res: dict):
             if total_kpi > 0:
                 if not res_kpi_w.empty:
                     st.markdown(f"**{t('Điểm KPI Theo Tuần (34 tuần gần nhất):', 'Weekly KPI Scores:')}**")
-                    st.dataframe(res_kpi_w, hide_index=True, use_container_width=True)
+                    st.dataframe(translate_wm_weekly(res_kpi_w), hide_index=True, use_container_width=True)
                 if not res_kpi_m.empty:
                     st.markdown(f"**{t('Điểm KPI Theo Tháng:', 'Monthly KPI Scores:')}**")
-                    st.dataframe(res_kpi_m, hide_index=True, use_container_width=True)
+                    st.dataframe(translate_wm_monthly(res_kpi_m), hide_index=True, use_container_width=True)
             else:
                 st.info(t("Không có dữ liệu KPI nào khớp với từ khóa.", "No KPI records matching keyword."))
 
@@ -808,9 +809,49 @@ with st.sidebar:
             del st.session_state['hr_data']
         st.rerun()
 
-    # Hiển thị thông tin người xem hoặc Admin được cấp quyền
+    # Hiển thị thông tin người xem hoặc Admin / Ca Trưởng / QC / QĐ được cấp quyền
+    curr_user = get_current_user()
     v_auth = st.session_state.get("viewer_authorized_email")
-    if v_auth == "admin":
+
+    if curr_user:
+        u_icon = curr_user.get("icon", "👤")
+        u_name = curr_user.get("full_name", curr_user.get("name", "Người dùng"))
+        u_shift = curr_user.get("shift_code", "")
+        u_role = curr_user.get("role", "")
+        if u_role == "director":
+            role_label = t("🎖️ TOÀN QUYỀN GĐ", "🎖️ DIRECTOR ACCESS")
+            card_border = "#ef4444"
+            tag_bg = "#dc2626"
+        elif u_role in ["pgd", "admin"]:
+            role_label = t("👑 TOÀN QUYỀN PGĐ (ADMIN)", "👑 VICE DIRECTOR ACCESS")
+            card_border = "#8b5cf6"
+            tag_bg = "#7c3aed"
+        elif u_role == "manager":
+            role_label = t("⭐ TOÀN QUYỀN QĐ", "⭐ MANAGER ACCESS")
+            card_border = "#eab308"
+            tag_bg = "#ca8a04"
+        else:
+            role_label = t(f"XEM & NHẬP {u_shift.upper()}", f"VIEW & {u_shift.upper()}")
+            card_border = "#3b82f6"
+            tag_bg = "#2563eb"
+
+        st.markdown(f"""
+        <div style="background: rgba(30, 41, 59, 0.95); border: 1.5px solid {card_border}; border-radius: 8px; padding: 8px 10px; margin-top: 8px; margin-bottom: 6px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="font-size: 12px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 6px;">
+                    <span>{u_icon}</span>
+                    <span>{u_name}</span>
+                </div>
+                <span style="background: {tag_bg}; color: white; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 700;">{role_label}</span>
+            </div>
+            <div style="font-size: 10.5px; color: #94a3b8; margin-top: 3px;">
+                {t('✅ Đã xác thực quyền xem toàn bộ báo cáo', '✅ Authorized to view all reports')}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button(t("🔒 Đăng Xuất (Khóa Lại)", "🔒 Logout (Lock System)"), key="btn_logout_user_sidebar", use_container_width=True):
+            logout_viewer()
+    elif v_auth == "admin":
         st.markdown(f"""
         <div style="background: rgba(234, 179, 8, 0.15); border: 1px solid #eab308; border-radius: 8px; padding: 6px 10px; margin-top: 8px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
             <div style="font-size: 11px; font-weight: 700; color: #facc15;">
@@ -824,12 +865,12 @@ with st.sidebar:
             logout_viewer()
     elif v_auth == AUTHORIZED_VIEWER_EMAIL:
         st.markdown(f"""
-        <div style="background: rgba(56, 189, 248, 0.12); border: 1px solid #0284c7; border-radius: 8px; padding: 6px 10px; margin-top: 8px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
-            <div style="font-size: 11px; font-weight: 700; color: #38bdf8;">
-                <span>👤</span>
-                <span>{AUTHORIZED_VIEWER_EMAIL}</span>
+        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid #ef4444; border-radius: 8px; padding: 6px 10px; margin-top: 8px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 11px; font-weight: 700; color: #f87171;">
+                <span>🎖️</span>
+                <span>{t("GIÁM ĐỐC (GĐ)", "PLANT DIRECTOR")}</span>
             </div>
-            <span style="background: #0284c7; color: white; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 700;">{t("QUYỀN XEM", "VIEW ONLY")}</span>
+            <span style="background: #dc2626; color: white; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 700;">{t("TOÀN QUYỀN", "ALL ACCESS")}</span>
         </div>
         """, unsafe_allow_html=True)
         if st.button(t("🔒 Khóa Lại (Đăng Xuất)", "🔒 Logout"), key="btn_logout_viewer", use_container_width=True):
@@ -2586,7 +2627,7 @@ elif task_num == 2:
             <div style="background:{c_bg}; border:1.5px solid {c_bd}; border-radius:12px; padding:14px 18px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
                 <div>
                     <span style="font-size:28px; margin-right:10px;">{item['huy_chuong']}</span>
-                    <strong style="font-size:19px; color:#0f172a;">{t('Ca', 'Shift')} {format_person_name(item['ca_truong'])}</strong>
+                    <strong style="font-size:19px; color:#0f172a;">{format_shift_display_label(item['ca_truong'])}</strong>
                     <div style="font-size:12px; color:#64748b; margin-left:38px; margin-top:2px;">
                         {t('Hạng', 'Rank')} {item['hang']} • {delta_badge} {t(f'so với {period_name} trước', f'vs previous {p_display}')}
                     </div>
@@ -2606,6 +2647,34 @@ elif task_num == 2:
             st.info(f"{t('Chưa có dữ liệu cơ cấu chỉ số cho', 'No indicator structure data available for')} {period_label}.")
             return
 
+        # Đảm bảo hiển thị đầy đủ cả 3 ca (Ca A, Ca B, Ca C) theo đúng thứ tự chuẩn
+        target_cas = ['Ca A', 'Ca B', 'Ca C']
+        existing_cas = [str(c).strip() for c in df_detail['ca_truong'].tolist()] if 'ca_truong' in df_detail.columns else []
+        missing_cas = [c for c in target_cas if c not in existing_cas]
+        if missing_cas:
+            extra_rows = []
+            for c in missing_cas:
+                extra_rows.append({
+                    'ca_truong': c,
+                    'sl_thuc_te': 0.0,
+                    'chi_tieu_sl': 0.0,
+                    'diem_sl': 0.0,
+                    'do_am_tb': 0.0,
+                    'diem_am': 0.0,
+                    'nang_suat_tb': 0.0,
+                    'diem_nang_suat': 0.0,
+                    'dien_tb': 0.0,
+                    'diem_kpi': 0.0
+                })
+            df_detail = pd.concat([df_detail, pd.DataFrame(extra_rows)], ignore_index=True)
+
+        ca_order = {'Ca A': 1, 'Ca B': 2, 'Ca C': 3}
+        df_detail['__order__'] = df_detail['ca_truong'].map(lambda x: ca_order.get(str(x).strip(), 99))
+        df_detail = df_detail.sort_values('__order__').drop(columns=['__order__']).reset_index(drop=True)
+
+        if missing_cas:
+            st.caption(f"ℹ️ **{period_label}**: " + t(f"{', '.join(missing_cas)} chưa có dữ liệu nhập trong kỳ này.", f"{', '.join(missing_cas)} has no data entered for this period."))
+
         ca_colors = {
             'Ca A': '#16a34a',
             'Ca B': '#ea580c',
@@ -2623,17 +2692,18 @@ elif task_num == 2:
         with c1:
             fig_sl_pts = go.Figure()
             for _, r in df_detail.iterrows():
-                ca_name = format_person_name(str(r['ca_truong']))
+                ca_label = format_shift_display_label(r['ca_truong'])
                 c_col = ca_colors.get(r['ca_truong'], '#2563eb')
                 score_val = r.get('diem_sl', 0)
                 sl_act = r.get('sl_thuc_te', 0)
                 sl_tgt = r.get('chi_tieu_sl', 0)
+                txt_sl = f"<b>{score_val:.1f} {pts_lbl}</b><br><span style='font-size:11px;'>({sl_act:,.0f}t / {sl_tgt:,.0f}t)</span>" if (score_val > 0 or sl_act > 0) else f"<span style='font-size:11px;'>{t('Chưa nhập', 'No data')}</span>"
                 
                 fig_sl_pts.add_trace(go.Bar(
-                    x=[f"{t('Ca', 'Shift')} {ca_name}"],
+                    x=[ca_label],
                     y=[score_val],
-                    name=f"{t('Ca', 'Shift')} {ca_name}",
-                    text=[f"<b>{score_val:.1f} {pts_lbl}</b><br><span style='font-size:11px;'>({sl_act:,.0f}t / {sl_tgt:,.0f}t)</span>"],
+                    name=ca_label,
+                    text=[txt_sl],
                     textposition='outside',
                     marker_color=c_col,
                     showlegend=False
@@ -2659,16 +2729,17 @@ elif task_num == 2:
         with c2:
             fig_moist_pts = go.Figure()
             for _, r in df_detail.iterrows():
-                ca_name = format_person_name(str(r['ca_truong']))
+                ca_label = format_shift_display_label(r['ca_truong'])
                 c_col = ca_colors.get(r['ca_truong'], '#0284c7')
                 score_val = r.get('diem_am', 0)
                 moist_val = r.get('do_am_tb', 0)
+                txt_m = f"<b>{score_val:.1f} {pts_lbl}</b><br><span style='font-size:11px;'>({t('Ẩm', 'Moist')}: {moist_val:.2f}%)</span>" if (score_val > 0 or moist_val > 0) else f"<span style='font-size:11px;'>{t('Chưa nhập', 'No data')}</span>"
                 
                 fig_moist_pts.add_trace(go.Bar(
-                    x=[f"{t('Ca', 'Shift')} {ca_name}"],
+                    x=[ca_label],
                     y=[score_val],
-                    name=f"{t('Ca', 'Shift')} {ca_name}",
-                    text=[f"<b>{score_val:.1f} {pts_lbl}</b><br><span style='font-size:11px;'>({t('Ẩm', 'Moist')}: {moist_val:.2f}%)</span>"],
+                    name=ca_label,
+                    text=[txt_m],
                     textposition='outside',
                     marker_color=c_col,
                     showlegend=False
@@ -2694,16 +2765,17 @@ elif task_num == 2:
         with c3:
             fig_cap_pts = go.Figure()
             for _, r in df_detail.iterrows():
-                ca_name = format_person_name(str(r['ca_truong']))
+                ca_label = format_shift_display_label(r['ca_truong'])
                 c_col = ca_colors.get(r['ca_truong'], '#f59e0b')
                 score_val = r.get('diem_nang_suat', 0)
                 cap_val = r.get('nang_suat_tb', 0)
+                txt_c = f"<b>{score_val:.1f} {pts_lbl}</b><br><span style='font-size:11px;'>({t('NS', 'Rate')}: {cap_val:.2f} t/h)</span>" if (score_val > 0 or cap_val > 0) else f"<span style='font-size:11px;'>{t('Chưa nhập', 'No data')}</span>"
                 
                 fig_cap_pts.add_trace(go.Bar(
-                    x=[f"{t('Ca', 'Shift')} {ca_name}"],
+                    x=[ca_label],
                     y=[score_val],
-                    name=f"{t('Ca', 'Shift')} {ca_name}",
-                    text=[f"<b>{score_val:.1f} {pts_lbl}</b><br><span style='font-size:11px;'>({t('NS', 'Rate')}: {cap_val:.2f} t/h)</span>"],
+                    name=ca_label,
+                    text=[txt_c],
                     textposition='outside',
                     marker_color=c_col,
                     showlegend=False
@@ -2740,7 +2812,7 @@ elif task_num == 2:
 
             if is_en():
                 if 'ca_truong' in df_disp.columns:
-                    df_disp['ca_truong'] = df_disp['ca_truong'].apply(lambda x: format_person_name(str(x)))
+                    df_disp['ca_truong'] = df_disp['ca_truong'].apply(lambda x: format_shift_display_label(str(x)))
                 col_names_map = {
                     'ca_truong': 'Shift Leader',
                     'sl_thuc_te': 'Actual Prod (t)',
@@ -2755,6 +2827,8 @@ elif task_num == 2:
                     'diem_kpi': 'TOTAL KPI PTS'
                 }
             else:
+                if 'ca_truong' in df_disp.columns:
+                    df_disp['ca_truong'] = df_disp['ca_truong'].apply(lambda x: format_shift_display_label(str(x)))
                 col_names_map = {
                     'ca_truong': 'Ca Trưởng',
                     'sl_thuc_te': 'SL Thực tế (tấn)',
@@ -2778,32 +2852,34 @@ elif task_num == 2:
             with cm1:
                 fig_sl_raw = go.Figure()
                 for _, r in df_detail.iterrows():
-                    ca_name = format_person_name(str(r['ca_truong']))
+                    ca_label = format_shift_display_label(r['ca_truong'])
                     c_col = ca_colors.get(r['ca_truong'], '#2563eb')
                     sl_act = r.get('sl_thuc_te', 0)
                     sl_tgt = r.get('chi_tieu_sl', 0)
                     pct = (sl_act / sl_tgt * 100) if sl_tgt > 0 else 0
+                    txt_sl = f"<b>{sl_act:,.1f}t</b><br>({pct:.0f}%)" if sl_act > 0 else f"<span style='font-size:11px;'>{t('Chưa nhập', 'No data')}</span>"
                     fig_sl_raw.add_trace(go.Bar(
-                        x=[f"{t('Ca', 'Shift')} {ca_name}"], y=[sl_act],
-                        text=[f"<b>{sl_act:,.1f}t</b><br>({pct:.0f}%)"],
+                        x=[ca_label], y=[sl_act],
+                        text=[txt_sl],
                         textposition='outside', marker_color=c_col, showlegend=False
                     ))
                 mean_tgt = df_detail['chi_tieu_sl'].mean() if 'chi_tieu_sl' in df_detail.columns else 0
                 if mean_tgt > 0:
                     fig_sl_raw.add_hline(y=mean_tgt, line_dash="dash", line_color="#94a3b8", annotation_text=f"{t('CT', 'Target')}: {mean_tgt:,.0f}t", annotation_position="top left")
                 max_sl = df_detail['sl_thuc_te'].max() if not df_detail.empty else 100
-                fig_sl_raw.update_layout(title=dict(text=f"<b>{t('Sản Lượng Thực Tế (Tấn)', 'Actual Production (Tons)')}</b>", font=dict(size=12)), yaxis_title=t("Tấn", "Tons"), height=280, margin=dict(t=40, b=20, l=15, r=15), yaxis_range=[0, max_sl * 1.28])
+                fig_sl_raw.update_layout(title=dict(text=f"<b>{t('Sản Lượng Thực Tế (Tấn)', 'Actual Production (Tons)')}</b>", font=dict(size=12)), yaxis_title=t("Tấn", "Tons"), height=280, margin=dict(t=40, b=20, l=15, r=15), yaxis_range=[0, max(50.0, max_sl * 1.28)])
                 st.plotly_chart(fig_sl_raw, use_container_width=True, key=f"{chart_key}_sl_raw" if chart_key else None)
 
             with cm2:
                 fig_moist_raw = go.Figure()
                 for _, r in df_detail.iterrows():
-                    ca_name = format_person_name(str(r['ca_truong']))
+                    ca_label = format_shift_display_label(r['ca_truong'])
                     c_col = ca_colors.get(r['ca_truong'], '#0284c7')
                     moist_val = r.get('do_am_tb', 0)
+                    txt_m = f"<b>{moist_val:.2f}%</b>" if moist_val > 0 else f"<span style='font-size:11px;'>{t('Chưa nhập', 'No data')}</span>"
                     fig_moist_raw.add_trace(go.Bar(
-                        x=[f"{t('Ca', 'Shift')} {ca_name}"], y=[moist_val],
-                        text=[f"<b>{moist_val:.2f}%</b>"],
+                        x=[ca_label], y=[moist_val],
+                        text=[txt_m],
                         textposition='outside', marker_color=c_col, showlegend=False
                     ))
                 fig_moist_raw.add_hline(y=9.0, line_dash="dash", line_color="#ef4444", annotation_text="Max 9.0%", annotation_position="top left")
@@ -2815,12 +2891,13 @@ elif task_num == 2:
             with cm3:
                 fig_cap_raw = go.Figure()
                 for _, r in df_detail.iterrows():
-                    ca_name = format_person_name(str(r['ca_truong']))
+                    ca_label = format_shift_display_label(r['ca_truong'])
                     c_col = ca_colors.get(r['ca_truong'], '#f59e0b')
                     cap_val = r.get('nang_suat_tb', 0)
+                    txt_c = f"<b>{cap_val:.2f} t/h</b>" if cap_val > 0 else f"<span style='font-size:11px;'>{t('Chưa nhập', 'No data')}</span>"
                     fig_cap_raw.add_trace(go.Bar(
-                        x=[f"{t('Ca', 'Shift')} {ca_name}"], y=[cap_val],
-                        text=[f"<b>{cap_val:.2f} t/h</b>"],
+                        x=[ca_label], y=[cap_val],
+                        text=[txt_c],
                         textposition='outside', marker_color=c_col, showlegend=False
                     ))
                 fig_cap_raw.add_hline(y=4.0, line_dash="dash", line_color="#16a34a", annotation_text=t("Chỉ tiêu ≥ 4.0 t/h", "Target ≥ 4.0 t/h"), annotation_position="top left")
@@ -2843,7 +2920,7 @@ elif task_num == 2:
                     st.markdown(f"""
                     <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:10px; padding:12px 16px; margin-bottom:12px; box-shadow:0 2px 5px rgba(0,0,0,0.03);">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                            <strong style="font-size:18px; color:#0f172a;">{t('Ca', 'Shift')} {format_person_name(r_ldr['ca_truong'])}</strong>
+                            <strong style="font-size:18px; color:#0f172a;">{format_shift_display_label(r_ldr['ca_truong'])}</strong>
                             <span style="background:#f1f5f9; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:600; color:#475569;">{r_ldr.get('so_ca', 0):.0f} {t('Ca Trực', 'Shifts')}</span>
                         </div>
                         <div style="font-size:13px; color:#334155; line-height:1.8;">
@@ -2950,6 +3027,24 @@ elif task_num == 2:
                             line=dict(color=colors_l.get(ca, '#64748b'), width=3 if ca == 'Ca A' else 2.5),
                             marker=dict(size=7, symbol=symbols_l.get(ca, 'circle'))
                         ))
+                    elif not df_wm_weekly.empty:
+                        alt_names = [ca]
+                        if ca == 'Ca A': alt_names += ['Sắc', 'Sac', 'Hải', 'Thành']
+                        elif ca == 'Ca B': alt_names += ['Tài', 'Tai']
+                        elif ca == 'Ca C': alt_names += ['Long']
+                        matched_col = next((c for c in alt_names if c in df_wm_weekly.columns), None)
+                        if matched_col:
+                            lbl = display_ca_map.get(ca, ca)
+                            fig_trend_w.add_trace(go.Scatter(
+                                x=df_wm_weekly['week_label'],
+                                y=df_wm_weekly[matched_col],
+                                mode='lines+markers+text',
+                                name=lbl,
+                                text=[f"{v:.1f}" if pd.notna(v) and v > 0 else "" for v in df_wm_weekly[matched_col]],
+                                textposition=text_pos_l.get(ca, 'top center'),
+                                line=dict(color=colors_l.get(ca, '#64748b'), width=3 if ca == 'Ca A' else 2.5),
+                                marker=dict(size=7, symbol=symbols_l.get(ca, 'circle'))
+                            ))
             else:
                 target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_weekly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
                 for name in target_cas:
@@ -3045,6 +3140,22 @@ elif task_num == 2:
                             textposition="outside",
                             marker_color=colors_l.get(ca, '#64748b')
                         ))
+                    elif not df_wm_monthly.empty:
+                        alt_names = [ca]
+                        if ca == 'Ca A': alt_names += ['Sắc', 'Sac', 'Hải', 'Thành']
+                        elif ca == 'Ca B': alt_names += ['Tài', 'Tai']
+                        elif ca == 'Ca C': alt_names += ['Long']
+                        matched_col = next((c for c in alt_names if c in df_wm_monthly.columns), None)
+                        if matched_col:
+                            lbl = display_ca_map.get(ca, ca)
+                            fig_trend_m.add_trace(go.Bar(
+                                x=df_wm_monthly['month_label'],
+                                y=df_wm_monthly[matched_col],
+                                name=lbl,
+                                text=[f"{v:.2f} {t('đ', 'pts')}" if pd.notna(v) and v > 0 else "" for v in df_wm_monthly[matched_col]],
+                                textposition="outside",
+                                marker_color=colors_l.get(ca, '#64748b')
+                            ))
             else:
                 target_cas = ['Ca A', 'Ca B', 'Ca C'] if any(c in df_wm_monthly.columns for c in ['Ca A', 'Ca B', 'Ca C']) else ['Sắc', 'Tài', 'Long']
                 for name in target_cas:

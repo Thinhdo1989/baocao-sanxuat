@@ -1102,13 +1102,18 @@ def get_all_leaders_dashboard_summary(
                     kpi_row = match_w.iloc[0]
             if kpi_row is None:
                 kpi_row = df_wm_weekly.iloc[-1]
-            if kpi_row is not None and name in kpi_row and pd.notna(kpi_row[name]):
-                kpi_score = float(kpi_row[name])
+            if kpi_row is not None:
+                if name in kpi_row and pd.notna(kpi_row[name]):
+                    kpi_score = float(kpi_row[name])
+                elif cfg.get('code') in kpi_row and pd.notna(kpi_row[cfg.get('code')]):
+                    kpi_score = float(kpi_row[cfg.get('code')])
 
         if kpi_score == 0 and df_wm_monthly is not None and not df_wm_monthly.empty:
             last_m_row = df_wm_monthly.iloc[-1]
             if name in last_m_row and pd.notna(last_m_row[name]):
                 kpi_score = float(last_m_row[name])
+            elif cfg.get('code') in last_m_row and pd.notna(last_m_row[cfg.get('code')]):
+                kpi_score = float(last_m_row[cfg.get('code')])
 
         kpi_eval = evaluate_kpi_score(kpi_score) if kpi_score > 0 else {'rank': 'Chưa xếp hạng', 'badge': 'badge-info', 'color': '#64748b', 'icon': '⚪', 'medal': '🎗️'}
 

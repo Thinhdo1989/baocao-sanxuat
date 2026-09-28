@@ -343,6 +343,39 @@ def format_person_name(name: str) -> str:
     return str(name)
 
 
+def format_shift_display_label(raw_name: str) -> str:
+    """
+    Chuẩn hóa nhãn hiển thị cho ca/ca trưởng không bị lặp từ (ví dụ: 'Ca Ca C' -> 'Ca C').
+    - 'Ca A', 'Ca B', 'Ca C' -> 'Ca A', 'Ca B', 'Ca C' (VI) hoặc 'Shift A', 'Shift B', 'Shift C' (EN)
+    - 'Sắc', 'Tài', 'Long'   -> 'Ca Sắc', 'Ca Tài', 'Ca Long' (VI) hoặc 'Shift Sac', 'Shift Tai', 'Shift Long' (EN)
+    """
+    raw_str = str(raw_name).strip() if raw_name is not None else ""
+    if not raw_str or raw_str.lower() in ('none', 'nan'):
+        return ""
+    
+    # Loại bỏ tiền tố trùng lặp 'Ca Ca' hoặc 'Shift Shift' nếu có
+    while raw_str.lower().startswith('ca ca '):
+        raw_str = raw_str[3:].strip()
+    while raw_str.lower().startswith('shift shift '):
+        raw_str = raw_str[6:].strip()
+    
+    norm_lower = raw_str.lower()
+    if norm_lower.startswith('ca '):
+        suffix = raw_str[3:].strip()
+        if is_en():
+            return f"Shift {format_person_name(suffix)}"
+        return f"Ca {suffix}"
+    elif norm_lower.startswith('shift '):
+        suffix = raw_str[6:].strip()
+        if is_en():
+            return f"Shift {format_person_name(suffix)}"
+        return f"Ca {suffix}"
+    else:
+        if is_en():
+            return f"Shift {format_person_name(raw_str)}"
+        return f"Ca {raw_str}"
+
+
 def translate_comparison_df(df: Any) -> Any:
     """Dịch bảng đối sánh toàn diện sang tiếng Anh khi is_en() == True"""
     if df is None or not hasattr(df, 'empty') or df.empty or not is_en():
@@ -408,43 +441,43 @@ def translate_comparison_df(df: Any) -> Any:
 
 
 def translate_wm_weekly(df: Any) -> Any:
-    """Dịch bảng điểm W-M KPI tuần sang tiếng Anh khi is_en() == True"""
-    if df is None or not hasattr(df, 'empty') or df.empty or not is_en():
+    """Chuẩn hóa và dịch bảng điểm W-M KPI tuần, chỉ hiển thị Ca A, Ca B, Ca C"""
+    if df is None or not hasattr(df, 'empty') or df.empty:
         return df
-    df_res = df.copy()
-    col_map = {
-        'week': 'Week',
-        'week_label': 'Week Label',
-        'Long': 'Long',
-        'Sắc': 'Sac',
-        'Tài': 'Tai',
-        'Ca A': 'Shift A',
-        'Ca B': 'Shift B',
-        'Ca C': 'Shift C'
-    }
-    df_res.rename(columns=col_map, inplace=True)
-    if 'Week Label' in df_res.columns:
-        df_res['Week Label'] = df_res['Week Label'].astype(str).str.replace('Tuần ', 'Week ', regex=False)
+    # Chỉ giữ các cột tuần và Ca A, Ca B, Ca C (loại bỏ các cột tên riêng: Long, Sắc, Tài, Thành, Lâm)
+    target_cols = [c for c in ['week', 'week_label', 'Ca A', 'Ca B', 'Ca C'] if c in df.columns]
+    df_res = df[target_cols].copy() if any(c in df.columns for c in ['Ca A', 'Ca B', 'Ca C']) else df.copy()
+    if is_en():
+        col_map = {
+            'week': 'Week',
+            'week_label': 'Week Label',
+            'Ca A': 'Shift A',
+            'Ca B': 'Shift B',
+            'Ca C': 'Shift C'
+        }
+        df_res.rename(columns=col_map, inplace=True)
+        if 'Week Label' in df_res.columns:
+            df_res['Week Label'] = df_res['Week Label'].astype(str).str.replace('Tuần ', 'Week ', regex=False)
     return df_res
 
 
 def translate_wm_monthly(df: Any) -> Any:
-    """Dịch bảng điểm W-M KPI tháng sang tiếng Anh khi is_en() == True"""
-    if df is None or not hasattr(df, 'empty') or df.empty or not is_en():
+    """Chuẩn hóa và dịch bảng điểm W-M KPI tháng, chỉ hiển thị Ca A, Ca B, Ca C"""
+    if df is None or not hasattr(df, 'empty') or df.empty:
         return df
-    df_res = df.copy()
-    col_map = {
-        'month_label': 'Month',
-        'Long': 'Long',
-        'Sắc': 'Sac',
-        'Tài': 'Tai',
-        'Ca A': 'Shift A',
-        'Ca B': 'Shift B',
-        'Ca C': 'Shift C'
-    }
-    df_res.rename(columns=col_map, inplace=True)
-    if 'Month' in df_res.columns:
-        df_res['Month'] = df_res['Month'].astype(str).str.replace('Tháng ', 'Month ', regex=False)
+    # Chỉ giữ cột tháng và Ca A, Ca B, Ca C (loại bỏ các cột tên riêng: Long, Sắc, Tài, Thành, Lâm)
+    target_cols = [c for c in ['month_label', 'Ca A', 'Ca B', 'Ca C'] if c in df.columns]
+    df_res = df[target_cols].copy() if any(c in df.columns for c in ['Ca A', 'Ca B', 'Ca C']) else df.copy()
+    if is_en():
+        col_map = {
+            'month_label': 'Month',
+            'Ca A': 'Shift A',
+            'Ca B': 'Shift B',
+            'Ca C': 'Shift C'
+        }
+        df_res.rename(columns=col_map, inplace=True)
+        if 'Month' in df_res.columns:
+            df_res['Month'] = df_res['Month'].astype(str).str.replace('Tháng ', 'Month ', regex=False)
     return df_res
 
 

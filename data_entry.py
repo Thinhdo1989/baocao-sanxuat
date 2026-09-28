@@ -19,56 +19,75 @@ from datetime import datetime, date, time
 import streamlit as st
 import pandas as pd
 from typing import Dict, Any, Optional
-from i18n import t, get_lang, is_en, apply_language_change
+from i18n import t, get_lang, is_en, apply_language_change, get_op_tasks
 
 # File lưu trữ mã PIN tùy chỉnh (nếu có)
 PIN_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "assets", "user_pins.json")
 
 # Danh sách người dùng mặc định và mã PIN khởi tạo theo đúng phân quyền yêu cầu
 DEFAULT_USERS = {
+    # 0. Ban Giám Đốc
+    "director": {
+        "id": "director",
+        "name": "Vũ Quang Sáng",
+        "shift_code": "GĐ",
+        "full_name": "Giám Đốc (GĐ - Vũ Quang Sáng)",
+        "role": "director",
+        "pin": "6868",
+        "icon": "🎖️"
+    },
+    "pgd": {
+        "id": "pgd",
+        "name": "Đỗ Công Thịnh",
+        "shift_code": "PGĐ",
+        "full_name": "Phó Giám Đốc (PGĐ - Đỗ Công Thịnh - Admin)",
+        "role": "admin",
+        "pin": "9999",
+        "icon": "👑"
+    },
     # 1. Khối Sản Xuất
+    "manager": {
+        "id": "manager",
+        "name": "Nguyễn Đăng Thành",
+        "shift_code": "QĐ",
+        "full_name": "Quản Đốc (QĐ - Nguyễn Đăng Thành)",
+        "role": "manager",
+        "pin": "7777",
+        "icon": "⭐"
+    },
     "sac": {
         "id": "sac",
-        "name": "Sắc",
+        "name": "Nguyễn Sắc",
         "shift_code": "Ca A",
-        "full_name": "Ca Trưởng Sắc (Ca A)",
+        "full_name": "Ca Trưởng Nguyễn Sắc (Ca A)",
         "role": "ca_a",
         "pin": "1111",
         "icon": "🟢"
     },
     "tai": {
         "id": "tai",
-        "name": "Tài",
+        "name": "Hoàng Phúc Tài",
         "shift_code": "Ca B",
-        "full_name": "Ca Trưởng Tài (Ca B)",
+        "full_name": "Ca Trưởng Hoàng Phúc Tài (Ca B)",
         "role": "ca_b",
         "pin": "2222",
         "icon": "🟠"
     },
     "long": {
         "id": "long",
-        "name": "Long",
+        "name": "Nguyễn Long",
         "shift_code": "Ca C",
-        "full_name": "Ca Trưởng Long (Ca C)",
+        "full_name": "Ca Trưởng Nguyễn Long (Ca C)",
         "role": "ca_c",
         "pin": "3333",
         "icon": "🔵"
     },
-    "manager": {
-        "id": "manager",
-        "name": "Thành",
-        "shift_code": "QĐ",
-        "full_name": "Quản Đốc Thành (QĐ)",
-        "role": "manager",
-        "pin": "9999",
-        "icon": "👑"
-    },
     # 2. Khối Kiểm Định Chất Lượng KCS
     "kcs": {
         "id": "kcs",
-        "name": "Dung",
+        "name": "Kim Dung",
         "shift_code": "QC",
-        "full_name": "KCS / QC (Dung)",
+        "full_name": "KCS / QC (Kim Dung)",
         "role": "qc",
         "pin": "8888",
         "icon": "🔬"
@@ -76,9 +95,9 @@ DEFAULT_USERS = {
     # 3. Khối Bảo Trì - Cơ Điện
     "baotri": {
         "id": "baotri",
-        "name": "Nhớ",
+        "name": "Phan Nhớ",
         "shift_code": "Bảo trì",
-        "full_name": "Tổ Trưởng Cơ Khí (Nhớ - Bảo Trì)",
+        "full_name": "Tổ Trưởng Cơ Khí (Phan Nhớ - Bảo Trì)",
         "role": "bao_tri",
         "pin": "4444",
         "icon": "🔧"
@@ -117,30 +136,30 @@ DEFAULT_USERS = {
 TAB_PERMISSIONS = {
     "san_xuat": {
         "title": "Sản Xuất",
-        "allowed_ids": ["sac", "tai", "long", "manager"],
-        "allowed_labels": "Ca A, Ca B, Ca C, QĐ (Quản Đốc)"
+        "allowed_ids": ["sac", "tai", "long", "manager", "director", "pgd"],
+        "allowed_labels": "GĐ, PGĐ, QĐ, Ca A, Ca B, Ca C"
     },
     "kcs": {
         "title": "KCS",
-        "allowed_ids": ["kcs", "manager"],
-        "allowed_labels": "QC (KCS)"
+        "allowed_ids": ["kcs", "manager", "director", "pgd"],
+        "allowed_labels": "GĐ, PGĐ, QĐ, QC (Kim Dung)"
     },
     "bao_tri": {
         "title": "Bảo Trì",
-        "allowed_ids": ["baotri", "manager"],
-        "allowed_labels": "Bảo Trì"
+        "allowed_ids": ["baotri", "manager", "director", "pgd"],
+        "allowed_labels": "GĐ, PGĐ, QĐ, Bảo Trì (Phan Nhớ)"
     },
     "chipper": {
         "title": "Chipper",
-        "allowed_ids": ["ql_tobam", "tobam1", "tobam2", "manager"],
-        "allowed_labels": "QL tổ băm, Tổ băm 1, Tổ băm 2"
+        "allowed_ids": ["ql_tobam", "tobam1", "tobam2", "manager", "director", "pgd"],
+        "allowed_labels": "GĐ, PGĐ, QĐ, QL tổ băm, Tổ băm 1, Tổ băm 2"
     }
 }
 
 
 def check_tab_permission(user_id: str, tab_key: str) -> bool:
-    """Kiểm tra tài khoản có quyền truy cập tab hay không (Quản Đốc có toàn quyền)"""
-    if user_id == "manager":
+    """Kiểm tra tài khoản có quyền truy cập tab hay không (Giám Đốc, PGĐ & Quản Đốc có toàn quyền)"""
+    if user_id in ["manager", "director", "pgd", "admin"]:
         return True
     perm = TAB_PERMISSIONS.get(tab_key, {})
     return user_id in perm.get("allowed_ids", [])
@@ -203,9 +222,15 @@ def get_current_user() -> Optional[Dict[str, Any]]:
 
 
 def logout_user():
-    """Đăng xuất khỏi hệ thống"""
+    """Đăng xuất người dùng hiện tại và khóa lại hệ thống"""
     if "authenticated_user" in st.session_state:
         del st.session_state["authenticated_user"]
+    if "viewer_authorized_email" in st.session_state:
+        del st.session_state["viewer_authorized_email"]
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
     st.rerun()
 
 
@@ -220,8 +245,8 @@ def render_login_box(key_prefix: str = "main_login"):
             <div style="font-size: 20px; font-weight: 800; color: #f8fafc;">XÁC THỰC QUYỀN NHẬP SỐ LIỆU</div>
             <div style="font-size: 13px; color: #94a3b8; margin-top: 4px; line-height: 1.5;">
                 Hệ thống hỗ trợ phân quyền theo vai trò:<br>
-                • <b>Sản xuất:</b> Ca A, Ca B, Ca C, QĐ | • <b>KCS:</b> QC<br>
-                • <b>Bảo trì:</b> Bảo trì | • <b>Chipper:</b> QL tổ băm, Tổ băm 1, Tổ băm 2
+                • <b>Ban GĐ:</b> Giám Đốc (GĐ), PGĐ (Admin) | • <b>Quản Đốc & Sản xuất:</b> QĐ, Ca A, Ca B, Ca C<br>
+                • <b>KCS:</b> QC (Kim Dung) | • <b>Bảo trì:</b> Phan Nhớ | • <b>Chipper:</b> QL tổ băm, Tổ băm 1, Tổ băm 2
             </div>
         </div>
     </div>
@@ -249,26 +274,7 @@ def render_login_box(key_prefix: str = "main_login"):
                 st.success(f"✅ Đăng nhập thành công! Xin chào {target_user['full_name']}.")
                 st.rerun()
             else:
-                st.error("❌ Mã PIN không chính xác! Vui lòng thử lại.")
-
-        with st.popover("ℹ️ Gợi ý PIN mặc định"):
-                st.markdown("""
-                **Mã PIN ban đầu:**
-                - **Sản xuất:**
-                  - Ca Trưởng Sắc (Ca A): `1111`
-                  - Ca Trưởng Tài (Ca B): `2222`
-                  - Ca Trưởng Long (Ca C): `3333`
-                  - Quản Đốc Thành (QĐ): `9999`
-                - **KCS:**
-                  - KCS / QC Dung: `8888`
-                - **Bảo trì:**
-                  - Tổ Trưởng Cơ Khí Nhớ (Bảo trì): `4444`
-                - **Chipper:**
-                  - QL Tổ Băm Cường: `5555`
-                  - Tổ Băm 1 Quảng: `5111`
-                  - Tổ Băm 2 Hà: `5222`
-                *(Có thể tự đổi PIN sau khi đăng nhập)*
-                """)
+                st.error("❌ Mã PIN không chính xác! Vui lòng liên hệ Quản lý / Quản trị viên để được cấp mã PIN.")
 
 
 def render_data_entry_module(dl):
@@ -374,11 +380,11 @@ def render_shift_production_form(dl, current_user: Dict[str, Any]):
         with c_i2:
             shift_choice = st.selectbox("⏰ Ca làm việc:", ["Ca 1 (06h - 14h)", "Ca 2 (14h - 22h)", "Ca 3 (22h - 06h)"])
         with c_i3:
-            # Nếu là Ca trưởng thì mặc định cố định tên, nếu là Quản đốc thì cho chọn
-            if current_user.get("role") == "manager":
-                shift_leader_input = st.selectbox("👤 Ca Trưởng / Phân ca:", ["Ca A (Sắc)", "Ca B (Tài)", "Ca C (Long)", "BT-VS (Bảo trì)", "OFF (Nghỉ ca)", "XH (Xuất Hàng)"])
+            # Nếu là Quản đốc / Giám đốc / Admin thì cho chọn ca trưởng, nếu là Ca trưởng thì mặc định cố định tên
+            if current_user.get("role") in ["manager", "director", "admin"]:
+                shift_leader_input = st.selectbox("👤 Ca Trưởng / Phân ca:", ["Ca A (Nguyễn Sắc)", "Ca B (Hoàng Phúc Tài)", "Ca C (Nguyễn Long)", "BT-VS (Bảo trì - Phan Nhớ)", "OFF (Nghỉ ca)", "XH (Xuất Hàng)"])
             else:
-                shift_leader_input = current_user.get("full_name", current_user.get("name", "Ca A (Sắc)"))
+                shift_leader_input = current_user.get("full_name", current_user.get("name", "Ca A (Nguyễn Sắc)"))
                 st.text_input("👤 Ca Trưởng phụ trách:", value=shift_leader_input, disabled=True)
 
         st.markdown("---")
@@ -562,9 +568,9 @@ def render_kcs_entry_form(dl, current_user: Dict[str, Any]):
         with c_k2:
             time_sample = st.selectbox("⏰ Giờ lấy mẫu:", ["02h", "04h", "06h", "08h", "10h", "12h", "14h", "16h", "18h", "20h", "22h", "24h"])
         with c_k3:
-            shift_leader_kcs = st.selectbox("👤 Ca Trưởng trực:", ["Ca A (Sắc)", "Ca B (Tài)", "Ca C (Long)"])
+            shift_leader_kcs = st.selectbox("👤 Ca Trưởng trực:", ["Ca A (Nguyễn Sắc)", "Ca B (Hoàng Phúc Tài)", "Ca C (Nguyễn Long)"])
         with c_k4:
-            tester_name = st.text_input("🧪 KTV kiểm tra (QC):", value=current_user.get("name", "Dung"))
+            tester_name = st.text_input("🧪 KTV kiểm tra (QC):", value=current_user.get("name", "Kim Dung"))
 
         c_mat1, c_mat2 = st.columns(2)
         with c_mat1:
@@ -675,7 +681,7 @@ def render_maintenance_entry_form(dl, current_user: Dict[str, Any]):
         with c_m2:
             maint_shift = st.selectbox("⏰ Ca làm việc:", ["Ca 1 (06h - 14h)", "Ca 2 (14h - 22h)", "Ca 3 (22h - 06h)", "Hành chính (HC)"], key="maint_shift_in")
         with c_m3:
-            default_performer = current_user.get("name", "Nhớ") if current_user.get("role") == "bao_tri" else "Nhớ, Tổ cơ khí"
+            default_performer = current_user.get("name", "Phan Nhớ") if current_user.get("role") == "bao_tri" else "Phan Nhớ, Tổ cơ khí"
             maint_performer = st.text_input("👷 Người thực hiện:", value=default_performer, key="maint_perf_in")
 
         st.markdown("---")
@@ -906,7 +912,7 @@ def render_change_pin_form(current_user: Dict[str, Any]):
             st.error("❌ Không thể lưu mã PIN. Vui lòng thử lại sau.")
 
 
-# ================= KHÓA CHẾ ĐỘ PUBLIC - CẤP QUYỀN RIÊNG CHO SANGMCC1@GMAIL.COM =================
+# ================= KHÓA CHẾ ĐỘ PUBLIC - CẤP QUYỀN CHO 3 CA, QC, QĐ & SANGMCC1@GMAIL.COM =================
 AUTHORIZED_VIEWER_EMAIL = "sangmcc1@gmail.com"
 DEFAULT_VIEWER_KEY = "sang2026"
 
@@ -914,10 +920,10 @@ DEFAULT_VIEWER_KEY = "sang2026"
 def check_viewer_authorization() -> bool:
     """
     Kiểm tra quyền xem hệ thống:
-    1. Kiểm tra URL query param: ?key=9999 hoặc ?key=sang2026 hoặc ?pin=9999 (hỗ trợ mở trực tiếp trên iPhone)
+    1. Kiểm tra URL query param: ?pin=1111 (Ca A), ?pin=2222 (Ca B), ?pin=3333 (Ca C), ?pin=8888 (QC), ?pin=9999 (QĐ/Admin), ?key=sang2026
     2. Kiểm tra tài khoản Google đăng nhập từ Streamlit Community Cloud (st.user hoặc st.experimental_user)
-    3. Kiểm tra phiên làm việc session_state đã được mở khóa bằng email sangmcc1@gmail.com hoặc admin
-    4. Hoặc Ca Trưởng / Quản đốc đã đăng nhập bằng mã PIN để làm việc
+    3. Kiểm tra phiên làm việc session_state đã được mở khóa bằng email sangmcc1@gmail.com hoặc mã PIN hợp lệ
+    4. Hoặc Ca Trưởng / QC / QĐ / Nhân viên đã đăng nhập bằng mã PIN để làm việc
     """
     # 1. Kiểm tra URL query parameter (tiện ích cho Bookmark / Ghim màn hình chính iPhone)
     try:
@@ -925,10 +931,18 @@ def check_viewer_authorization() -> bool:
         in_key = qp.get("key") or qp.get("pin") or qp.get("token") or qp.get("pass")
         if in_key:
             in_key_str = str(in_key).strip()
+            users = load_user_pins()
+
+            # Kiểm tra khớp PIN người dùng (Ca A: 1111, Ca B: 2222, Ca C: 3333, QC: 8888, QĐ: 9999...)
+            for uid, u in users.items():
+                if in_key_str == str(u.get("pin", "")).strip():
+                    st.session_state["authenticated_user"] = u
+                    st.session_state["viewer_authorized_email"] = u.get("id", uid)
+                    return True
+
             if in_key_str in ["9999", "admin"]:
                 st.session_state["viewer_authorized_email"] = "admin"
-                users = load_user_pins()
-                st.session_state["authenticated_user"] = users.get("manager", {"pin": "9999", "full_name": "Quản Trị Viên (Admin)"})
+                st.session_state["authenticated_user"] = users.get("manager", {"pin": "9999", "full_name": "Quản Trị Viên (Admin)", "icon": "👑"})
                 return True
             elif in_key_str in [DEFAULT_VIEWER_KEY, "sang2026"]:
                 st.session_state["viewer_authorized_email"] = AUTHORIZED_VIEWER_EMAIL
@@ -950,10 +964,10 @@ def check_viewer_authorization() -> bool:
         pass
 
     # 3. Kiểm tra session state của người xem hoặc Admin được cấp quyền
-    if st.session_state.get("viewer_authorized_email") in [AUTHORIZED_VIEWER_EMAIL, "admin"]:
+    if st.session_state.get("viewer_authorized_email"):
         return True
 
-    # 4. Nếu là Ca Trưởng đã đăng nhập mã PIN
+    # 4. Nếu là Ca Trưởng / QC / QĐ đã đăng nhập mã PIN
     if st.session_state.get("authenticated_user") is not None:
         return True
 
@@ -961,17 +975,22 @@ def check_viewer_authorization() -> bool:
 
 
 def logout_viewer():
-    """Đăng xuất quyền xem của email sangmcc1@gmail.com hoặc admin"""
+    """Đăng xuất quyền xem và khóa lại hệ thống"""
     if "viewer_authorized_email" in st.session_state:
         del st.session_state["viewer_authorized_email"]
     if "authenticated_user" in st.session_state:
         del st.session_state["authenticated_user"]
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
     st.rerun()
 
 
 def render_viewer_lock_screen(logo_b64: str = ""):
     """
     Hiển thị màn hình khóa bảo mật khi chế độ public bị tắt.
+    Cấp quyền xem cho: Quản Trị Viên (Admin), QĐ, QC, Ca A, Ca B, Ca C & Email sangmcc1@gmail.com
     Hỗ trợ chuyển đổi song ngữ trực tiếp ngay tại màn hình khóa.
     """
     curr_l = get_lang()
@@ -998,132 +1017,134 @@ def render_viewer_lock_screen(logo_b64: str = ""):
                     apply_language_change('en')
                     st.rerun()
 
-    lock_title = t("CHẾ ĐỘ PUBLIC ĐÃ ĐƯỢC KHÓA BẢO MẬT", "PUBLIC ACCESS HAS BEEN SECURED")
+    lock_title = t("HỆ THỐNG BÁO CÁO NỘI BỘ ĐÃ KHÓA BẢO MẬT", "INTERNAL REPORTING SYSTEM IS SECURED")
     lock_sub = t(
         "Hệ thống Báo cáo Sản xuất Nhà máy BVN Quảng Bình hiện đang ở chế độ bảo mật nội bộ.",
         "BVN Quang Binh Wood Pellet Production Report is in private internal mode."
     )
-    auth_label = t("Chỉ cấp quyền xem cho:", "Authorized access for:")
+    auth_label = t("Cấp quyền xem báo cáo cho:", "Authorized viewer access for:")
 
     st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 2px solid #ef4444; border-radius: 16px; padding: 28px 24px; max-width: 650px; margin: 15px auto 20px auto; text-align: center; box-shadow: 0 12px 36px rgba(0,0,0,0.5);">
-        <div style="font-size: 48px; margin-bottom: 8px;">🔒</div>
-        <div style="font-size: 22px; font-weight: 800; color: #f87171; letter-spacing: 1px; text-transform: uppercase;">
+    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 2px solid #38bdf8; border-radius: 16px; padding: 24px 20px; max-width: 720px; margin: 15px auto 20px auto; text-align: center; box-shadow: 0 12px 36px rgba(0,0,0,0.5);">
+        <div style="font-size: 46px; margin-bottom: 8px;">🔒</div>
+        <div style="font-size: 21px; font-weight: 800; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase;">
             {lock_title}
         </div>
-        <div style="font-size: 14px; color: #94a3b8; margin-top: 8px; line-height: 1.6;">
+        <div style="font-size: 13.5px; color: #94a3b8; margin-top: 8px; line-height: 1.7;">
             {lock_sub}<br>
-            <b>{auth_label}</b> {t("Quản Trị Viên (Admin)", "Administrator (Admin)")} & Email <span style="color: #38bdf8; font-weight: 700;">sangmcc1@gmail.com</span>
+            <b>{auth_label}</b><br>
+            <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 8px;">
+                <span style="background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">🎖️ Giám Đốc (GĐ)</span>
+                <span style="background: rgba(234, 179, 8, 0.18); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">👑 PGĐ (Admin)</span>
+                <span style="background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">⭐ Quản Đốc (QĐ)</span>
+                <span style="background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">🟢 Ca A</span>
+                <span style="background: rgba(249, 115, 22, 0.18); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">🟠 Ca B</span>
+                <span style="background: rgba(59, 130, 246, 0.18); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">🔵 Ca C</span>
+                <span style="background: rgba(168, 85, 247, 0.18); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">🪵 Chipper (Tổ Băm)</span>
+                <span style="background: rgba(20, 184, 166, 0.18); color: #2dd4bf; border: 1px solid rgba(20, 184, 166, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">🔬 QC (Kim Dung)</span>
+                <span style="background: rgba(14, 165, 233, 0.18); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.4); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;">🔧 Bảo Trì (Phan Nhớ)</span>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     c_box1, c_box2, c_box3 = st.columns([1, 2, 1])
     with c_box2:
-        tab_admin, tab_v, tab_c = st.tabs([
-            t("👑 Quản Trị Viên (Admin)", "👑 Administrator (Admin)"),
-            t("👤 Quyền Xem: sangmcc1@gmail.com", "👤 Viewer: sangmcc1@gmail.com"), 
-            t("🏭 Đăng Nhập Nhập Số Liệu", "🏭 Data Entry Login")
-        ])
+        users = load_user_pins()
 
-        # 1. TAB ADMIN
-        with tab_admin:
-            st.markdown(f"##### {t('👑 Đăng Nhập Quản Trị Viên (Admin)', '👑 Administrator Login (Admin)')}")
-            st.caption(t(
-                "Quản trị viên / Chủ hệ thống có toàn quyền xem toàn bộ báo cáo và quản trị số liệu.",
-                "Administrator has full access to view all production reports and manage metrics."
-            ))
-            with st.form("form_unlock_admin", clear_on_submit=False):
-                in_admin_pin = st.text_input(
-                    t("🔑 Nhập Mã PIN Quản Trị (4 số):", "🔑 Enter Admin PIN (4 digits):"), 
-                    type="password", 
-                    placeholder=t("Nhập PIN admin...", "Enter admin PIN..."), 
-                    key="lock_in_admin_pin", 
-                    max_chars=6
-                )
-                
-                c_ab1, c_ab2 = st.columns([3, 2])
-                with c_ab1:
-                    submit_admin = st.form_submit_button(
-                        t("🔓 MỞ TOÀN HỆ THỐNG (Enter ↵)", "🔓 UNLOCK SYSTEM (Enter ↵)"), 
-                        type="primary", 
-                        use_container_width=True
-                    )
-                with c_ab2:
-                    st.caption(t("💡 Nhập xong nhấn Enter ↵ để vào ngay", "💡 Press Enter ↵ after typing to enter immediately"))
-
-            if submit_admin:
-                users = load_user_pins()
-                admin_u = users.get("manager", {"pin": "9999"})
-                if in_admin_pin.strip() in [str(admin_u.get("pin", "9999")), "9999", DEFAULT_VIEWER_KEY]:
-                    st.session_state["viewer_authorized_email"] = "admin"
-                    st.session_state["authenticated_user"] = admin_u
-                    st.success(t("✅ Xác thực thành công Quản Trị Viên! Đang mở toàn bộ hệ thống...", "✅ Administrator authenticated! Opening system..."))
-                    st.rerun()
-                else:
-                    st.error(t("❌ Mã PIN Quản trị viên không chính xác!", "❌ Incorrect Admin PIN!"))
+        st.markdown(f"##### {t('🔑 Mở Khóa Xem Hệ Thống Báo Cáo', '🔑 Unlock Reporting System')}")
+        st.caption(t(
+            "Nhập mã PIN bảo mật được cấp để mở quyền xem toàn bộ hệ thống báo cáo sản xuất.",
+            "Enter your confidential PIN to view all production reports."
+        ))
         
-        # 2. TAB SANGMCC1
-        with tab_v:
-            st.markdown(f"##### {t('🔑 Xác Nhận Quyền Xem: sangmcc1@gmail.com', '🔑 Verify Viewer Access: sangmcc1@gmail.com')}")
-            with st.form("form_unlock_viewer", clear_on_submit=False):
-                in_email = st.text_input(
-                    t("📧 Email được cấp quyền:", "📧 Authorized Email:"), 
-                    value=AUTHORIZED_VIEWER_EMAIL, 
-                    disabled=True, 
-                    key="lock_in_email"
-                )
-                in_key = st.text_input(
-                    t("🔒 Nhập Mã Bảo Mật Truy Cập:", "🔒 Enter Access Key:"), 
-                    type="password", 
-                    placeholder=t("Nhập mã truy cập...", "Enter access key..."), 
-                    key="lock_in_key"
-                )
-                
-                c_btn1, c_btn2 = st.columns([3, 2])
-                with c_btn1:
-                    submit_viewer = st.form_submit_button(
-                        t("🔓 MỞ KHÓA TRUY CẬP (Enter ↵)", "🔓 UNLOCK ACCESS (Enter ↵)"), 
-                        type="primary", 
-                        use_container_width=True
-                    )
-                with c_btn2:
-                    st.caption(t("💡 Nhập xong nhấn Enter ↵ để vào ngay", "💡 Press Enter ↵ after typing to enter immediately"))
+        with st.form("form_unlock_all_pin", clear_on_submit=False):
+            u_opts = {
+                t("⚡ Tự Động Nhận Diện Theo Mã PIN (Nhanh Nhất)", "⚡ Auto-Detect by PIN (Fastest)"): "auto",
+                f"🎖️ {t('Giám Đốc (GĐ - Vũ Quang Sáng)', 'Plant Director (GD - Vu Quang Sang)')}": "director",
+                f"👑 {t('Phó Giám Đốc (PGĐ - Đỗ Công Thịnh - Admin)', 'Deputy Director (PGD - Do Cong Thinh - Admin)')}": "pgd",
+                f"⭐ {t('Quản Đốc (QĐ - Nguyễn Đăng Thành)', 'Factory Manager (QD - Nguyen Dang Thanh)')}": "manager",
+                f"🟢 {t('Ca Trưởng Nguyễn Sắc (Ca A)', 'Shift Leader Nguyen Sac (Shift A)')}": "sac",
+                f"🟠 {t('Ca Trưởng Hoàng Phúc Tài (Ca B)', 'Shift Leader Hoang Phuc Tai (Shift B)')}": "tai",
+                f"🔵 {t('Ca Trưởng Nguyễn Long (Ca C)', 'Shift Leader Nguyen Long (Shift C)')}": "long",
+                f"🪵 {t('QL Tổ Băm (Phạm Văn Cường - Chipper)', 'Chipper Manager (Pham Van Cuong)')}": "ql_tobam",
+                f"🪓 {t('Tổ Băm 1 (Trần Văn Quảng - Chipper)', 'Chipper Team 1 (Tran Van Quang)')}": "tobam1",
+                f"🪓 {t('Tổ Băm 2 (Trần Mạnh Hà - Chipper)', 'Chipper Team 2 (Tran Manh Ha)')}": "tobam2",
+                f"🔬 {t('KCS / QC (Kim Dung)', 'Quality Control QC (Kim Dung)')}": "kcs",
+                f"🔧 {t('Tổ Trưởng Cơ Khí (Phan Nhớ - Bảo Trì)', 'Mechanical Lead Phan Nho (Maintenance)')}": "baotri",
+            }
+            
+            sel_identity_label = st.selectbox(
+                t("Chọn danh tính (hoặc để Tự Động):", "Select identity (or keep Auto-Detect):"),
+                list(u_opts.keys()),
+                index=0,
+                key="lock_sel_identity"
+            )
+            sel_uid = u_opts[sel_identity_label]
 
-            if submit_viewer:
-                if in_key.strip() in [DEFAULT_VIEWER_KEY, "9999"]:
-                    st.session_state["viewer_authorized_email"] = AUTHORIZED_VIEWER_EMAIL
-                    st.success(t(f"✅ Đã xác thực thành công email {AUTHORIZED_VIEWER_EMAIL}!", f"✅ Successfully verified email {AUTHORIZED_VIEWER_EMAIL}!"))
-                    st.rerun()
+            in_pin = st.text_input(
+                t("🔑 Nhập Mã PIN (4 số):", "🔑 Enter PIN (4 digits):"), 
+                type="password", 
+                placeholder=t("Nhập mã PIN bí mật của bạn...", "Enter your secret PIN..."), 
+                key="lock_in_all_pin", 
+                max_chars=8
+            )
+            
+            c_ab1, c_ab2 = st.columns([1, 1])
+            with c_ab1:
+                submit_view = st.form_submit_button(
+                    t("🔓 MỞ XEM BÁO CÁO (Enter ↵)", "🔓 VIEW REPORTS (Enter ↵)"), 
+                    type="primary", 
+                    use_container_width=True
+                )
+            with c_ab2:
+                submit_entry = st.form_submit_button(
+                    t("🏭 VÀO NHẬP SỐ LIỆU", "🏭 DATA ENTRY"), 
+                    type="secondary", 
+                    use_container_width=True
+                )
+
+        if submit_view or submit_entry:
+            pin_clean = str(in_pin).strip()
+            matched_user = None
+
+            if not pin_clean:
+                st.error(t("⚠️ Vui lòng nhập mã PIN!", "⚠️ Please enter a PIN!"))
+            elif sel_uid == "auto":
+                # Tự động nhận diện người dùng qua mã PIN
+                if pin_clean in ["9999", "admin"]:
+                    matched_user = users.get("pgd", {"pin": "9999", "full_name": "Phó Giám Đốc (PGĐ - Đỗ Công Thịnh - Admin)", "icon": "👑"})
+                elif pin_clean in ["7777"]:
+                    matched_user = users.get("manager", {"pin": "7777", "full_name": "Quản Đốc (QĐ - Nguyễn Đăng Thành)", "icon": "⭐"})
+                elif pin_clean in ["6868", DEFAULT_VIEWER_KEY, "sang2026"]:
+                    matched_user = users.get("director", {"pin": "6868", "full_name": "Giám Đốc (GĐ - Vũ Quang Sáng)", "icon": "🎖️"})
                 else:
-                    st.error(t("❌ Mã bảo mật không chính xác!", "❌ Incorrect access key!"))
+                    for uid, u in users.items():
+                        if pin_clean == str(u.get("pin", "")).strip():
+                            matched_user = u
+                            break
+            else:
+                target_u = users.get(sel_uid)
+                if target_u and (
+                    pin_clean == str(target_u.get("pin", "")).strip() 
+                    or (sel_uid == "pgd" and pin_clean in ["9999", "admin"])
+                    or (sel_uid == "manager" and pin_clean in ["7777", "9999", "admin"])
+                    or (sel_uid == "director" and pin_clean in ["6868", "9999", DEFAULT_VIEWER_KEY, "sang2026"])
+                ):
+                    matched_user = target_u
 
-        # 3. TAB ĐĂNG NHẬP NHẬP SỐ LIỆU THEO PHÂN QUYỀN
-        with tab_c:
-            st.markdown(f"##### {t('👷 Đăng Nhập Nhập Số Liệu (Phân Quyền)', '👷 Authorized Data Entry Login')}")
-            users = load_user_pins()
-            u_map = {u["full_name"]: uid for uid, u in users.items() if uid != "manager"}
-            with st.form("form_unlock_lead", clear_on_submit=False):
-                sel_u_name = st.selectbox(t("Chọn danh tính:", "Select identity:"), list(u_map.keys()), key="lock_sel_leader")
-                sel_u_id = u_map[sel_u_name]
-                in_lead_pin = st.text_input(t("Mã PIN (4 số):", "PIN (4 digits):"), type="password", key="lock_in_lead_pin", max_chars=6)
-                
-                c_ld1, c_ld2 = st.columns([3, 2])
-                with c_ld1:
-                    submit_lead = st.form_submit_button(
-                        t("🔓 ĐĂNG NHẬP (Enter ↵)", "🔓 LOGIN (Enter ↵)"), 
-                        type="primary", 
-                        use_container_width=True
-                    )
-                with c_ld2:
-                    st.caption(t("💡 Nhập xong nhấn Enter ↵ để vào ngay", "💡 Press Enter ↵ after typing to enter immediately"))
-
-            if submit_lead:
-                target_u = users[sel_u_id]
-                if in_lead_pin == target_u["pin"]:
-                    st.session_state["authenticated_user"] = target_u
+            if matched_user:
+                st.session_state["authenticated_user"] = matched_user
+                st.session_state["viewer_authorized_email"] = matched_user.get("id", "authorized")
+                if submit_entry:
                     st.session_state["active_task"] = t("📝 14. Nhập Số Liệu", "📝 14. Data Entry")
-                    st.success(t(f"✅ Xin chào {target_u['full_name']}! Chuyển tới màn hình nhập số liệu.", f"✅ Welcome {target_u['full_name']}! Redirecting to data entry."))
-                    st.rerun()
                 else:
-                    st.error(t("❌ Mã PIN không chính xác!", "❌ Incorrect PIN!"))
+                    st.session_state["active_task"] = get_op_tasks(get_lang())[0]
+                u_name = matched_user.get("full_name", matched_user.get("name", "Người dùng"))
+                st.success(t(f"✅ Xác thực thành công: {u_name}! Đang mở hệ thống...", f"✅ Successfully verified: {u_name}! Opening system..."))
+                st.rerun()
+            elif pin_clean:
+                st.error(t(
+                    "❌ Mã PIN không chính xác! Vui lòng kiểm tra lại hoặc liên hệ Quản lý / Quản trị viên để được cấp mã PIN.",
+                    "❌ Incorrect PIN! Please check again or contact Administrator for your PIN."
+                ))

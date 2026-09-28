@@ -1081,19 +1081,36 @@ class DataLoader:
                Col 18: Điểm SL (/50), Col 19: Độ ẩm TB, Col 20: Điểm ẩm (/30), Col 21: Điện năng TB,
                Col 22: Năng suất TB, Col 23: Điểm năng suất (/20), Col 24: Điểm KPI (/100)
         """
-        target_sheet = leader_name
-        alias_map = {
-            'Sắc': 'Ca A', 'Hải': 'Ca A', 'Ca A': 'Ca A',
-            'Tài': 'Ca B', 'Lâm': 'Ca B', 'Ca B': 'Ca B',
-            'Long': 'Ca C', 'Ca C': 'Ca C'
+        target_sheets = [leader_name]
+        alias_candidates = {
+            'Ca A': ['Ca A', 'Sắc', 'Hải', 'Thành'],
+            'Ca B': ['Ca B', 'Tài', 'Lâm'],
+            'Ca C': ['Ca C', 'Long'],
+            'Sắc': ['Ca A', 'Sắc'],
+            'Tài': ['Ca B', 'Tài'],
+            'Long': ['Ca C', 'Long']
         }
-        rows = self.get_kpi_sheet_values(target_sheet)
-        if not rows and target_sheet in alias_map:
-            target_sheet = alias_map[target_sheet]
-            rows = self.get_kpi_sheet_values(target_sheet)
+        if leader_name in alias_candidates:
+            for s in alias_candidates[leader_name]:
+                if s not in target_sheets:
+                    target_sheets.append(s)
+
+        rows = []
+        actual_sheet = leader_name
+        for s in target_sheets:
+            rows = self.get_kpi_sheet_values(s)
+            if rows and len(rows) > 1:
+                actual_sheet = s
+                break
 
         if not rows or len(rows) < 2:
             return pd.DataFrame(), pd.DataFrame()
+
+        std_name = 'Ca A' if leader_name in ['Ca A', 'Sắc', 'Hải', 'Thành'] else (
+            'Ca B' if leader_name in ['Ca B', 'Tài', 'Lâm'] else (
+                'Ca C' if leader_name in ['Ca C', 'Long'] else leader_name
+            )
+        )
 
         weekly_records = []
         monthly_records = []
@@ -1107,7 +1124,7 @@ class DataLoader:
                     weekly_records.append({
                         'week': int(str(r[0]).strip()),
                         'week_label': f"Tuần {str(r[0]).strip()}",
-                        'ca_truong': target_sheet,
+                        'ca_truong': std_name,
                         'so_ca': clean_number(r[2]),
                         'chi_tieu_sl': clean_number(r[3]),
                         'sl_thuc_te': sl_actual,
@@ -1128,7 +1145,7 @@ class DataLoader:
                 if kpi_m > 0 or sl_m > 0:
                     monthly_records.append({
                         'month_label': str(r[13]).strip(),
-                        'ca_truong': target_sheet,
+                        'ca_truong': std_name,
                         'so_ca': clean_number(r[15]),
                         'chi_tieu_sl': clean_number(r[16]),
                         'sl_thuc_te': sl_m,
