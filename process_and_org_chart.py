@@ -594,7 +594,7 @@ def render_organization_chart(dl: Optional[Any] = None):
                         <span>{t("⚙️ Xưởng Ép Viên (3 Ca)", "⚙️ Pelletizing Workshop (3 Shifts)")}</span>
                         <span class="org-badge-warning">{t("29/33 NS", "29/33 Staff")}</span>
                     </div>
-                    <div class="org-person-item"><span>{t("Ca 1 (Trưởng ca)", "Shift 1 (Shift Leader)")}</span> <b>{format_person_name("Nguyễn Sắc")} (9/11)</b></div>
+                    <div class="org-person-item"><span>{t("Ca 1 (Trưởng ca)", "Shift 1 (Shift Leader)")}</span> <b>{format_person_name("Lê Chiến Sắc")} (9/11)</b></div>
                     <div class="org-person-item"><span>{t("Ca 2 (Trưởng ca)", "Shift 2 (Shift Leader)")}</span> <b>{format_person_name("Hoàng Phúc Tài")} (10/11)</b></div>
                     <div class="org-person-item"><span>{t("Ca 3 (Trưởng ca)", "Shift 3 (Shift Leader)")}</span> <b>{format_person_name("Nguyễn Long")} (10/11)</b></div>
                     <div style="font-size:10.5px; color:#64748b; padding-top:2px;">{t("VHTT, Máy ép PM30-6, Cơ khí ca, Xe xúc", "Central Control, ANDRITZ PM30-6, Shift Mechanics, Wheel Loaders")}</div>

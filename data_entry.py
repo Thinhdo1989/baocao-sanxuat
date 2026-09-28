@@ -57,9 +57,9 @@ DEFAULT_USERS = {
     },
     "sac": {
         "id": "sac",
-        "name": "Nguyễn Sắc",
+        "name": "Lê Chiến Sắc",
         "shift_code": "Ca A",
-        "full_name": "Ca Trưởng Nguyễn Sắc (Ca A)",
+        "full_name": "Ca Trưởng Lê Chiến Sắc (Ca A)",
         "role": "ca_a",
         "pin": "1111",
         "icon": "🟢"
@@ -382,9 +382,9 @@ def render_shift_production_form(dl, current_user: Dict[str, Any]):
         with c_i3:
             # Nếu là Quản đốc / Giám đốc / Admin thì cho chọn ca trưởng, nếu là Ca trưởng thì mặc định cố định tên
             if current_user.get("role") in ["manager", "director", "admin"]:
-                shift_leader_input = st.selectbox("👤 Ca Trưởng / Phân ca:", ["Ca A (Nguyễn Sắc)", "Ca B (Hoàng Phúc Tài)", "Ca C (Nguyễn Long)", "BT-VS (Bảo trì - Phan Nhớ)", "OFF (Nghỉ ca)", "XH (Xuất Hàng)"])
+                shift_leader_input = st.selectbox("👤 Ca Trưởng / Phân ca:", ["Ca A (Lê Chiến Sắc)", "Ca B (Hoàng Phúc Tài)", "Ca C (Nguyễn Long)", "BT-VS (Bảo trì - Phan Nhớ)", "OFF (Nghỉ ca)", "XH (Xuất Hàng)"])
             else:
-                shift_leader_input = current_user.get("full_name", current_user.get("name", "Ca A (Nguyễn Sắc)"))
+                shift_leader_input = current_user.get("full_name", current_user.get("name", "Ca A (Lê Chiến Sắc)"))
                 st.text_input("👤 Ca Trưởng phụ trách:", value=shift_leader_input, disabled=True)
 
         st.markdown("---")
@@ -568,7 +568,7 @@ def render_kcs_entry_form(dl, current_user: Dict[str, Any]):
         with c_k2:
             time_sample = st.selectbox("⏰ Giờ lấy mẫu:", ["02h", "04h", "06h", "08h", "10h", "12h", "14h", "16h", "18h", "20h", "22h", "24h"])
         with c_k3:
-            shift_leader_kcs = st.selectbox("👤 Ca Trưởng trực:", ["Ca A (Nguyễn Sắc)", "Ca B (Hoàng Phúc Tài)", "Ca C (Nguyễn Long)"])
+            shift_leader_kcs = st.selectbox("👤 Ca Trưởng trực:", ["Ca A (Lê Chiến Sắc)", "Ca B (Hoàng Phúc Tài)", "Ca C (Nguyễn Long)"])
         with c_k4:
             tester_name = st.text_input("🧪 KTV kiểm tra (QC):", value=current_user.get("name", "Kim Dung"))
 
@@ -1064,7 +1064,7 @@ def render_viewer_lock_screen(logo_b64: str = ""):
                 f"🎖️ {t('Giám Đốc (GĐ - Vũ Quang Sáng)', 'Plant Director (GD - Vu Quang Sang)')}": "director",
                 f"👑 {t('Phó Giám Đốc (PGĐ - Đỗ Công Thịnh - Admin)', 'Deputy Director (PGD - Do Cong Thinh - Admin)')}": "pgd",
                 f"⭐ {t('Quản Đốc (QĐ - Nguyễn Đăng Thành)', 'Factory Manager (QD - Nguyen Dang Thanh)')}": "manager",
-                f"🟢 {t('Ca Trưởng Nguyễn Sắc (Ca A)', 'Shift Leader Nguyen Sac (Shift A)')}": "sac",
+                f"🟢 {t('Ca Trưởng Lê Chiến Sắc (Ca A)', 'Shift Leader Le Chien Sac (Shift A)')}": "sac",
                 f"🟠 {t('Ca Trưởng Hoàng Phúc Tài (Ca B)', 'Shift Leader Hoang Phuc Tai (Shift B)')}": "tai",
                 f"🔵 {t('Ca Trưởng Nguyễn Long (Ca C)', 'Shift Leader Nguyen Long (Shift C)')}": "long",
                 f"🪵 {t('QL Tổ Băm (Phạm Văn Cường - Chipper)', 'Chipper Manager (Pham Van Cuong)')}": "ql_tobam",
