@@ -1337,8 +1337,8 @@ class DataLoader:
                                 'Ca B': val_b,
                                 'Ca C': val_c,
                                 'Long': val_c,
-                                'Sắc': val_b,
-                                'Tài': val_c,
+                                'Sắc': val_a,
+                                'Tài': val_b,
                             }
                             if any(v is not None for v in [val_a, val_b, val_c]):
                                 records.append(item)
@@ -1379,15 +1379,15 @@ class DataLoader:
                     val = float(row.get(metric_col, 0.0))
                     if val > 0:
                         vals.append(val)
-                        if 'ca a' in ca.lower() or 'thành' in ca.lower():
+                        if 'ca a' in ca.lower() or 'thành' in ca.lower() or 'sắc' in ca.lower() or 'sac' in ca.lower():
                             item['Ca A'] = val
-                        elif 'ca b' in ca.lower() or 'lâm' in ca.lower() or 'sắc' in ca.lower():
-                            item['Ca B'] = val
                             item['Sắc'] = val
-                        elif 'ca c' in ca.lower() or 'long' in ca.lower() or 'tài' in ca.lower():
+                        elif 'ca b' in ca.lower() or 'lâm' in ca.lower() or 'tài' in ca.lower() or 'tai' in ca.lower():
+                            item['Ca B'] = val
+                            item['Tài'] = val
+                        elif 'ca c' in ca.lower() or 'long' in ca.lower():
                             item['Ca C'] = val
                             item['Long'] = val
-                            item['Tài'] = val
                 if vals:
                     item['Trung_binh'] = round(sum(vals) / len(vals), 2)
                 if any(item[k] is not None for k in ['Ca A', 'Ca B', 'Ca C', 'Long', 'Sắc', 'Tài']):
@@ -1427,21 +1427,21 @@ class DataLoader:
                     act = float(row.get('sl_thuc_te', 0.0))
                     tgt = float(row.get('chi_tieu_sl', 0.0))
                     if act > 0 or tgt > 0:
-                        if 'ca a' in ca or 'thành' in ca:
+                        if 'ca a' in ca or 'thành' in ca or 'sắc' in ca or 'sac' in ca:
                             item['Ca A_actual'] = act if act > 0 else None
                             item['Ca A_target'] = tgt if tgt > 0 else None
-                        elif 'ca b' in ca or 'lâm' in ca or 'sắc' in ca:
-                            item['Ca B_actual'] = act if act > 0 else None
-                            item['Ca B_target'] = tgt if tgt > 0 else None
                             item['Sac_actual'] = act if act > 0 else None
                             item['Sac_target'] = tgt if tgt > 0 else None
-                        elif 'ca c' in ca or 'long' in ca or 'tài' in ca:
+                        elif 'ca b' in ca or 'lâm' in ca or 'tài' in ca or 'tai' in ca:
+                            item['Ca B_actual'] = act if act > 0 else None
+                            item['Ca B_target'] = tgt if tgt > 0 else None
+                            item['Tai_actual'] = act if act > 0 else None
+                            item['Tai_target'] = tgt if tgt > 0 else None
+                        elif 'ca c' in ca or 'long' in ca:
                             item['Ca C_actual'] = act if act > 0 else None
                             item['Ca C_target'] = tgt if tgt > 0 else None
                             item['Long_actual'] = act if act > 0 else None
                             item['Long_target'] = tgt if tgt > 0 else None
-                            item['Tai_actual'] = act if act > 0 else None
-                            item['Tai_target'] = tgt if tgt > 0 else None
 
                 if any(item[k] is not None for k in ['Ca A_actual', 'Ca B_actual', 'Ca C_actual', 'Long_actual', 'Sac_actual', 'Tai_actual']):
                     records.append(item)
@@ -1460,10 +1460,24 @@ class DataLoader:
         Các cột gồm: Ngày, Tuần, Tháng, Ca Trưởng, Thành phẩm (tấn), Chỉ tiêu (tấn), Điện năng TB, Năng suất, Độ ẩm viên %.
         Tự động tính toán độ ẩm trung bình từ df_kcs theo công thức AVERAGEIFS nếu ô độ ẩm rỗng.
         """
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_daily_shifts.parquet"),
+            os.path.join("assets", "cache_kpi_daily_shifts.parquet"),
+            os.path.join("deploy_files", "assets", "cache_kpi_daily_shifts.parquet"),
+        ]
+
         rows = self.get_kpi_sheet_values('Data KPI')
         if not rows or len(rows) < 2:
             rows = self.get_kpi_sheet_values('Data')
         if not rows or len(rows) < 2:
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        df_cached = pd.read_parquet(cp)
+                        if not df_cached.empty and 'sl_thuc_te' in df_cached.columns:
+                            return df_cached
+                    except Exception:
+                        pass
             return pd.DataFrame()
 
         # Nạp kcs nếu cần để đối soát tính độ ẩm
@@ -1515,6 +1529,12 @@ class DataLoader:
         df = pd.DataFrame(records)
         if not df.empty:
             df = df.sort_values('date').reset_index(drop=True)
+            for cp in cache_paths:
+                try:
+                    os.makedirs(os.path.dirname(cp), exist_ok=True)
+                    df.to_parquet(cp, index=False)
+                except Exception:
+                    pass
         return df
 
     def load_incident_data(self) -> pd.DataFrame:

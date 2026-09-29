@@ -423,12 +423,14 @@ def load_all_factory_data():
         df_chart_dien = loader.load_kpi_chart_data('Chart dien')
         df_chart_cap = loader.load_kpi_chart_data('Chart capacity')
         df_chart_sl = loader.load_kpi_sl_chart_data()
+        df_kpi_shifts = loader.load_kpi_daily_shifts(df_kcs=df_kcs)
     except Exception as e:
         print(f"[-] Lỗi nạp chart data: {e}")
         df_chart_moist = pd.DataFrame()
         df_chart_dien = pd.DataFrame()
         df_chart_cap = pd.DataFrame()
         df_chart_sl = pd.DataFrame()
+        df_kpi_shifts = pd.DataFrame()
 
     # Dữ liệu Sự Cố và Bảo Trì mới
     try:
@@ -475,6 +477,7 @@ def load_all_factory_data():
         'chart_dien': df_chart_dien,
         'chart_cap': df_chart_cap,
         'chart_sl': df_chart_sl,
+        'kpi_shifts': df_kpi_shifts,
         'incidents': df_incidents,
         'maint_log': df_maint_log,
         'maint_plan': df_maint_plan,
@@ -542,6 +545,7 @@ try:
         df_chart_dien = data.get('chart_dien', df_chart_dien)
         df_chart_cap = data.get('chart_cap', df_chart_cap)
         df_chart_sl = data.get('chart_sl', df_chart_sl)
+        df_kpi_shifts = data.get('kpi_shifts', pd.DataFrame())
         df_incidents = data.get('incidents', df_incidents)
         df_maint_log = data.get('maint_log', df_maint_log)
         df_maint_plan = data.get('maint_plan', df_maint_plan)
@@ -1979,7 +1983,8 @@ all_db_summary = get_all_leaders_dashboard_summary(
     week_num=active_w_num,
     month_num=active_m_num,
     date_range=active_range,
-    year_num=active_y_num
+    year_num=active_y_num,
+    df_kpi_daily=df_kpi_shifts
 )
 
 # Hàm trợ giúp làm sạch chuỗi HTML (tránh markdown hiểu nhầm 4 khoảng trắng là code block)
@@ -2121,9 +2126,20 @@ def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo
     badge_cls = ldr.get('badge_cls', 'leader-card-long')
     has_active = ldr.get('has_active_shift', False)
     
-    # KPI Thi đua
-    kpi_score = ldr.get('kpi_score', 0.0)
-    kpi_eval = ldr.get('kpi_eval', {})
+    is_week_view = ("tuần" in str(view_period).lower() or "week" in str(view_period).lower())
+    is_month_view = ("tháng" in str(view_period).lower() or "month" in str(view_period).lower())
+
+    # KPI Thi đua thích ứng chuẩn xác theo kỳ được chọn (Ngày / Tuần / Tháng)
+    if is_week_view:
+        kpi_score = ldr.get('week_kpi_score', ldr.get('kpi_score', 0.0))
+        kpi_eval = ldr.get('week_kpi_eval', ldr.get('kpi_eval', {}))
+    elif is_month_view:
+        kpi_score = ldr.get('month_kpi_score', ldr.get('kpi_score', 0.0))
+        kpi_eval = ldr.get('month_kpi_eval', ldr.get('kpi_eval', {}))
+    else:
+        kpi_score = ldr.get('day_kpi_score', ldr.get('kpi_score', 0.0))
+        kpi_eval = ldr.get('day_kpi_eval', ldr.get('kpi_eval', {}))
+
     kpi_medal = kpi_eval.get('medal', '🎗️')
     kpi_rank = translate_eval(kpi_eval.get('rank', 'Đạt chuẩn'))
     kpi_color = kpi_eval.get('color', '#16a34a')
@@ -2133,6 +2149,7 @@ def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo
     d_shifts = ldr.get('day_shifts', 0)
     d_kwh = ldr.get('day_kwh_ton', 0.0)
     d_tph = ldr.get('day_tph', 0.0)
+    d_moist = ldr.get('day_moist', 0.0)
     d_hours = ldr.get('day_hours', 0.0)
     d_lbl = ldr.get('day_label', '')
     d_full_date = ldr.get('day_full_date', '')
@@ -2143,6 +2160,7 @@ def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo
     w_shifts = ldr.get('week_shifts', 0)
     w_kwh = ldr.get('week_kwh_ton', 0.0)
     w_tph = ldr.get('week_tph', 0.0)
+    w_moist = ldr.get('week_moist', 0.0)
     w_hours = ldr.get('week_hours', 0.0)
     w_lbl = ldr.get('week_label', '')
     w_ratio = ldr.get('week_ratio', 0.0)
@@ -2152,13 +2170,20 @@ def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo
     m_shifts = ldr.get('month_shifts', 0)
     m_kwh = ldr.get('month_kwh_ton', 0.0)
     m_tph = ldr.get('month_tph', 0.0)
+    m_moist = ldr.get('month_moist', 0.0)
     m_hours = ldr.get('month_hours', 0.0)
     m_lbl = ldr.get('month_label', '')
     m_ratio = ldr.get('month_ratio', 0.0)
     m_nl_dot = ldr.get('month_nl_dot', 0.0)
 
     # 5. Độ ẩm viên TB & đánh giá (chuẩn ISO 17225-2 / ENplus: 8.0 - 9.5%)
-    moist_val = ldr.get('moisture', 8.5)
+    if is_week_view:
+        moist_val = ldr.get('week_moist', ldr.get('moisture', 8.5))
+    elif is_month_view:
+        moist_val = ldr.get('month_moist', ldr.get('moisture', 8.5))
+    else:
+        moist_val = ldr.get('day_moist', ldr.get('moisture', 8.5))
+
     m_eval = ldr.get('moist_eval', evaluate_moisture(moist_val))
     m_label = m_eval.get('label', 'Chuẩn: 8.0 - 9.5%')
     m_color = "#15803d" if m_eval.get('status') == 'PASS' else "#b45309"
@@ -2355,20 +2380,21 @@ def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo
 
     moist_disp = f"{moist_val:.2f}" if has_active else "--"
 
-    # Định dạng chuỗi hiển thị ở bảng Lũy kế 3 kỳ (Footer)
-    day_kwh_str = f"{d_kwh:.1f} kWh/t" if d_kwh > 0 else ("-- kWh/t" if d_out == 0 else f"{m_kwh:.1f}*")
+    # Định dạng chuỗi hiển thị ở bảng Lũy kế 3 kỳ (Footer: 3 chỉ số KPI chính)
+    # 1. Sản lượng (tấn) | 2. Độ ẩm TB (%) | 3. Năng suất ép (t/h)
+    day_moist_str = f"{d_moist:.2f}%" if d_moist > 0 else "--%"
     day_tph_str = f"{d_tph:.2f} t/h" if d_tph > 0 else "-- t/h"
-    day_kwh_c = "#15803d" if (0 < d_kwh <= 175) else ("#b91c1c" if d_kwh > 175 else "#64748b")
+    day_moist_c = "#15803d" if (8.0 <= d_moist <= 9.5) else ("#b45309" if d_moist > 0 else "#64748b")
     day_tph_c = "#15803d" if d_tph >= 4.0 else ("#b45309" if d_tph > 0 else "#64748b")
 
-    week_kwh_str = f"{w_kwh:.1f} kWh/t" if w_kwh > 0 else "-- kWh/t"
+    week_moist_str = f"{w_moist:.2f}%" if w_moist > 0 else "--%"
     week_tph_str = f"{w_tph:.2f} t/h" if w_tph > 0 else "-- t/h"
-    week_kwh_c = "#15803d" if (0 < w_kwh <= 175) else ("#b91c1c" if w_kwh > 175 else "#64748b")
+    week_moist_c = "#15803d" if (8.0 <= w_moist <= 9.5) else ("#b45309" if w_moist > 0 else "#64748b")
     week_tph_c = "#15803d" if w_tph >= 4.0 else ("#b45309" if w_tph > 0 else "#64748b")
 
-    month_kwh_str = f"{m_kwh:.1f} kWh/t" if m_kwh > 0 else "-- kWh/t"
+    month_moist_str = f"{m_moist:.2f}%" if m_moist > 0 else "--%"
     month_tph_str = f"{m_tph:.2f} t/h" if m_tph > 0 else "-- t/h"
-    month_kwh_c = "#15803d" if (0 < m_kwh <= 175) else ("#b91c1c" if m_kwh > 175 else "#64748b")
+    month_moist_c = "#15803d" if (8.0 <= m_moist <= 9.5) else ("#b45309" if m_moist > 0 else "#64748b")
     month_tph_c = "#15803d" if m_tph >= 4.0 else ("#b45309" if m_tph > 0 else "#64748b")
 
     raw_card = f"""
@@ -2427,18 +2453,18 @@ def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo
         </div>
         <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; margin-top: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
             <div style="font-size: 11px; font-weight: 700; color: #334155; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px;">
-                <span>📊 LŨY KẾ 3 KỲ (NGÀY / TUẦN / THÁNG):</span>
-                <span style="font-size: 10px; color: #64748b; font-weight: 600;">Sản Lượng | Ca | Điện | NS</span>
+                <span>📊 {t("LŨY KẾ 3 KỲ (NGÀY / TUẦN / THÁNG):", "ACCUMULATED 3 PERIODS:")}</span>
+                <span style="font-size: 10px; color: #64748b; font-weight: 600;">{t("Sản Lượng (t) | Độ Ẩm (%) | Năng Suất (t/h)", "Output (t) | Moist (%) | Rate (t/h)")}</span>
             </div>
             
             <!-- Dòng 1: Ngày -->
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 6px; background: {highlight_day}; border: 1px solid {'#bae6fd' if highlight_day != '#ffffff' else '#f1f5f9'}; border-radius: 5px; margin-bottom: 3px; font-size: 11px;">
                 <span style="font-weight: 700; color: #0284c7; display: flex; align-items: center; gap: 4px;">
-                    <span>☀️</span> Ngày ({d_lbl}):
+                    <span>☀️</span> {t('Ngày', 'Date')} ({d_lbl}):
                 </span>
                 <span style="font-weight: 800; color: #0f172a;">
                     {d_out:,.1f}t <span style="font-size: 10px; font-weight: 600; color: #64748b;">({d_shifts} ca)</span> 
-                    | <span style="color: {day_kwh_c}; font-weight: 700;">{day_kwh_str}</span>
+                    | <span style="color: {day_moist_c}; font-weight: 700;">{day_moist_str}</span>
                     | <span style="color: {day_tph_c}; font-weight: 700;">{day_tph_str}</span>
                 </span>
             </div>
@@ -2446,11 +2472,11 @@ def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo
             <!-- Dòng 2: Tuần -->
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 6px; background: {highlight_week}; border: 1px solid {'#bbf7d0' if highlight_week != '#ffffff' else '#f1f5f9'}; border-radius: 5px; margin-bottom: 3px; font-size: 11px;">
                 <span style="font-weight: 700; color: #16a34a; display: flex; align-items: center; gap: 4px;">
-                    <span>📅</span> Tuần ({w_lbl}):
+                    <span>📅</span> {t('Tuần', 'Week')} ({w_lbl}):
                 </span>
                 <span style="font-weight: 800; color: #0f172a;">
                     {w_out:,.1f}t <span style="font-size: 10px; font-weight: 600; color: #64748b;">({w_shifts} ca)</span> 
-                    | <span style="color: {week_kwh_c}; font-weight: 700;">{week_kwh_str}</span>
+                    | <span style="color: {week_moist_c}; font-weight: 700;">{week_moist_str}</span>
                     | <span style="color: {week_tph_c}; font-weight: 700;">{week_tph_str}</span>
                 </span>
             </div>
@@ -2458,11 +2484,11 @@ def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo
             <!-- Dòng 3: Tháng -->
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 6px; background: {highlight_month}; border: 1px solid {'#e9d5ff' if highlight_month != '#ffffff' else '#f1f5f9'}; border-radius: 5px; font-size: 11px;">
                 <span style="font-weight: 700; color: #7c3aed; display: flex; align-items: center; gap: 4px;">
-                    <span>📆</span> Tháng ({m_lbl}):
+                    <span>📆</span> {t('Tháng', 'Month')} ({m_lbl}):
                 </span>
                 <span style="font-weight: 800; color: #0f172a;">
                     {m_out:,.1f}t <span style="font-size: 10px; font-weight: 600; color: #64748b;">({m_shifts} ca)</span> 
-                    | <span style="color: {month_kwh_c}; font-weight: 700;">{month_kwh_str}</span>
+                    | <span style="color: {month_moist_c}; font-weight: 700;">{month_moist_str}</span>
                     | <span style="color: {month_tph_c}; font-weight: 700;">{month_tph_str}</span>
                 </span>
             </div>

@@ -944,11 +944,13 @@ def get_all_leaders_dashboard_summary(
     week_num: Optional[int] = None,
     month_num: Optional[int] = None,
     date_range: Optional[Tuple[datetime, datetime]] = None,
-    year_num: Optional[int] = None
+    year_num: Optional[int] = None,
+    df_kpi_daily: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
     """
     Tính toán và chuẩn bị dữ liệu Dashboard hoàn chỉnh cho 3 Ca Trưởng (Long, Sắc, Tài)
     và lập bảng đối sánh toàn diện với Dashboard Tổng Thể của nhà máy.
+    Truy vết dữ liệu gốc từ sheet 'Data KPI' cho sản lượng, độ ẩm, năng suất và suất điện.
     """
     leader_configs = {
         'Sắc': {
@@ -983,6 +985,22 @@ def get_all_leaders_dashboard_summary(
         }
     }
 
+    # Tự động nạp bộ đệm sheet 'Data KPI' nếu chưa được truyền vào
+    if df_kpi_daily is None or df_kpi_daily.empty:
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_daily_shifts.parquet"),
+            os.path.join("assets", "cache_kpi_daily_shifts.parquet"),
+            os.path.join("deploy_files", "assets", "cache_kpi_daily_shifts.parquet"),
+        ]
+        for cp in cache_paths:
+            if os.path.exists(cp):
+                try:
+                    df_kpi_daily = pd.read_parquet(cp)
+                    if not df_kpi_daily.empty:
+                        break
+                except Exception:
+                    pass
+
     tot_factory_output = float(kpis_tong.get('total_output', 0.0)) if kpis_tong else 0.0
     leaders_summary = {}
 
@@ -990,8 +1008,14 @@ def get_all_leaders_dashboard_summary(
         return {'leaders': {}, 'comparison_df': pd.DataFrame()}
 
     for name, cfg in leader_configs.items():
+        ca_code = cfg['code']
         mask_leader = df_shifts['shift_leader'].astype(str).str.contains(cfg['pattern'], case=False, na=False)
         df_ldr = df_shifts[mask_leader].copy()
+
+        # Dữ liệu từ sheet 'Data KPI' của ca trưởng này
+        kpi_ldr = pd.DataFrame()
+        if df_kpi_daily is not None and not df_kpi_daily.empty and 'ca_truong' in df_kpi_daily.columns:
+            kpi_ldr = df_kpi_daily[df_kpi_daily['ca_truong'].astype(str).str.contains(ca_code, case=False, na=False)].copy()
 
         # 1. Lọc theo kỳ được chọn
         if year_num is not None:
@@ -1142,6 +1166,38 @@ def get_all_leaders_dashboard_summary(
         d_ratio = float((d_nl_tho + d_nl_dot) / d_out) if d_out > 0 else 0.0
         d_label = ref_d.strftime('%d/%m')
         d_full_date = ref_d.strftime('%d/%m/%Y')
+        d_tgt = 0.0
+        d_moist = moist_val
+
+        # Truy vết chính xác từ sheet 'Data KPI' cho ngày ref_d
+        if not kpi_ldr.empty:
+            kpi_day = kpi_ldr[kpi_ldr['date'].dt.date == ref_d]
+            if not kpi_day.empty:
+                k_row = kpi_day.iloc[0]
+                k_out = float(k_row.get('sl_thuc_te', 0.0))
+                k_tgt = float(k_row.get('chi_tieu_sl', 0.0))
+                k_ns = float(k_row.get('nang_suat_tb', 0.0))
+                k_am = float(k_row.get('do_am_tb', 0.0))
+                k_dien = float(k_row.get('dien_tb', 0.0))
+                if k_out > 0:
+                    d_out = k_out
+                    d_tgt = k_tgt
+                    if k_ns > 0:
+                        d_tph = k_ns
+                    if k_am > 0:
+                        d_moist = k_am
+                    if k_dien > 0:
+                        d_kwh_ton = k_dien
+                    d_shifts_cnt = 1
+                    if d_hours == 0.0 and d_tph > 0:
+                        d_hours = round(d_out / d_tph, 1)
+
+        # Tính điểm KPI Ngày: Sản lượng 50đ, Độ ẩm 30đ, Năng suất 20đ
+        sc_sl = (d_out / d_tgt) * 50.0 if d_tgt > 0 else (50.0 if d_out > 0 else 0.0)
+        sc_moist = (d_moist / 9.0) * 30.0 if d_moist > 0 else 0.0
+        sc_tph = (d_tph / 4.0) * 20.0 if d_tph > 0 else 0.0
+        day_kpi_score = round(sc_sl + sc_moist + sc_tph, 2)
+        day_kpi_eval = evaluate_kpi_score(day_kpi_score)
 
         # B. Kỳ TUẦN của ca trưởng
         w_shifts = df_ldr[(df_ldr['date'].dt.isocalendar().week == ref_w) & (df_ldr['date'].dt.year == ref_y)]
@@ -1156,6 +1212,39 @@ def get_all_leaders_dashboard_summary(
         w_nl_dot = float(w_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in w_shifts.columns else 0.0
         w_ratio = float((w_nl_tho + w_nl_dot) / w_out) if w_out > 0 else 0.0
         w_label = f"W{ref_w}"
+        w_tgt = 0.0
+        w_moist = d_moist
+
+        # Truy vết Tuần từ 'Data KPI'
+        if not kpi_ldr.empty:
+            kpi_week = kpi_ldr[(kpi_ldr['week'] == ref_w) & (kpi_ldr['date'].dt.year == ref_y) & (kpi_ldr['sl_thuc_te'] > 0)]
+            if not kpi_week.empty:
+                w_out = float(kpi_week['sl_thuc_te'].sum())
+                w_tgt = float(kpi_week['chi_tieu_sl'].sum())
+                if (kpi_week['nang_suat_tb'] > 0).any():
+                    w_tph = float(kpi_week[kpi_week['nang_suat_tb'] > 0]['nang_suat_tb'].mean())
+                if (kpi_week['do_am_tb'] > 0).any():
+                    w_moist = float(kpi_week[kpi_week['do_am_tb'] > 0]['do_am_tb'].mean())
+                if (kpi_week['dien_tb'] > 0).any():
+                    w_kwh_ton = float(kpi_week[kpi_week['dien_tb'] > 0]['dien_tb'].mean())
+                w_shifts_cnt = len(kpi_week)
+
+        # Điểm thi đua KPI Tuần
+        week_kpi_score = 0.0
+        if df_wm_weekly is not None and not df_wm_weekly.empty:
+            m_w = df_wm_weekly[df_wm_weekly['week'] == ref_w]
+            if not m_w.empty:
+                k_r = m_w.iloc[0]
+                if name in k_r and pd.notna(k_r[name]):
+                    week_kpi_score = float(k_r[name])
+                elif ca_code in k_r and pd.notna(k_r[ca_code]):
+                    week_kpi_score = float(k_r[ca_code])
+        if week_kpi_score == 0.0:
+            w_sc_sl = (w_out / w_tgt) * 50.0 if w_tgt > 0 else (50.0 if w_out > 0 else 0.0)
+            w_sc_moist = (w_moist / 9.0) * 30.0 if w_moist > 0 else 0.0
+            w_sc_tph = (w_tph / 4.0) * 20.0 if w_tph > 0 else 0.0
+            week_kpi_score = round(w_sc_sl + w_sc_moist + w_sc_tph, 2)
+        week_kpi_eval = evaluate_kpi_score(week_kpi_score)
 
         # C. Kỳ THÁNG của ca trưởng
         m_shifts = df_ldr[(df_ldr['date'].dt.month == ref_m) & (df_ldr['date'].dt.year == ref_y) & (df_ldr['san_luong_tan'] > 0)]
@@ -1169,56 +1258,75 @@ def get_all_leaders_dashboard_summary(
         m_nl_dot = float(m_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in m_shifts.columns else 0.0
         m_ratio = float((m_nl_tho + m_nl_dot) / m_out) if m_out > 0 else 0.0
         m_label = f"T{ref_m}"
+        m_tgt = 0.0
+        m_moist = d_moist
 
-        # 4. Điểm thi đua KPI (tương ứng với 3 chỉ tiêu: Sản lượng 50đ, Độ ẩm 30đ, Năng suất ép 20đ)
-        kpi_score = 0.0
-        kpi_row = None
-        if month_num is not None and df_wm_monthly is not None and not df_wm_monthly.empty:
-            m_target_str = f"Tháng {month_num}"
-            match_m = df_wm_monthly[df_wm_monthly['month_label'].astype(str).str.contains(str(month_num), na=False)] if 'month_label' in df_wm_monthly.columns else pd.DataFrame()
-            if not match_m.empty:
-                kpi_row = match_m.iloc[0]
-            else:
-                kpi_row = df_wm_monthly.iloc[-1]
-            if kpi_row is not None:
-                if name in kpi_row and pd.notna(kpi_row[name]):
-                    kpi_score = float(kpi_row[name])
-                elif cfg.get('code') in kpi_row and pd.notna(kpi_row[cfg.get('code')]):
-                    kpi_score = float(kpi_row[cfg.get('code')])
-        elif df_wm_weekly is not None and not df_wm_weekly.empty:
-            if week_num is not None and 'week' in df_wm_weekly.columns:
-                match_w = df_wm_weekly[df_wm_weekly['week'] == week_num]
-                if not match_w.empty:
-                    kpi_row = match_w.iloc[0]
-            if kpi_row is None:
-                kpi_row = df_wm_weekly.iloc[-1]
-            if kpi_row is not None:
-                if name in kpi_row and pd.notna(kpi_row[name]):
-                    kpi_score = float(kpi_row[name])
-                elif cfg.get('code') in kpi_row and pd.notna(kpi_row[cfg.get('code')]):
-                    kpi_score = float(kpi_row[cfg.get('code')])
+        # Truy vết Tháng từ 'Data KPI'
+        if not kpi_ldr.empty:
+            kpi_month = kpi_ldr[(kpi_ldr['month'] == ref_m) & (kpi_ldr['date'].dt.year == ref_y) & (kpi_ldr['sl_thuc_te'] > 0)]
+            if not kpi_month.empty:
+                m_out = float(kpi_month['sl_thuc_te'].sum())
+                m_tgt = float(kpi_month['chi_tieu_sl'].sum())
+                if (kpi_month['nang_suat_tb'] > 0).any():
+                    m_tph = float(kpi_month[kpi_month['nang_suat_tb'] > 0]['nang_suat_tb'].mean())
+                if (kpi_month['do_am_tb'] > 0).any():
+                    m_moist = float(kpi_month[kpi_month['do_am_tb'] > 0]['do_am_tb'].mean())
+                if (kpi_month['dien_tb'] > 0).any():
+                    m_kwh_ton = float(kpi_month[kpi_month['dien_tb'] > 0]['dien_tb'].mean())
+                m_count = len(kpi_month)
 
-        # Fallback kiểm tra leaders_kpi nếu kpi_score vẫn = 0
-        if kpi_score == 0 and leaders_kpi:
-            if month_num is not None and 'monthly' in leaders_kpi and not leaders_kpi['monthly'].empty:
-                lm = leaders_kpi['monthly']
-                match_lm = lm[(lm['month_label'].astype(str).str.contains(str(month_num), na=False)) & (lm['ca_truong'].isin([cfg.get('code'), name]))]
-                if not match_lm.empty and 'diem_kpi' in match_lm.columns:
-                    kpi_score = float(match_lm.iloc[0]['diem_kpi'])
-            elif week_num is not None and 'weekly' in leaders_kpi and not leaders_kpi['weekly'].empty:
-                lw = leaders_kpi['weekly']
-                match_lw = lw[(lw['week'] == week_num) & (lw['ca_truong'].isin([cfg.get('code'), name]))]
-                if not match_lw.empty and 'diem_kpi' in match_lw.columns:
-                    kpi_score = float(match_lw.iloc[0]['diem_kpi'])
+        # Điểm thi đua KPI Tháng
+        month_kpi_score = 0.0
+        if df_wm_monthly is not None and not df_wm_monthly.empty:
+            m_m = df_wm_monthly[df_wm_monthly['month_label'].astype(str).str.contains(str(ref_m), na=False)]
+            if not m_m.empty:
+                k_rm = m_m.iloc[0]
+                if name in k_rm and pd.notna(k_rm[name]):
+                    month_kpi_score = float(k_rm[name])
+                elif ca_code in k_rm and pd.notna(k_rm[ca_code]):
+                    month_kpi_score = float(k_rm[ca_code])
+        if month_kpi_score == 0.0:
+            m_sc_sl = (m_out / m_tgt) * 50.0 if m_tgt > 0 else (50.0 if m_out > 0 else 0.0)
+            m_sc_moist = (m_moist / 9.0) * 30.0 if m_moist > 0 else 0.0
+            m_sc_tph = (m_tph / 4.0) * 20.0 if m_tph > 0 else 0.0
+            month_kpi_score = round(m_sc_sl + m_sc_moist + m_sc_tph, 2)
+        month_kpi_eval = evaluate_kpi_score(month_kpi_score)
 
-        if kpi_score == 0 and df_wm_monthly is not None and not df_wm_monthly.empty and month_num is None:
-            last_m_row = df_wm_monthly.iloc[-1]
-            if name in last_m_row and pd.notna(last_m_row[name]):
-                kpi_score = float(last_m_row[name])
-            elif cfg.get('code') in last_m_row and pd.notna(last_m_row[cfg.get('code')]):
-                kpi_score = float(last_m_row[cfg.get('code')])
-
-        kpi_eval = evaluate_kpi_score(kpi_score) if kpi_score > 0 else {'rank': 'Chưa xếp hạng', 'badge': 'badge-info', 'color': '#64748b', 'icon': '⚪', 'medal': '🎗️'}
+        # 4. Xác định số liệu trọng tâm hiển thị trên thẻ theo bộ lọc sidebar
+        if month_num is not None:
+            output = m_out
+            tph = m_tph
+            moist_val = m_moist
+            kwh_ton = m_kwh_ton
+            kpi_score = month_kpi_score
+            kpi_eval = month_kpi_eval
+            if m_out > 0:
+                duty_type = 'PROD'
+                has_active_shift = True
+        elif week_num is not None:
+            output = w_out
+            tph = w_tph
+            moist_val = w_moist
+            kwh_ton = w_kwh_ton
+            kpi_score = week_kpi_score
+            kpi_eval = week_kpi_eval
+            if w_out > 0:
+                duty_type = 'PROD'
+                has_active_shift = True
+        else:
+            # Mặc định theo Ngày
+            output = d_out
+            tph = d_tph
+            moist_val = d_moist
+            kwh_ton = d_kwh_ton
+            kpi_score = day_kpi_score
+            kpi_eval = day_kpi_eval
+            if d_out > 0:
+                duty_type = 'PROD'
+                has_active_shift = True
+                status_text = f"Đang trực ca SX (1 ca)"
+                status_cls = "badge-success"
+                status_icon = "🟢"
 
         # 5. Sự cố trong ca
         inc_count = 0
@@ -1272,31 +1380,40 @@ def get_all_leaders_dashboard_summary(
             'day_hours': round(d_hours, 1),
             'day_kwh_ton': round(d_kwh_ton, 1),
             'day_tph': round(d_tph, 2),
+            'day_moist': round(d_moist, 2),
             'day_shifts': d_shifts_cnt,
             'day_ratio': round(d_ratio, 2),
             'day_nl_dot': round(d_nl_dot, 1),
             'day_label': d_label,
             'day_full_date': d_full_date,
+            'day_kpi_score': day_kpi_score,
+            'day_kpi_eval': day_kpi_eval,
 
             # Thống kê chi tiết Tuần
             'week_out': round(w_out, 1),
             'week_hours': round(w_hours, 1),
             'week_kwh_ton': round(w_kwh_ton, 1),
             'week_tph': round(w_tph, 2),
+            'week_moist': round(w_moist, 2),
             'week_shifts': w_shifts_cnt,
             'week_ratio': round(w_ratio, 2),
             'week_nl_dot': round(w_nl_dot, 1),
             'week_label': w_label,
+            'week_kpi_score': week_kpi_score,
+            'week_kpi_eval': week_kpi_eval,
 
             # Thống kê chi tiết Tháng
             'month_output': round(m_out, 1),
             'month_hours': round(m_hours, 1),
             'month_kwh_ton': round(m_kwh_ton, 1),
             'month_tph': round(m_tph, 2),
+            'month_moist': round(m_moist, 2),
             'month_shifts': m_count,
             'month_ratio': round(m_ratio, 2),
             'month_nl_dot': round(m_nl_dot, 1),
             'month_label': m_label,
+            'month_kpi_score': month_kpi_score,
+            'month_kpi_eval': month_kpi_eval,
 
             'kpi_score': round(kpi_score, 2),
             'kpi_eval': kpi_eval,
