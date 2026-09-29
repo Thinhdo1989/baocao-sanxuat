@@ -318,6 +318,20 @@ PE_MACHINE_MAPPING = getattr(kpi_calculator, 'PE_MACHINE_MAPPING', {
 })
 PE_510_TO_PE = getattr(kpi_calculator, 'PE_510_TO_PE', {v: k for k, v in PE_MACHINE_MAPPING.items()})
 
+clean_numeric = getattr(kpi_calculator, 'clean_numeric', None)
+if clean_numeric is None:
+    def clean_numeric(val: Any) -> float:
+        if val is None or pd.isna(val) or str(val).strip() in ['-', '', 'None', 'nan', 'NaN', 'N/A']:
+            return 0.0
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            return float(val)
+        s = str(val).strip().replace('.', '').replace(',', '.')
+        try:
+            return float(s)
+        except Exception:
+            return 0.0
+clean_number = clean_numeric
+
 KPI_WEIGHT_OUTPUT = getattr(kpi_calculator, 'KPI_WEIGHT_OUTPUT', 50.0)
 KPI_WEIGHT_MOISTURE = getattr(kpi_calculator, 'KPI_WEIGHT_MOISTURE', 30.0)
 KPI_WEIGHT_PRODUCTIVITY = getattr(kpi_calculator, 'KPI_WEIGHT_PRODUCTIVITY', 20.0)

@@ -28,6 +28,40 @@ KPI_WEIGHT_PRODUCTIVITY = 20.0    # Trọng số năng suất máy ép viên (20
 KPI_TARGET_MOISTURE = 9.0         # Chỉ tiêu độ ẩm chuẩn (%): 9.0%
 KPI_TARGET_PRODUCTIVITY = 4.0     # Chỉ tiêu năng suất chuẩn (tấn/h): 4.0 tấn/h
 
+def clean_numeric(val: Any) -> float:
+    """
+    Xử lý lỗi định dạng số và phân cách hàng nghìn (Locale VN vs US).
+    Chuyển đổi chuỗi số từ Google Sheets / Excel về định dạng float chuẩn của Python:
+    - Trong Locale VN: Dấu chấm (.) phân cách hàng nghìn, dấu phẩy (,) là số thập phân.
+    - Xử lý các chuỗi trống, ký hiệu '-', 'None', NaN về 0.0.
+    - Bảo toàn số float/int có sẵn (không biến 4.0 thành 40.0).
+    """
+    if val is None or pd.isna(val) or str(val).strip() in ['-', '', 'None', 'nan', 'NaN', 'N/A']:
+        return 0.0
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    s = str(val).strip()
+    for u in ['tấn', 'tan', 'kWh', 'kwh', 'kg/m3', 'kg/m³', 'VND', 'vnd', 'Lít', 'lit', '%', 'h', '/']:
+        s = s.replace(u, '')
+    s = s.strip()
+    if ',' in s or s.count('.') > 1:
+        s = s.replace('.', '').replace(',', '.')
+    elif s.count('.') == 1:
+        parts = s.split('.')
+        if len(parts[1]) == 3 and not (len(parts[0]) == 1 and parts[0] == '0'):
+            s = s.replace('.', '')
+        else:
+            pass
+    else:
+        s = s.replace('.', '').replace(',', '.')
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
+clean_number = clean_numeric
+
+
 # ==============================================================================
 # MÃ HÓA MÁY ÉP VIÊN (PE vs PE_510)
 # ==============================================================================

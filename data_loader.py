@@ -206,46 +206,47 @@ def get_standard_shift_code(val: Any) -> str:
 
 
 
-def clean_number(val: Any) -> float:
+def clean_numeric(val: Any) -> float:
     """
-    Chuyển đổi chuỗi số định dạng tiếng Việt / quốc tế sang float.
-    Xử lý dấu phân cách hàng nghìn (.), dấu thập phân (,), các ký tự %, tấn, kWh, '-'...
+    Xử lý lỗi định dạng số và phân cách hàng nghìn (Locale VN vs US).
+    Chuyển đổi chuỗi số từ Google Sheets / Excel về định dạng float chuẩn của Python:
+    - Trong Locale VN: Dấu chấm (.) phân cách hàng nghìn, dấu phẩy (,) là số thập phân.
+    - Xử lý các chuỗi trống, ký hiệu '-', 'None', NaN về 0.0.
+    - Bảo toàn số float/int có sẵn (không biến 4.0 thành 40.0).
     """
-    if val is None:
+    if val is None or pd.isna(val) or str(val).strip() in ['-', '', 'None', 'nan', 'NaN', 'N/A']:
         return 0.0
-    val_str = str(val).strip()
-    if not val_str or val_str in ['-', 'N/A', 'None', '', 'NaN']:
-        return 0.0
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    s = str(val).strip()
+    # Loại bỏ các ký hiệu đơn vị đo lường phổ biến nếu có
+    for u in ['tấn', 'tan', 'kWh', 'kwh', 'kg/m3', 'kg/m³', 'VND', 'vnd', 'Lít', 'lit', '%', 'h', '/']:
+        s = s.replace(u, '')
+    s = s.strip()
     
-    # Loại bỏ ký hiệu đơn vị, tiền tệ, phần trăm
-    for unit in ['%', 'tấn', 'kWh', 'VND', 'kg/m3', 'h', 'lit', 'lít', ' ']:
-        val_str = val_str.replace(unit, '')
-    val_str = val_str.strip()
-    
-    # TH1: Cả dấu chấm và dấu phẩy: "2.029.280,00" hoặc "1.118,5"
-    if '.' in val_str and ',' in val_str:
-        val_str = val_str.replace('.', '').replace(',', '.')
-    elif ',' in val_str:
-        # TH2: Chỉ có dấu phẩy: "186,961" hoặc "4,0" -> phẩy là thập phân
-        val_str = val_str.replace(',', '.')
-    elif '.' in val_str:
-        # TH3: Chỉ có dấu chấm
-        parts = val_str.split('.')
-        if len(parts) > 2:
-            # Nhiều dấu chấm -> phân cách hàng nghìn: 68.997.840 -> 68997840
-            val_str = val_str.replace('.', '')
-        elif len(parts) == 2:
-            # 1 dấu chấm: nếu phần sau có đúng 3 chữ số và phần nguyên khác 0 -> phân cách hàng nghìn (vd: 30.880, 1.200)
-            if len(parts[1]) == 3 and not (len(parts[0]) == 1 and parts[0] == '0'):
-                val_str = val_str.replace('.', '')
-            else:
-                # Thập phân thông thường (vd: 4.0, 3.95)
-                pass
-
+    # Xử lý định dạng VN vs US:
+    if ',' in s or s.count('.') > 1:
+        # Chuẩn VN: phân cách nghìn là '.', thập phân là ','
+        s = s.replace('.', '').replace(',', '.')
+    elif s.count('.') == 1:
+        parts = s.split('.')
+        # Nếu có đúng 3 chữ số sau dấu chấm và phần nguyên khác 0 -> phân cách hàng nghìn VN (vd: 4.000 -> 4000)
+        if len(parts[1]) == 3 and not (len(parts[0]) == 1 and parts[0] == '0'):
+            s = s.replace('.', '')
+        else:
+            # Thập phân chuẩn US (vd: 4.0, 3.71)
+            pass
+    else:
+        s = s.replace('.', '').replace(',', '.')
+        
     try:
-        return float(val_str)
-    except (ValueError, TypeError):
+        return float(s)
+    except Exception:
         return 0.0
+
+
+# Đồng bộ alias clean_number tương thích ngược toàn bộ hệ thống
+clean_number = clean_numeric
 
 
 
