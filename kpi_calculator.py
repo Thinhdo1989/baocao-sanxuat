@@ -16,6 +16,17 @@ MOISTURE_TARGET_MAX = 9.5     # %
 ASH_TARGET_MAX = 1.5          # %
 DENSITY_BENCHMARK_MIN = 600.0 # kg/m3 - Chuẩn tỷ trọng xuất khẩu ENplus/ISO 17225-2
 
+# 3 Tiêu chí KPI đánh giá ca sản xuất theo file '2026 Nhat ky KPI' (sheet 'W-M KPI' - gid=1921415360):
+# 1. Sản lượng (tấn): Trọng số 50 điểm (50%) = (SL Thực tế / Chỉ tiêu SL) * 50
+# 2. Độ ẩm của viên nén (%): Trọng số 30 điểm (30%) = (Độ ẩm TB / 9.0) * 30 (Chỉ tiêu chuẩn: 9.0%)
+# 3. Năng suất của máy ép (tấn/h): Trọng số 20 điểm (20%) = (Năng suất TB / 4.0) * 20 (Chỉ tiêu chuẩn: 4.0 tấn/h)
+KPI_WEIGHT_OUTPUT = 50.0          # Trọng số sản lượng (50 điểm)
+KPI_WEIGHT_MOISTURE = 30.0        # Trọng số độ ẩm viên nén (30 điểm)
+KPI_WEIGHT_PRODUCTIVITY = 20.0    # Trọng số năng suất máy ép viên (20 điểm)
+
+KPI_TARGET_MOISTURE = 9.0         # Chỉ tiêu độ ẩm chuẩn (%): 9.0%
+KPI_TARGET_PRODUCTIVITY = 4.0     # Chỉ tiêu năng suất chuẩn (tấn/h): 4.0 tấn/h
+
 # Danh mục thiết bị
 EQUIPMENT_INFO = {
     'HM118': {'name': 'Nghiền búa thô HM118', 'brand': 'Andritz', 'group': 'Nghiền búa thô', 'col': 'h_HM118'},
@@ -476,6 +487,34 @@ def get_shift_leader_kpis(df_shifts: pd.DataFrame) -> pd.DataFrame:
     }, inplace=True)
 
     return grouped.sort_values('Tổng sản lượng (tấn)', ascending=False).reset_index(drop=True)
+
+
+def calculate_kpi_components(
+    sl_thuc_te: float,
+    chi_tieu_sl: float,
+    do_am_tb: float,
+    nang_suat_tb: float,
+    target_moisture: float = KPI_TARGET_MOISTURE,
+    target_productivity: float = KPI_TARGET_PRODUCTIVITY
+) -> Dict[str, float]:
+    """
+    Tính điểm 3 chỉ tiêu KPI chuẩn hóa theo Google Sheet 'W-M KPI' (gid=1921415360):
+    1. Sản lượng (tấn): Điểm SL = (SL Thực tế / Chỉ tiêu SL) * 50
+    2. Độ ẩm của viên nén (%): Điểm Ẩm = (Độ ẩm TB / 9.0) * 30 (Chỉ tiêu: 9.0%)
+    3. Năng suất của máy ép (tấn/h): Điểm Năng Suất = (Năng suất TB / 4.0) * 20 (Chỉ tiêu: 4.0 t/h)
+    Tổng điểm KPI = Điểm SL + Điểm Ẩm + Điểm Năng Suất (Thang điểm 100).
+    Lưu ý: Điện năng tiêu thụ (kWh/tấn) là chỉ số tham khảo kỹ thuật, không cộng điểm vào KPI.
+    """
+    diem_sl = (sl_thuc_te / chi_tieu_sl * KPI_WEIGHT_OUTPUT) if chi_tieu_sl > 0 else 0.0
+    diem_am = (do_am_tb / target_moisture * KPI_WEIGHT_MOISTURE) if (target_moisture > 0 and do_am_tb > 0) else 0.0
+    diem_ns = (nang_suat_tb / target_productivity * KPI_WEIGHT_PRODUCTIVITY) if (target_productivity > 0 and nang_suat_tb > 0) else 0.0
+    diem_kpi = round(diem_sl + diem_am + diem_ns, 2)
+    return {
+        'diem_sl': round(diem_sl, 2),
+        'diem_am': round(diem_am, 2),
+        'diem_nang_suat': round(diem_ns, 2),
+        'diem_kpi': diem_kpi
+    }
 
 
 def evaluate_kpi_score(score: float) -> Dict[str, Any]:
@@ -1124,10 +1163,22 @@ def get_all_leaders_dashboard_summary(
         m_ratio = float((m_nl_tho + m_nl_dot) / m_out) if m_out > 0 else 0.0
         m_label = f"T{ref_m}"
 
-        # 4. Điểm thi đua KPI
+        # 4. Điểm thi đua KPI (tương ứng với 3 chỉ tiêu: Sản lượng 50đ, Độ ẩm 30đ, Năng suất ép 20đ)
         kpi_score = 0.0
         kpi_row = None
-        if df_wm_weekly is not None and not df_wm_weekly.empty:
+        if month_num is not None and df_wm_monthly is not None and not df_wm_monthly.empty:
+            m_target_str = f"Tháng {month_num}"
+            match_m = df_wm_monthly[df_wm_monthly['month_label'].astype(str).str.contains(str(month_num), na=False)] if 'month_label' in df_wm_monthly.columns else pd.DataFrame()
+            if not match_m.empty:
+                kpi_row = match_m.iloc[0]
+            else:
+                kpi_row = df_wm_monthly.iloc[-1]
+            if kpi_row is not None:
+                if name in kpi_row and pd.notna(kpi_row[name]):
+                    kpi_score = float(kpi_row[name])
+                elif cfg.get('code') in kpi_row and pd.notna(kpi_row[cfg.get('code')]):
+                    kpi_score = float(kpi_row[cfg.get('code')])
+        elif df_wm_weekly is not None and not df_wm_weekly.empty:
             if week_num is not None and 'week' in df_wm_weekly.columns:
                 match_w = df_wm_weekly[df_wm_weekly['week'] == week_num]
                 if not match_w.empty:
@@ -1140,7 +1191,20 @@ def get_all_leaders_dashboard_summary(
                 elif cfg.get('code') in kpi_row and pd.notna(kpi_row[cfg.get('code')]):
                     kpi_score = float(kpi_row[cfg.get('code')])
 
-        if kpi_score == 0 and df_wm_monthly is not None and not df_wm_monthly.empty:
+        # Fallback kiểm tra leaders_kpi nếu kpi_score vẫn = 0
+        if kpi_score == 0 and leaders_kpi:
+            if month_num is not None and 'monthly' in leaders_kpi and not leaders_kpi['monthly'].empty:
+                lm = leaders_kpi['monthly']
+                match_lm = lm[(lm['month_label'].astype(str).str.contains(str(month_num), na=False)) & (lm['ca_truong'].isin([cfg.get('code'), name]))]
+                if not match_lm.empty and 'diem_kpi' in match_lm.columns:
+                    kpi_score = float(match_lm.iloc[0]['diem_kpi'])
+            elif week_num is not None and 'weekly' in leaders_kpi and not leaders_kpi['weekly'].empty:
+                lw = leaders_kpi['weekly']
+                match_lw = lw[(lw['week'] == week_num) & (lw['ca_truong'].isin([cfg.get('code'), name]))]
+                if not match_lw.empty and 'diem_kpi' in match_lw.columns:
+                    kpi_score = float(match_lw.iloc[0]['diem_kpi'])
+
+        if kpi_score == 0 and df_wm_monthly is not None and not df_wm_monthly.empty and month_num is None:
             last_m_row = df_wm_monthly.iloc[-1]
             if name in last_m_row and pd.notna(last_m_row[name]):
                 kpi_score = float(last_m_row[name])

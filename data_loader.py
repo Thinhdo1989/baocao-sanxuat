@@ -1011,8 +1011,8 @@ class DataLoader:
 
         for r in rows[1:]:
             # 1. Tuần: Col 0-3 (Tuần, Ca A, Ca B, Ca C)
-            if len(r) > 3 and str(r[0]).strip() and str(r[0]).strip().isdigit():
-                w_num = int(str(r[0]).strip())
+            if len(r) > 3 and str(r[0]).strip() and clean_number(r[0]) > 0:
+                w_num = int(clean_number(r[0]))
                 score_1 = clean_number(r[1])
                 score_2 = clean_number(r[2])
                 score_3 = clean_number(r[3])
@@ -1023,12 +1023,13 @@ class DataLoader:
                         'Ca A': score_1 if score_1 > 0 else None,
                         'Ca B': score_2 if score_2 > 0 else None,
                         'Ca C': score_3 if score_3 > 0 else None,
-                        # Ánh xạ tương thích ngược
-                        'Long': score_3 if score_3 > 0 else None,
-                        'Sắc': score_2 if score_2 > 0 else None,
-                        'Tài': score_3 if score_3 > 0 else None,
+                        # Ánh xạ tương thích chuẩn xác: Ca A = Sắc, Ca B = Tài, Ca C = Long
+                        'Sắc': score_1 if score_1 > 0 else None,
+                        'Hải': score_1 if score_1 > 0 else None,
                         'Thành': score_1 if score_1 > 0 else None,
+                        'Tài': score_2 if score_2 > 0 else None,
                         'Lâm': score_2 if score_2 > 0 else None,
+                        'Long': score_3 if score_3 > 0 else None,
                     }
                     weekly_records.append(rec_w)
 
@@ -1044,12 +1045,13 @@ class DataLoader:
                         'Ca A': m_score_1 if m_score_1 > 0 else None,
                         'Ca B': m_score_2 if m_score_2 > 0 else None,
                         'Ca C': m_score_3 if m_score_3 > 0 else None,
-                        # Ánh xạ tương thích ngược
-                        'Long': m_score_3 if m_score_3 > 0 else None,
-                        'Sắc': m_score_2 if m_score_2 > 0 else None,
-                        'Tài': m_score_3 if m_score_3 > 0 else None,
+                        # Ánh xạ tương thích chuẩn xác: Ca A = Sắc, Ca B = Tài, Ca C = Long
+                        'Sắc': m_score_1 if m_score_1 > 0 else None,
+                        'Hải': m_score_1 if m_score_1 > 0 else None,
                         'Thành': m_score_1 if m_score_1 > 0 else None,
+                        'Tài': m_score_2 if m_score_2 > 0 else None,
                         'Lâm': m_score_2 if m_score_2 > 0 else None,
+                        'Long': m_score_3 if m_score_3 > 0 else None,
                     }
                     monthly_records.append(rec_m)
 
@@ -1076,14 +1078,22 @@ class DataLoader:
 
     def load_leader_kpi_sheet(self, leader_name: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Đọc chi tiết các tiêu chí điểm KPI theo tuần và tháng của từng ca ('Ca A', 'Ca B', 'Ca C' hoặc tên ca trưởng).
-        Cấu trúc cột:
-        Tuần: Col 0: Tuần, Col 1: Ca trưởng, Col 2: Số ca, Col 3: Chỉ tiêu SL, Col 4: SL Thực tế,
-              Col 5: Điểm SL (/50), Col 6: Độ ẩm TB, Col 7: Điểm ẩm (/30), Col 8: Điện năng TB,
-              Col 9: Năng suất TB, Col 10: Điểm năng suất (/20), Col 11: Điểm KPI (/100)
-        Tháng: Col 13: Tháng, Col 14: Ca trưởng, Col 15: Số ca, Col 16: Chỉ tiêu SL, Col 17: SL Thực tế,
-               Col 18: Điểm SL (/50), Col 19: Độ ẩm TB, Col 20: Điểm ẩm (/30), Col 21: Điện năng TB,
-               Col 22: Năng suất TB, Col 23: Điểm năng suất (/20), Col 24: Điểm KPI (/100)
+        Đọc chi tiết 3 tiêu chí điểm KPI theo tuần và tháng của từng ca ('Ca A', 'Ca B', 'Ca C')
+        từ file '2026 Nhat ky KPI' chuẩn xác theo cấu trúc sheet thực tế:
+        - 3 Tiêu chí KPI chính:
+          1. Sản lượng (tấn): Trọng số 50 điểm = (SL Thực tế / Chỉ tiêu SL) * 50
+          2. Độ ẩm của viên nén (%): Trọng số 30 điểm = (Độ ẩm TB / 9.0) * 30
+          3. Năng suất của máy ép (tấn/h): Trọng số 20 điểm = (Năng suất TB / 4.0) * 20
+        - Cột theo Tuần (Col 0-17):
+          Col 0: Tuần, Col 1: Ca trưởng, Col 2: Số ca làm việc, Col 3: Chỉ tiêu SL, Col 4: SL Thực tế,
+          Col 5: Trọng số SL (50), Col 6: Điểm SL, Col 7: Độ ẩm TB, Col 8: Chỉ tiêu độ ẩm (9),
+          Col 9: Trọng số độ ẩm (30), Col 10: Điểm ẩm, Col 11: Điện năng TB, Col 13: Năng suất TB,
+          Col 14: Chỉ tiêu NS (4), Col 15: Trọng số NS (20), Col 16: Điểm năng suất, Col 17: Điểm KPI (/100)
+        - Cột theo Tháng (Col 19-37):
+          Col 19: Tháng, Col 20: Ca trưởng, Col 21: Số ca làm việc, Col 22: Chỉ tiêu SL, Col 23: SL Thực tế,
+          Col 24: Trọng số SL (50), Col 25: Điểm SL, Col 26: Độ ẩm TB, Col 27: Chỉ tiêu độ ẩm (9),
+          Col 28: Trọng số độ ẩm (30), Col 29: Điểm ẩm, Col 30: Điện năng TB, Col 33: Năng suất TB,
+          Col 34: Chỉ tiêu NS (4), Col 35: Trọng số NS (20), Col 36: Điểm năng suất, Col 37: Điểm KPI (/100)
         """
         target_sheets = [leader_name]
         alias_candidates = {
@@ -1120,46 +1130,88 @@ class DataLoader:
         monthly_records = []
 
         for r in rows[1:]:
-            # Phần Tuần: Col 0-11
-            if len(r) > 11 and str(r[0]).strip() and str(r[0]).strip().isdigit():
-                kpi_score = clean_number(r[11])
-                sl_actual = clean_number(r[4])
-                if kpi_score > 0 or sl_actual > 0:
+            # 1. Phần Tuần: Col 0-17
+            if len(r) > 17 and str(r[0]).strip() and clean_number(r[0]) > 0:
+                w_num = int(clean_number(r[0]))
+                so_ca = clean_number(r[2]) if len(r) > 2 else 0.0
+                ct_sl = clean_number(r[3]) if len(r) > 3 else 0.0
+                sl_act = clean_number(r[4]) if len(r) > 4 else 0.0
+                d_sl = clean_number(r[6]) if len(r) > 6 else 0.0
+                if d_sl == 0 and ct_sl > 0 and sl_act > 0:
+                    d_sl = round((sl_act / ct_sl) * 50.0, 2)
+
+                am_tb = clean_number(r[7]) if len(r) > 7 else 0.0
+                d_am = clean_number(r[10]) if len(r) > 10 else 0.0
+                if d_am == 0 and am_tb > 0:
+                    d_am = round((am_tb / 9.0) * 30.0, 2)
+
+                dien_tb = clean_number(r[11]) if len(r) > 11 else 0.0
+                ns_tb = clean_number(r[13]) if len(r) > 13 else 0.0
+                d_ns = clean_number(r[16]) if len(r) > 16 else 0.0
+                if d_ns == 0 and ns_tb > 0:
+                    d_ns = round((ns_tb / 4.0) * 20.0, 2)
+
+                kpi_score = clean_number(r[17]) if len(r) > 17 else 0.0
+                if kpi_score == 0 and (d_sl > 0 or d_am > 0 or d_ns > 0):
+                    kpi_score = round(d_sl + d_am + d_ns, 2)
+
+                if sl_act > 0 or kpi_score > 0 or so_ca > 0:
                     weekly_records.append({
-                        'week': int(str(r[0]).strip()),
-                        'week_label': f"Tuần {str(r[0]).strip()}",
+                        'week': w_num,
+                        'week_label': f"Tuần {w_num}",
                         'ca_truong': std_name,
-                        'so_ca': clean_number(r[2]),
-                        'chi_tieu_sl': clean_number(r[3]),
-                        'sl_thuc_te': sl_actual,
-                        'diem_sl': clean_number(r[5]),
-                        'do_am_tb': clean_number(r[6]),
-                        'diem_am': clean_number(r[7]),
-                        'dien_tb': clean_number(r[8]),
+                        'so_ca': so_ca,
+                        'chi_tieu_sl': ct_sl,
+                        'sl_thuc_te': sl_act,
+                        'diem_sl': d_sl,
+                        'do_am_tb': am_tb,
+                        'diem_am': d_am,
+                        'dien_tb': dien_tb,
                         'diem_dien': 0.0,
-                        'nang_suat_tb': clean_number(r[9]),
-                        'diem_nang_suat': clean_number(r[10]),
+                        'nang_suat_tb': ns_tb,
+                        'diem_nang_suat': d_ns,
                         'diem_kpi': kpi_score,
                     })
 
-            # Phần Tháng: Col 13-24
-            if len(r) > 24 and str(r[13]).strip() and 'tháng' in str(r[13]).strip().lower():
-                kpi_m = clean_number(r[24])
-                sl_m = clean_number(r[17])
-                if kpi_m > 0 or sl_m > 0:
+            # 2. Phần Tháng: Col 19-37
+            if len(r) > 37 and str(r[19]).strip() and 'tháng' in str(r[19]).strip().lower():
+                m_label = str(r[19]).strip()
+                so_ca_m = clean_number(r[21]) if len(r) > 21 else 0.0
+                ct_sl_m = clean_number(r[22]) if len(r) > 22 else 0.0
+                sl_m = clean_number(r[23]) if len(r) > 23 else 0.0
+                d_sl_m = clean_number(r[25]) if len(r) > 25 else 0.0
+                if d_sl_m == 0 and ct_sl_m > 0 and sl_m > 0:
+                    d_sl_m = round((sl_m / ct_sl_m) * 50.0, 2)
+
+                am_m = clean_number(r[26]) if len(r) > 26 else 0.0
+                d_am_m = clean_number(r[29]) if len(r) > 29 else 0.0
+                if d_am_m == 0 and am_m > 0:
+                    d_am_m = round((am_m / 9.0) * 30.0, 2)
+
+                dien_m = clean_number(r[30]) if len(r) > 30 else 0.0
+                ns_m = clean_number(r[33]) if len(r) > 33 else 0.0
+                d_ns_m = clean_number(r[36]) if len(r) > 36 else 0.0
+                if d_ns_m == 0 and ns_m > 0:
+                    d_ns_m = round((ns_m / 4.0) * 20.0, 2)
+
+                kpi_m = clean_number(r[37]) if len(r) > 37 else 0.0
+                if kpi_m == 0 and (d_sl_m > 0 or d_am_m > 0 or d_ns_m > 0):
+                    kpi_m = round(d_sl_m + d_am_m + d_ns_m, 2)
+
+                if sl_m > 0 or kpi_m > 0 or so_ca_m > 0:
                     monthly_records.append({
-                        'month_label': str(r[13]).strip(),
+                        'month_label': m_label,
                         'ca_truong': std_name,
-                        'so_ca': clean_number(r[15]),
-                        'chi_tieu_sl': clean_number(r[16]),
+                        'so_ca': so_ca_m,
+                        'chi_tieu_sl': ct_sl_m,
                         'sl_thuc_te': sl_m,
-                        'diem_sl': clean_number(r[18]),
-                        'do_am_tb': clean_number(r[19]),
-                        'diem_am': clean_number(r[20]),
-                        'dien_tb': clean_number(r[21]),
+                        'diem_sl': d_sl_m,
+                        'do_am_tb': am_m,
+                        'diem_am': d_am_m,
+                        'dien_tb': dien_m,
                         'diem_dien': 0.0,
-                        'nang_suat_tb': clean_number(r[22]),
-                        'diem_nang_suat': clean_number(r[23]),
+                        'nang_suat_tb': ns_m,
+                        'diem_nang_suat': d_ns_m,
                         'diem_kpi': kpi_m,
                     })
 

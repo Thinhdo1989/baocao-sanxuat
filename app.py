@@ -283,6 +283,10 @@ from kpi_calculator import (
     get_equipment_incident_alerts,
     get_all_leaders_dashboard_summary,
     evaluate_kpi_score,
+    calculate_kpi_components,
+    KPI_WEIGHT_OUTPUT,
+    KPI_WEIGHT_MOISTURE,
+    KPI_WEIGHT_PRODUCTIVITY,
     evaluate_electricity,
     evaluate_productivity,
     evaluate_moisture,
@@ -3163,6 +3167,9 @@ elif task_num == 2:
                     kpi_val = r_ldr.get('diem_kpi', 0)
                     kpi_info = evaluate_kpi_score(kpi_val)
                     rank_str = translate_eval(kpi_info['rank'])
+                    d_sl = r_ldr.get('diem_sl', 0)
+                    d_am = r_ldr.get('diem_am', 0)
+                    d_ns = r_ldr.get('diem_nang_suat', 0)
                     st.markdown(f"""
                     <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:10px; padding:12px 16px; margin-bottom:12px; box-shadow:0 2px 5px rgba(0,0,0,0.03);">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -3170,10 +3177,10 @@ elif task_num == 2:
                             <span style="background:#f1f5f9; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:600; color:#475569;">{r_ldr.get('so_ca', 0):.0f} {t('Ca Trực', 'Shifts')}</span>
                         </div>
                         <div style="font-size:13px; color:#334155; line-height:1.8;">
-                            • <b>{t('Sản lượng', 'Output')}:</b> {r_ldr.get('sl_thuc_te', 0):,.1f} / {r_ldr.get('chi_tieu_sl', 0):,.0f} t ({pct_target:.1f}%)<br/>
-                            • <b>{t('Suất điện TB', 'Avg Power')}:</b> {r_ldr.get('dien_tb', 0):.1f} kWh/{t('tấn', 'ton')}<br/>
-                            • <b>{t('Năng suất ép', 'Press Productivity')}:</b> {r_ldr.get('nang_suat_tb', 0):.2f} {t('tấn/h', 't/h')}<br/>
-                            • <b>{t('Độ ẩm viên', 'Pellet Moisture')}:</b> {r_ldr.get('do_am_tb', 0):.2f}%<br/>
+                            • <b>{t('1. Sản lượng', '1. Output')}:</b> {r_ldr.get('sl_thuc_te', 0):,.1f} / {r_ldr.get('chi_tieu_sl', 0):,.0f} t ({pct_target:.1f}%) ➔ <b style="color:#16a34a;">{d_sl:.2f}/50 {t('đ', 'pts')}</b><br/>
+                            • <b>{t('2. Độ ẩm viên', '2. Pellet Moisture')}:</b> {r_ldr.get('do_am_tb', 0):.2f}% (CT: 9.0%) ➔ <b style="color:#0284c7;">{d_am:.2f}/30 {t('đ', 'pts')}</b><br/>
+                            • <b>{t('3. Năng suất ép', '3. Press Rate')}:</b> {r_ldr.get('nang_suat_tb', 0):.2f} {t('tấn/h', 't/h')} (CT: ≥4.0) ➔ <b style="color:#f59e0b;">{d_ns:.2f}/20 {t('đ', 'pts')}</b><br/>
+                            • <b>{t('Suất điện TB', 'Avg Power')}:</b> {r_ldr.get('dien_tb', 0):.1f} kWh/{t('tấn', 'ton')} <span style="color:#64748b; font-size:11px;">({t('Tham khảo', 'Ref only')})</span><br/>
                             • <b>{t('Tổng điểm KPI', 'Total KPI Score')}:</b> <span style="font-weight:800; color:{kpi_info['color']}; font-size:16px;">{kpi_val:.2f} {t('đ', 'pts')}</span> {kpi_info['medal']} ({rank_str})
                         </div>
                     </div>
@@ -3190,6 +3197,12 @@ elif task_num == 2:
     if not df_leaders_m.empty and 'month_label' in df_leaders_m.columns:
         import re
         sorted_kpi_months_order = sorted(df_leaders_m['month_label'].unique(), key=lambda x: int(re.search(r'\d+', str(x)).group(0)) if re.search(r'\d+', str(x)) else 999)
+
+    st.info(f"💡 **{t('Cơ cấu 3 chỉ tiêu tính KPI chuẩn theo Google Sheet W-M KPI (gid=1921415360):', '3 KPI Evaluation Criteria according to Google Sheet W-M KPI (gid=1921415360):')}** "
+            f"**1.** {t('Sản lượng (Tấn) - Trọng số 50đ: Điểm SL = (SL Thực tế / Chỉ tiêu SL) × 50', 'Output (Tons) - Weight 50 pts: Output Pts = (Actual / Target) × 50')} | "
+            f"**2.** {t('Độ ẩm viên nén (%) - Trọng số 30đ: Điểm Ẩm = (Độ ẩm TB / 9.0) × 30', 'Pellet Moisture (%) - Weight 30 pts: Moist Pts = (Avg Moist / 9.0) × 30')} | "
+            f"**3.** {t('Năng suất máy ép (tấn/h) - Trọng số 20đ: Điểm NS = (Năng suất TB / 4.0) × 20', 'Press Rate (t/h) - Weight 20 pts: Press Pts = (Avg Press / 4.0) × 20')}. "
+            f"*{t('Điện năng tiêu thụ kWh/tấn theo dõi kỹ thuật, không tính điểm vào KPI.', 'Power consumption is tracked for technical monitoring, not scored in KPI.')}*")
 
     # Các Tabs chuyên biệt cho Tuần và Tháng - Click chọn trực tiếp
     subtab_kpi_w, subtab_kpi_m, subtab_kpi_all = st.tabs([
