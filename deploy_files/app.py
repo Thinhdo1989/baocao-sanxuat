@@ -4,6 +4,13 @@ Chạy bằng lệnh: streamlit run app.py
 """
 import os
 import sys
+
+# Đảm bảo đường dẫn thư mục hiện tại và deploy_files luôn nằm ở đầu sys.path
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_parent_dir = os.path.dirname(_current_dir)
+for _p in [_current_dir, _parent_dir]:
+    if _p and os.path.exists(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 import re
 import base64
 from datetime import datetime, timedelta
@@ -273,31 +280,59 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 from data_loader import DataLoader, DEFAULT_SHIFT_COLUMNS, match_shift_leader, POSITION_DIRECTORY, parse_vn_date
-from kpi_calculator import (
-    classify_shift_counts,
-    get_latest_day_kpis,
-    get_equipment_statistics,
-    get_shift_leader_kpis,
-    get_kpi_leaderboard,
-    get_incident_statistics,
-    get_equipment_incident_alerts,
-    get_all_leaders_dashboard_summary,
-    evaluate_kpi_score,
-    calculate_kpi_components,
-    KPI_WEIGHT_OUTPUT,
-    KPI_WEIGHT_MOISTURE,
-    KPI_WEIGHT_PRODUCTIVITY,
-    evaluate_electricity,
-    evaluate_productivity,
-    evaluate_moisture,
-    evaluate_ash,
-    evaluate_density,
-    ELEC_MIN_BENCHMARK,
-    ELEC_MAX_BENCHMARK,
-    PRODUCTIVITY_TARGET,
-    DENSITY_BENCHMARK_MIN,
-    EQUIPMENT_INFO
-)
+import kpi_calculator
+import importlib
+
+# Tự động nạp lại kpi_calculator nếu server Streamlit Cloud đang giữ module cũ trong cache bộ nhớ
+if not hasattr(kpi_calculator, 'calculate_kpi_components'):
+    try:
+        kpi_calculator = importlib.reload(kpi_calculator)
+    except Exception:
+        pass
+
+classify_shift_counts = getattr(kpi_calculator, 'classify_shift_counts')
+get_latest_day_kpis = getattr(kpi_calculator, 'get_latest_day_kpis')
+get_equipment_statistics = getattr(kpi_calculator, 'get_equipment_statistics')
+get_shift_leader_kpis = getattr(kpi_calculator, 'get_shift_leader_kpis')
+get_kpi_leaderboard = getattr(kpi_calculator, 'get_kpi_leaderboard')
+get_incident_statistics = getattr(kpi_calculator, 'get_incident_statistics')
+get_equipment_incident_alerts = getattr(kpi_calculator, 'get_equipment_incident_alerts')
+get_all_leaders_dashboard_summary = getattr(kpi_calculator, 'get_all_leaders_dashboard_summary')
+evaluate_kpi_score = getattr(kpi_calculator, 'evaluate_kpi_score')
+evaluate_electricity = getattr(kpi_calculator, 'evaluate_electricity')
+evaluate_productivity = getattr(kpi_calculator, 'evaluate_productivity')
+evaluate_moisture = getattr(kpi_calculator, 'evaluate_moisture')
+evaluate_ash = getattr(kpi_calculator, 'evaluate_ash')
+evaluate_density = getattr(kpi_calculator, 'evaluate_density')
+ELEC_MIN_BENCHMARK = getattr(kpi_calculator, 'ELEC_MIN_BENCHMARK', 170.0)
+ELEC_MAX_BENCHMARK = getattr(kpi_calculator, 'ELEC_MAX_BENCHMARK', 175.0)
+PRODUCTIVITY_TARGET = getattr(kpi_calculator, 'PRODUCTIVITY_TARGET', 4.0)
+DENSITY_BENCHMARK_MIN = getattr(kpi_calculator, 'DENSITY_BENCHMARK_MIN', 600.0)
+EQUIPMENT_INFO = getattr(kpi_calculator, 'EQUIPMENT_INFO', {})
+
+KPI_WEIGHT_OUTPUT = getattr(kpi_calculator, 'KPI_WEIGHT_OUTPUT', 50.0)
+KPI_WEIGHT_MOISTURE = getattr(kpi_calculator, 'KPI_WEIGHT_MOISTURE', 30.0)
+KPI_WEIGHT_PRODUCTIVITY = getattr(kpi_calculator, 'KPI_WEIGHT_PRODUCTIVITY', 20.0)
+
+calculate_kpi_components = getattr(kpi_calculator, 'calculate_kpi_components', None)
+if calculate_kpi_components is None:
+    def calculate_kpi_components(
+        sl_thuc_te: float,
+        chi_tieu_sl: float,
+        do_am_tb: float,
+        nang_suat_tb: float,
+        target_moisture: float = 9.0,
+        target_productivity: float = 4.0
+    ) -> Dict[str, float]:
+        diem_sl = (sl_thuc_te / chi_tieu_sl * KPI_WEIGHT_OUTPUT) if chi_tieu_sl > 0 else 0.0
+        diem_am = (do_am_tb / target_moisture * KPI_WEIGHT_MOISTURE) if (target_moisture > 0 and do_am_tb > 0) else 0.0
+        diem_ns = (nang_suat_tb / target_productivity * KPI_WEIGHT_PRODUCTIVITY) if (target_productivity > 0 and nang_suat_tb > 0) else 0.0
+        return {
+            'diem_sl': round(diem_sl, 2),
+            'diem_am': round(diem_am, 2),
+            'diem_nang_suat': round(diem_ns, 2),
+            'diem_kpi': round(diem_sl + diem_am + diem_ns, 2)
+        }
 
 @st.cache_data(ttl=60)
 def load_all_factory_data():
