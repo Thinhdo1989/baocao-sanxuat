@@ -1318,6 +1318,52 @@ if is_week_mode and selected_week_sidebar:
     ton_kho_w = get_inventory_for_period(df_shifts, w_shifts['date'].max() if not w_shifts.empty else None, w_shifts)
     tot_xuat_w = float(w_shifts['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in w_shifts.columns else 0.0
 
+    # Tính toán chính xác độ ẩm, tỷ trọng từ df_kcs (sheet KCS) và dầu diezen từ df_weekly (sheet weekly report)
+    do_am_w = 0.0
+    ty_trong_w = 0.0
+    dz_lit_w = 0.0
+    dz_tb_w = 0.0
+
+    # 1. Trích xuất từ df_kcs (sheet KCS của file Nhật kí sản xuất)
+    if df_kcs is not None and not df_kcs.empty and 'week' in df_kcs.columns:
+        kcs_w = df_kcs[df_kcs['week'] == w_num]
+        if not kcs_w.empty:
+            if 'am_vien_pct' in kcs_w.columns:
+                m_vals = kcs_w['am_vien_pct'][kcs_w['am_vien_pct'] > 0]
+                if not m_vals.empty:
+                    do_am_w = float(m_vals.mean())
+            if 'density_vien' in kcs_w.columns:
+                d_vals = kcs_w['density_vien'][kcs_w['density_vien'] > 0]
+                if not d_vals.empty:
+                    ty_trong_w = float(d_vals.mean())
+
+    # 2. Đối soát / Bổ sung với df_weekly (sheet 'weekly report' của file Nhật kí sản xuất)
+    if df_weekly is not None and not df_weekly.empty and 'week' in df_weekly.columns:
+        w_match = df_weekly[df_weekly['week'] == w_num]
+        if not w_match.empty:
+            row_w = w_match.iloc[0]
+            if do_am_w == 0 and 'do_am_vien_pct' in row_w and float(row_w['do_am_vien_pct']) > 0:
+                do_am_w = float(row_w['do_am_vien_pct'])
+            if ty_trong_w == 0 and 'ty_trong_vien' in row_w and float(row_w['ty_trong_vien']) > 0:
+                ty_trong_w = float(row_w['ty_trong_vien'])
+            if 'diezen_lit' in row_w and float(row_w['diezen_lit']) > 0:
+                dz_lit_w = float(row_w['diezen_lit'])
+            if 'diezen_tb_lit_tan' in row_w and float(row_w['diezen_tb_lit_tan']) > 0:
+                dz_tb_w = float(row_w['diezen_tb_lit_tan'])
+
+    # Nếu tuần hiện tại chưa chốt dầu diezen (=0), lấy tuần gần nhất có số liệu chốt
+    if dz_lit_w == 0 and df_weekly is not None and not df_weekly.empty and 'diezen_lit' in df_weekly.columns:
+        valid_dz_weeks = df_weekly[(df_weekly['diezen_lit'] > 0) & (df_weekly['week'] <= w_num)]
+        if not valid_dz_weeks.empty:
+            last_dz_row = valid_dz_weeks.iloc[-1]
+            dz_lit_w = float(last_dz_row['diezen_lit'])
+            dz_tb_w = float(last_dz_row['diezen_tb_lit_tan'])
+
+    if ty_trong_w == 0:
+        ty_trong_w = 645.0
+    if do_am_w == 0:
+        do_am_w = 8.5
+
     kpis = {
         'date_str': f"{selected_week_sidebar} (Năm 2026)",
         'num_shifts': len(w_shifts),
@@ -1334,7 +1380,12 @@ if is_week_mode and selected_week_sidebar:
         'productivity_eval': evaluate_productivity(avg_p),
         'total_pellet_hours': tot_h,
         'processing_ratio': ratio_w,
-        'do_am_tb_pct': 8.5,
+        'do_am_tb_pct': round(do_am_w, 2),
+        'moisture_eval': evaluate_moisture(do_am_w),
+        'ty_trong_vien': round(ty_trong_w, 1),
+        'density_eval': evaluate_density(ty_trong_w),
+        'diezen_lit': dz_lit_w,
+        'diezen_tb_lit_tan': dz_tb_w,
         'equipment_hours': eq_w,
         'group_hours': group_h_w,
         'shift_details': w_shift_details,
@@ -1408,6 +1459,43 @@ elif is_month_mode and selected_month_sidebar:
     ton_kho_m = get_inventory_for_period(df_shifts, m_shifts['date'].max() if not m_shifts.empty else None, m_shifts)
     tot_xuat_m = float(m_shifts['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in m_shifts.columns else 0.0
 
+    # Tính toán chính xác độ ẩm, tỷ trọng từ df_kcs và dầu diezen từ df_weekly
+    do_am_m = 0.0
+    ty_trong_m = 0.0
+    dz_lit_m = 0.0
+    dz_tb_m = 0.0
+
+    if df_kcs is not None and not df_kcs.empty:
+        kcs_m = df_kcs[(df_kcs['date'].dt.month == m_num) & (df_kcs['date'].dt.year == y_num)] if 'date' in df_kcs.columns else pd.DataFrame()
+        if not kcs_m.empty:
+            if 'am_vien_pct' in kcs_m.columns:
+                m_vals = kcs_m['am_vien_pct'][kcs_m['am_vien_pct'] > 0]
+                if not m_vals.empty:
+                    do_am_m = float(m_vals.mean())
+            if 'density_vien' in kcs_m.columns:
+                d_vals = kcs_m['density_vien'][kcs_m['density_vien'] > 0]
+                if not d_vals.empty:
+                    ty_trong_m = float(d_vals.mean())
+
+    if do_am_m == 0 and not df_daily.empty and 'date' in df_daily.columns:
+        m_daily = df_daily[(df_daily['date'].dt.month == m_num) & (df_daily['date'].dt.year == y_num)]
+        if not m_daily.empty and (m_daily['do_am_tb_pct'] > 0).any():
+            do_am_m = float(m_daily['do_am_tb_pct'].mean())
+        if ty_trong_m == 0 and not m_daily.empty and 'ty_trong_vien' in m_daily.columns and (m_daily['ty_trong_vien'] > 0).any():
+            ty_trong_m = float(m_daily['ty_trong_vien'].mean())
+
+    if df_weekly is not None and not df_weekly.empty and 'diezen_lit' in df_weekly.columns:
+        valid_dz = df_weekly[df_weekly['diezen_lit'] > 0]
+        if not valid_dz.empty:
+            last_dz = valid_dz.iloc[-1]
+            dz_lit_m = float(last_dz['diezen_lit'])
+            dz_tb_m = float(last_dz['diezen_tb_lit_tan'])
+
+    if ty_trong_m == 0:
+        ty_trong_m = 645.0
+    if do_am_m == 0:
+        do_am_m = 8.5
+
     kpis = {
         'date_str': f"{t('Tháng', 'Month')} {selected_month_sidebar}",
         'num_shifts': len(m_shifts),
@@ -1424,14 +1512,16 @@ elif is_month_mode and selected_month_sidebar:
         'productivity_eval': evaluate_productivity(avg_p),
         'total_pellet_hours': tot_h,
         'processing_ratio': ratio_m,
-        'do_am_tb_pct': round(float(df_daily[df_daily['date'].dt.month == m_num]['do_am_tb_pct'].mean()), 2) if not df_daily.empty and 'date' in df_daily.columns and (df_daily['date'].dt.month == m_num).any() and (df_daily[df_daily['date'].dt.month == m_num]['do_am_tb_pct'] > 0).any() else 8.5,
-        'ty_trong_vien': round(float(df_daily[df_daily['date'].dt.month == m_num]['ty_trong_vien'].mean()), 1) if not df_daily.empty and 'date' in df_daily.columns and (df_daily['date'].dt.month == m_num).any() and (df_daily[df_daily['date'].dt.month == m_num]['ty_trong_vien'] > 0).any() else 640.0,
+        'do_am_tb_pct': round(do_am_m, 2),
+        'moisture_eval': evaluate_moisture(do_am_m),
+        'ty_trong_vien': round(ty_trong_m, 1),
+        'density_eval': evaluate_density(ty_trong_m),
+        'diezen_lit': dz_lit_m,
+        'diezen_tb_lit_tan': dz_tb_m,
         'equipment_hours': eq_m,
         'group_hours': group_h_m,
         'shift_details': m_shift_details,
     }
-    kpis['moisture_eval'] = evaluate_moisture(kpis['do_am_tb_pct'])
-    kpis['density_eval'] = evaluate_density(kpis['ty_trong_vien'])
 elif is_year_mode:
     y_num = 2026
     y_shifts = df_filtered_shifts[df_filtered_shifts['date'].dt.year == y_num] if ('date' in df_filtered_shifts.columns and not df_filtered_shifts.empty) else pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
@@ -1491,6 +1581,35 @@ elif is_year_mode:
     ton_kho_y = get_inventory_for_period(df_shifts, y_shifts['date'].max() if not y_shifts.empty else None, y_shifts)
     tot_xuat_y = float(y_shifts['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in y_shifts.columns else 0.0
 
+    do_am_y = 0.0
+    ty_trong_y = 0.0
+    dz_lit_y = 0.0
+    dz_tb_y = 0.0
+
+    if df_kcs is not None and not df_kcs.empty:
+        kcs_y = df_kcs[df_kcs['date'].dt.year == y_num] if 'date' in df_kcs.columns else df_kcs
+        if not kcs_y.empty:
+            if 'am_vien_pct' in kcs_y.columns:
+                m_vals = kcs_y['am_vien_pct'][kcs_y['am_vien_pct'] > 0]
+                if not m_vals.empty:
+                    do_am_y = float(m_vals.mean())
+            if 'density_vien' in kcs_y.columns:
+                d_vals = kcs_y['density_vien'][kcs_y['density_vien'] > 0]
+                if not d_vals.empty:
+                    ty_trong_y = float(d_vals.mean())
+
+    if df_weekly is not None and not df_weekly.empty and 'diezen_lit' in df_weekly.columns:
+        valid_dz = df_weekly[df_weekly['diezen_lit'] > 0]
+        if not valid_dz.empty:
+            dz_lit_y = float(valid_dz['diezen_lit'].sum())
+            tot_sl_dz = float(valid_dz['san_luong_tan'].sum())
+            dz_tb_y = dz_lit_y / tot_sl_dz if tot_sl_dz > 0 else 0.0
+
+    if ty_trong_y == 0:
+        ty_trong_y = 645.0
+    if do_am_y == 0:
+        do_am_y = 8.5
+
     kpis = {
         'date_str': f"{t('Năm', 'Year')} {y_num}",
         'num_shifts': len(y_shifts),
@@ -1507,13 +1626,16 @@ elif is_year_mode:
         'productivity_eval': evaluate_productivity(avg_p),
         'total_pellet_hours': tot_h,
         'processing_ratio': ratio_y,
-        'do_am_tb_pct': 8.5,
+        'do_am_tb_pct': round(do_am_y, 2),
+        'moisture_eval': evaluate_moisture(do_am_y),
+        'ty_trong_vien': round(ty_trong_y, 1),
+        'density_eval': evaluate_density(ty_trong_y),
+        'diezen_lit': dz_lit_y,
+        'diezen_tb_lit_tan': dz_tb_y,
         'equipment_hours': eq_y,
         'group_hours': group_h_y,
         'shift_details': y_shift_details,
     }
-    kpis['moisture_eval'] = evaluate_moisture(kpis['do_am_tb_pct'])
-    kpis['density_eval'] = evaluate_density(kpis.get('ty_trong_vien', 640.0))
 elif is_range_mode and date_range:
     r_start, r_end = date_range
     r_shifts = df_filtered_shifts[
@@ -1576,6 +1698,35 @@ elif is_range_mode and date_range:
     ton_kho_r = get_inventory_for_period(df_shifts, r_end, r_shifts)
     tot_xuat_r = float(r_shifts['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in r_shifts.columns else 0.0
 
+    do_am_r = 0.0
+    ty_trong_r = 0.0
+    dz_lit_r = 0.0
+    dz_tb_r = 0.0
+
+    if df_kcs is not None and not df_kcs.empty and 'date' in df_kcs.columns:
+        kcs_r = df_kcs[(df_kcs['date'] >= r_start) & (df_kcs['date'] <= r_end)]
+        if not kcs_r.empty:
+            if 'am_vien_pct' in kcs_r.columns:
+                m_vals = kcs_r['am_vien_pct'][kcs_r['am_vien_pct'] > 0]
+                if not m_vals.empty:
+                    do_am_r = float(m_vals.mean())
+            if 'density_vien' in kcs_r.columns:
+                d_vals = kcs_r['density_vien'][kcs_r['density_vien'] > 0]
+                if not d_vals.empty:
+                    ty_trong_r = float(d_vals.mean())
+
+    if df_weekly is not None and not df_weekly.empty and 'diezen_lit' in df_weekly.columns:
+        valid_dz = df_weekly[df_weekly['diezen_lit'] > 0]
+        if not valid_dz.empty:
+            last_dz = valid_dz.iloc[-1]
+            dz_lit_r = float(last_dz['diezen_lit'])
+            dz_tb_r = float(last_dz['diezen_tb_lit_tan'])
+
+    if ty_trong_r == 0:
+        ty_trong_r = 645.0
+    if do_am_r == 0:
+        do_am_r = 8.5
+
     kpis = {
         'date_str': f"{r_start.strftime('%d/%m/%Y')} - {r_end.strftime('%d/%m/%Y')}",
         'num_shifts': len(r_shifts),
@@ -1592,15 +1743,32 @@ elif is_range_mode and date_range:
         'productivity_eval': evaluate_productivity(avg_p),
         'total_pellet_hours': tot_h,
         'processing_ratio': ratio_r,
-        'do_am_tb_pct': 8.5,
+        'do_am_tb_pct': round(do_am_r, 2),
+        'moisture_eval': evaluate_moisture(do_am_r),
+        'ty_trong_vien': round(ty_trong_r, 1),
+        'density_eval': evaluate_density(ty_trong_r),
+        'diezen_lit': dz_lit_r,
+        'diezen_tb_lit_tan': dz_tb_r,
         'equipment_hours': eq_r,
         'group_hours': group_h_r,
         'shift_details': r_shift_details,
     }
-    kpis['moisture_eval'] = evaluate_moisture(kpis['do_am_tb_pct'])
-    kpis['density_eval'] = evaluate_density(kpis.get('ty_trong_vien', 640.0))
 else:
     kpis = get_latest_day_kpis(df_filtered_shifts, df_daily, df_kcs=df_kcs, target_date=selected_date)
+    # Đồng bộ số liệu dầu diezen từ sheet weekly report cho ngày đang chọn
+    if selected_date is not None and df_weekly is not None and not df_weekly.empty:
+        cur_w_num = selected_date.isocalendar()[1]
+        w_match = df_weekly[df_weekly['week'] == cur_w_num]
+        if not w_match.empty and float(w_match.iloc[0].get('diezen_lit', 0)) > 0:
+            kpis['diezen_lit'] = float(w_match.iloc[0]['diezen_lit'])
+            kpis['diezen_tb_lit_tan'] = float(w_match.iloc[0]['diezen_tb_lit_tan'])
+        else:
+            valid_dz = df_weekly[df_weekly['diezen_lit'] > 0]
+            if not valid_dz.empty:
+                last_dz = valid_dz.iloc[-1]
+                kpis['diezen_lit'] = float(last_dz['diezen_lit'])
+                kpis['diezen_tb_lit_tan'] = float(last_dz['diezen_tb_lit_tan'])
+
     if selected_leader not in ["Tất cả", "All"] and 'date' in df_filtered_shifts.columns and not df_filtered_shifts.empty and 'date' in kpis:
         k_dt = pd.to_datetime(kpis['date']).date()
         day_ldr_shifts = df_filtered_shifts[df_filtered_shifts['date'].dt.date == k_dt]
@@ -1738,9 +1906,28 @@ def render_factory_dashboard_cards(kpis_data, df_weekly_data):
     with r2_c3:
         st.markdown(render_kpi_card_html(t("Tỷ Lệ Chế Biến", "Processing Ratio"), f"{kpis_data.get('processing_ratio', 0):.2f}", t("lần", "x"), t("Định mức: 1.8 - 2.1", "Standard: 1.8 - 2.1"), "badge-info"), unsafe_allow_html=True)
     with r2_c4:
-        lat_dz = df_weekly_data.iloc[-1]['diezen_lit'] if not df_weekly_data.empty else 0.0
-        lat_dz_r = df_weekly_data.iloc[-1]['diezen_tb_lit_tan'] if not df_weekly_data.empty else 0.0
-        st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), f"{lat_dz_r:.1f}", t("Lít/tấn", "L/ton"), t(f"{lat_dz:,.0f} Lít/tuần", f"{lat_dz:,.0f} L/week"), "badge-info"), unsafe_allow_html=True)
+        # Lấy lượng dầu diezen từ kpis_data (được tính theo tuần/kỳ đang chọn), nếu = 0 thì lấy tuần gần nhất có số liệu chốt trong df_weekly
+        k_dz = float(kpis_data.get('diezen_lit', 0.0))
+        k_dz_r = float(kpis_data.get('diezen_tb_lit_tan', 0.0))
+        
+        if k_dz > 0 and k_dz_r > 0:
+            dz_disp_r = k_dz_r
+            dz_disp_sub = t(f"{k_dz:,.0f} Lít/kỳ", f"{k_dz:,.0f} L/period")
+        elif df_weekly_data is not None and not df_weekly_data.empty and 'diezen_lit' in df_weekly_data.columns:
+            valid_dz_weeks = df_weekly_data[df_weekly_data['diezen_lit'] > 0]
+            if not valid_dz_weeks.empty:
+                last_valid_row = valid_dz_weeks.iloc[-1]
+                dz_disp_r = float(last_valid_row.get('diezen_tb_lit_tan', 0.0))
+                last_w_num = int(last_valid_row.get('week', 0))
+                dz_disp_sub = t(f"{last_valid_row.get('diezen_lit', 0):,.0f} Lít (T{last_w_num})", f"{last_valid_row.get('diezen_lit', 0):,.0f} L (W{last_w_num})")
+            else:
+                dz_disp_r = 0.0
+                dz_disp_sub = t("Chưa có số liệu", "No data")
+        else:
+            dz_disp_r = 0.0
+            dz_disp_sub = t("Chưa có số liệu", "No data")
+
+        st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), f"{dz_disp_r:.1f}", t("Lít/tấn", "L/ton"), dz_disp_sub, "badge-info"), unsafe_allow_html=True)
 
     # Hàng 3: Tồn Kho & Xuất Hàng Kho Thành Phẩm (Kho BVN Quảng Bình)
     tk_val = float(kpis_data.get('ton_kho_tan', 0.0))

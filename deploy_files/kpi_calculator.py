@@ -252,8 +252,8 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
     do_am_tb = float(daily_record.get('do_am_tb_pct', 0.0))
     ty_trong = float(daily_record.get('ty_trong_vien', 0.0))
 
-    # Nếu df_daily chưa có hoặc = 0, đối soát lấy từ df_kcs
-    if (do_am_tb == 0 or ty_trong == 0) and df_kcs is not None and not df_kcs.empty:
+    # Nếu df_daily chưa có hoặc = 0, đối soát lấy từ df_kcs (sheet KCS của file Nhật kí sản xuất)
+    if df_kcs is not None and not df_kcs.empty:
         kcs_day = df_kcs[df_kcs['date'].dt.date == target_date.date()]
         if not kcs_day.empty:
             if do_am_tb == 0 and 'am_vien_pct' in kcs_day.columns:
@@ -264,6 +264,28 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
                 d_vals = kcs_day['density_vien'][kcs_day['density_vien'] > 0]
                 if not d_vals.empty:
                     ty_trong = float(d_vals.mean())
+
+        # Nếu ngày đó chưa kịp đo tỷ trọng, lấy mẫu đo tỷ trọng gần nhất trước đó từ df_kcs
+        if ty_trong == 0 and 'density_vien' in df_kcs.columns:
+            past_density = df_kcs[(df_kcs['date'].dt.date <= target_date.date()) & (df_kcs['density_vien'] > 0)]
+            if not past_density.empty:
+                ty_trong = float(past_density.iloc[-1]['density_vien'])
+            else:
+                all_density = df_kcs[df_kcs['density_vien'] > 0]
+                if not all_density.empty:
+                    ty_trong = float(all_density.iloc[-1]['density_vien'])
+                else:
+                    ty_trong = 645.0
+
+        if do_am_tb == 0 and 'am_vien_pct' in df_kcs.columns:
+            past_am = df_kcs[(df_kcs['date'].dt.date <= target_date.date()) & (df_kcs['am_vien_pct'] > 0)]
+            if not past_am.empty:
+                do_am_tb = float(past_am.iloc[-1]['am_vien_pct'])
+            else:
+                do_am_tb = 8.5
+    else:
+        if ty_trong == 0: ty_trong = 645.0
+        if do_am_tb == 0: do_am_tb = 8.5
 
     # Tính delta so với ngày hôm trước
     prev_output = float(prev_shifts['san_luong_tan'].sum()) if not prev_shifts.empty else 0.0

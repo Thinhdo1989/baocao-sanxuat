@@ -383,7 +383,11 @@ class DataLoader:
                     if open_att == 0 and '429' in str(e):
                         time.sleep(1.5)
                     else:
-                        print(f"[-] Không thể mở bảng tính {label} ({s_id}): {e}")
+                        try:
+                            sys.stdout.buffer.write(f"[-] Không thể mở bảng tính {label} ({s_id}): {e}\n".encode('utf-8', errors='replace'))
+                            sys.stdout.buffer.flush()
+                        except Exception:
+                            pass
             if not opened:
                 setattr(self, attr, None)
             time.sleep(0.1)
@@ -826,12 +830,12 @@ class DataLoader:
             os.path.join("deploy_files", "assets", "cache_kcs.parquet"),
         ]
 
-        # 1. Ưu tiên đọc từ 'Data KCS' trong file KPI
-        rows = self.get_kpi_sheet_values('Data KCS')
+        # 1. Ưu tiên đọc từ sheet 'KCS' trong file Nhật kí sản xuất (self.spreadsheet)
+        rows = self.get_sheet_values('KCS')
 
-        # 2. Dự phòng đọc từ 'KCS' trong file sản xuất hoặc file KPI
+        # 2. Dự phòng đọc từ 'Data KCS' hoặc 'KCS' trong file KPI (self.kpi_spreadsheet)
         if not rows or len(rows) < 2:
-            rows = self.get_sheet_values('KCS')
+            rows = self.get_kpi_sheet_values('Data KCS')
         if not rows or len(rows) < 2:
             rows = self.get_kpi_sheet_values('KCS')
 
