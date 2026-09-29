@@ -312,6 +312,11 @@ ELEC_MAX_BENCHMARK = getattr(kpi_calculator, 'ELEC_MAX_BENCHMARK', 175.0)
 PRODUCTIVITY_TARGET = getattr(kpi_calculator, 'PRODUCTIVITY_TARGET', 4.0)
 DENSITY_BENCHMARK_MIN = getattr(kpi_calculator, 'DENSITY_BENCHMARK_MIN', 600.0)
 EQUIPMENT_INFO = getattr(kpi_calculator, 'EQUIPMENT_INFO', {})
+PE_MACHINE_MAPPING = getattr(kpi_calculator, 'PE_MACHINE_MAPPING', {
+    'PE1': 'PE1510', 'PE2': 'PE2510', 'PE3': 'PE3510', 'PE4': 'PE4510',
+    'PE5': 'PE5510', 'PE6': 'PE6510', 'PE7': 'PE7510', 'PE8': 'PE8510'
+})
+PE_510_TO_PE = getattr(kpi_calculator, 'PE_510_TO_PE', {v: k for k, v in PE_MACHINE_MAPPING.items()})
 
 KPI_WEIGHT_OUTPUT = getattr(kpi_calculator, 'KPI_WEIGHT_OUTPUT', 50.0)
 KPI_WEIGHT_MOISTURE = getattr(kpi_calculator, 'KPI_WEIGHT_MOISTURE', 30.0)
@@ -461,7 +466,7 @@ def load_all_factory_data():
 
     # Dữ liệu Lịch Thay Nhớt Hộp Số Máy Ép PE1-PE8
     try:
-        oil_change_data = loader.load_oil_change_data()
+        oil_change_data = loader.load_oil_change_data(df_shifts=df_shifts)
     except Exception as e:
         print(f"[-] Lỗi nạp oil change data: {e}")
         oil_change_data = {'summary': pd.DataFrame(), 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép"}
@@ -5435,64 +5440,129 @@ elif task_num == 7:
             c1_pct = round(c1_done_count / tot_machines * 100, 1) if tot_machines > 0 else 100.0
             latest_change_date = df_oil_sum['change_date_c1'].iloc[0] if 'change_date_c1' in df_oil_sum.columns else "18/09/2026"
 
+            avg_c2 = float(df_oil_sum['run_hours_c2'].mean()) if 'run_hours_c2' in df_oil_sum.columns else 0.0
+            max_c2 = float(df_oil_sum['run_hours_c2'].max()) if 'run_hours_c2' in df_oil_sum.columns else 0.0
+
             c_o1, c_o2, c_o3, c_o4, c_o5 = st.columns(5)
-            c_o1.metric(t("Tổng Máy Ép", "Total Pellet Mills"), f"{tot_machines} " + t("máy", "units"), "PE1 → PE8")
+            c_o1.metric(t("Tổng Máy Ép", "Total Pellet Mills"), f"{tot_machines} " + t("máy", "units"), "PE1 → PE8 (PE1510–PE8510)")
             c_o2.metric(t("Tổng Lượng Nhớt", "Total Oil Volume"), f"{tot_oil_lit:,.0f} " + t("Lít", "Liters"), t("208 L / máy", "208 L / unit"))
             c_o3.metric(t("Định Mức Chu Kỳ", "Standard Interval"), t("4.000 Giờ", "4,000 Hours"), "Mobil Glygoyle 460")
-            c_o4.metric(t("Tiến Độ Lần 1", "Cycle 1 Progress"), f"{c1_done_count}/{tot_machines} " + t("máy", "units") + f" ({c1_pct}%)", f"{t('Ngày', 'Date')} {latest_change_date}")
-            c_o5.metric(t("Chu Kỳ Hiện Tại", "Current Cycle"), t("Chu kỳ 2 (0h)", "Cycle 2 (0h)"), t("Bình thường", "Normal"))
+            c_o4.metric(t("Lần 1 (18/09/2026)", "Cycle 1 (Sep 18)"), f"{c1_done_count}/{tot_machines} " + t("máy", "units") + f" ({c1_pct}%)", t("Đã hoàn tất", "Completed"))
+            c_o5.metric(t("Chu Kỳ 2 Hiện Tại", "Current Cycle 2"), f"{avg_c2:.1f}h " + t("(TB từ 19/09)", "(Avg post Sep 18)"), f"Max {max_c2:.1f}h / 4.000h")
 
             st.markdown("---")
 
-            c_og1, c_og2 = st.columns([3, 2])
-            with c_og1:
-                fig_oil_bar = px.bar(
-                    df_oil_sum,
-                    x='machine_code',
-                    y='run_hours_c1',
-                    text='run_hours_c1',
-                    labels={'machine_code': t('Máy Ép', 'Pellet Mill'), 'run_hours_c1': t('Giờ Chạy Thực Tế (h)', 'Actual Run Hours (h)')},
-                    title=t("Số Giờ Vận Hành Thực Tế Khi Thay Nhớt Lần 1 vs Định Mức 4.000h", "Actual Operating Hours at 1st Oil Change vs 4,000h Target"),
-                    color='run_hours_c1',
-                    color_continuous_scale=['#38bdf8', '#10b981', '#f59e0b', '#ef4444']
-                )
-                fig_oil_bar.add_hline(
-                    y=4000, 
-                    line_dash="dash", 
-                    line_color="#ef4444", 
-                    annotation_text=t("Định mức chuẩn: 4.000h", "Standard target: 4,000h"), 
-                    annotation_position="top left",
-                    annotation_font_color="#ef4444"
-                )
-                fig_oil_bar.update_traces(texttemplate='%{text:,.1f}h', textposition='outside')
-                fig_oil_bar.update_layout(
-                    height=320, 
-                    margin=dict(t=40, b=20, l=20, r=20),
-                    coloraxis_showscale=False,
-                    yaxis=dict(range=[0, 4800])
-                )
-                st.plotly_chart(fig_oil_bar, use_container_width=True, key="fig_oil_c1_bar")
+            # Hiển thị Biểu đồ so sánh Chu kỳ 2 hiện tại và Chu kỳ 1 đã qua
+            tab_chart_c2, tab_chart_c1 = st.tabs([
+                t("⏱️ Giờ Vận Hành Chu Kỳ 2 (Sau 18/09/2026)", "⏱️ Cycle 2 Run Hours (Post Sep 18, 2026)"),
+                t("📋 Lịch Sử Thay Nhớt Lần 1 (18/09/2026)", "📋 Cycle 1 History (Sep 18, 2026)")
+            ])
 
-            with c_og2:
-                df_st_c1 = df_oil_sum['change_status_c1'].value_counts().reset_index()
-                df_st_c1.columns = ['Trạng Thái', 'Số Máy']
-                fig_oil_pie = px.pie(
-                    df_st_c1,
-                    names='Trạng Thái',
-                    values='Số Máy',
-                    title=f"{t('Tỷ Lệ Hoàn Thành Lần 1', 'Cycle 1 Completion Rate')} ({latest_change_date})",
-                    hole=0.45,
-                    color_discrete_sequence=['#10b981', '#f59e0b']
-                )
-                fig_oil_pie.update_layout(height=320, margin=dict(t=40, b=20, l=20, r=20))
-                st.plotly_chart(fig_oil_pie, use_container_width=True, key="fig_oil_pie_c1")
+            with tab_chart_c2:
+                c_c2_1, c_c2_2 = st.columns([3, 2])
+                with c_c2_1:
+                    df_c2_chart = df_oil_sum.copy()
+                    df_c2_chart['label_pe'] = df_c2_chart['machine_code'] + " (" + df_c2_chart['machine_code_510'] + ")"
+                    fig_oil_c2 = px.bar(
+                        df_c2_chart,
+                        x='label_pe',
+                        y='run_hours_c2',
+                        text='run_hours_c2',
+                        labels={'label_pe': t('Máy Ép', 'Pellet Mill'), 'run_hours_c2': t('Giờ Chạy Chu Kỳ 2 (h)', 'Cycle 2 Run Hours (h)')},
+                        title=t("Giờ Vận Hành Chu Kỳ 2 Tích Lũy Sau Ngày 18/09/2026 (Định Mức: 4.000h)", "Cycle 2 Operating Hours Accumulated Post Sep 18, 2026 (Benchmark: 4,000h)"),
+                        color='run_hours_c2',
+                        color_continuous_scale=['#38bdf8', '#3b82f6', '#1d4ed8']
+                    )
+                    fig_oil_c2.add_hline(
+                        y=4000, 
+                        line_dash="dash", 
+                        line_color="#ef4444", 
+                        annotation_text=t("Định mức thay nhớt: 4.000h", "Oil change target: 4,000h"), 
+                        annotation_position="top left",
+                        annotation_font_color="#ef4444"
+                    )
+                    fig_oil_c2.update_traces(texttemplate='%{text:,.1f}h', textposition='outside')
+                    fig_oil_c2.update_layout(
+                        height=330, 
+                        margin=dict(t=40, b=20, l=20, r=20),
+                        coloraxis_showscale=False,
+                        yaxis=dict(range=[0, max(200, max_c2 * 1.3)])
+                    )
+                    st.plotly_chart(fig_oil_c2, use_container_width=True, key="fig_oil_c2_bar")
+
+                with c_c2_2:
+                    df_c2_rem = df_c2_chart[['label_pe', 'run_hours_c2', 'remaining_hours_c2']].copy()
+                    fig_oil_donut = px.bar(
+                        df_c2_rem,
+                        x='label_pe',
+                        y=['run_hours_c2', 'remaining_hours_c2'],
+                        title=t("Tiến Độ Chu Kỳ 2: Đã Chạy vs Giờ Còn Lại Đến 4.000h", "Cycle 2 Progress: Elapsed vs Remaining to 4,000h"),
+                        labels={'value': t('Số giờ (h)', 'Hours (h)'), 'label_pe': t('Máy ép', 'Mill')},
+                        color_discrete_map={'run_hours_c2': '#3b82f6', 'remaining_hours_c2': '#cbd5e1'},
+                        barmode='stack'
+                    )
+                    fig_oil_donut.update_layout(height=330, margin=dict(t=40, b=20, l=20, r=20), legend_title_text="")
+                    st.plotly_chart(fig_oil_donut, use_container_width=True, key="fig_oil_c2_stack")
+
+            with tab_chart_c1:
+                c_og1, c_og2 = st.columns([3, 2])
+                with c_og1:
+                    fig_oil_bar = px.bar(
+                        df_oil_sum,
+                        x='machine_code',
+                        y='run_hours_c1',
+                        text='run_hours_c1',
+                        labels={'machine_code': t('Máy Ép', 'Pellet Mill'), 'run_hours_c1': t('Giờ Chạy Thực Tế (h)', 'Actual Run Hours (h)')},
+                        title=t("Số Giờ Vận Hành Thực Tế Khi Thay Nhớt Lần 1 vs Định Mức 4.000h", "Actual Operating Hours at 1st Oil Change vs 4,000h Target"),
+                        color='run_hours_c1',
+                        color_continuous_scale=['#38bdf8', '#10b981', '#f59e0b', '#ef4444']
+                    )
+                    fig_oil_bar.add_hline(
+                        y=4000, 
+                        line_dash="dash", 
+                        line_color="#ef4444", 
+                        annotation_text=t("Định mức chuẩn: 4.000h", "Standard target: 4,000h"), 
+                        annotation_position="top left",
+                        annotation_font_color="#ef4444"
+                    )
+                    fig_oil_bar.update_traces(texttemplate='%{text:,.1f}h', textposition='outside')
+                    fig_oil_bar.update_layout(
+                        height=320, 
+                        margin=dict(t=40, b=20, l=20, r=20),
+                        coloraxis_showscale=False,
+                        yaxis=dict(range=[0, 4800])
+                    )
+                    st.plotly_chart(fig_oil_bar, use_container_width=True, key="fig_oil_c1_bar")
+
+                with c_og2:
+                    df_st_c1 = df_oil_sum['change_status_c1'].value_counts().reset_index()
+                    df_st_c1.columns = ['Trạng Thái', 'Số Máy']
+                    fig_oil_pie = px.pie(
+                        df_st_c1,
+                        names='Trạng Thái',
+                        values='Số Máy',
+                        title=f"{t('Tỷ Lệ Hoàn Thành Lần 1', 'Cycle 1 Completion Rate')} ({latest_change_date})",
+                        hole=0.45,
+                        color_discrete_sequence=['#10b981', '#f59e0b']
+                    )
+                    fig_oil_pie.update_layout(height=320, margin=dict(t=40, b=20, l=20, r=20))
+                    st.plotly_chart(fig_oil_pie, use_container_width=True, key="fig_oil_pie_c1")
 
             st.markdown(f"##### 📋 {t('Bảng Tổng Hợp Theo Dõi Thay Nhớt Hộp Số PE1 - PE8', 'PE1 - PE8 Gearbox Oil Change Summary Table')}")
             disp_oil = df_oil_sum.copy()
+            if 'machine_code_510' not in disp_oil.columns:
+                disp_oil['machine_code_510'] = disp_oil['machine_code'].map(PE_MACHINE_MAPPING).fillna(disp_oil['machine_code'])
             disp_oil['Tỷ Lệ Giờ Đạt C1'] = (disp_oil['run_hours_c1'] / disp_oil['standard_hours'] * 100).round(1).astype(str) + '%'
+            if 'remaining_hours_c2' not in disp_oil.columns:
+                disp_oil['remaining_hours_c2'] = (disp_oil['standard_hours'] - disp_oil['run_hours_c2']).clip(lower=0).round(1)
+            if 'progress_pct_c2' not in disp_oil.columns:
+                disp_oil['progress_pct_c2'] = (disp_oil['run_hours_c2'] / disp_oil['standard_hours'] * 100).round(1)
+            disp_oil['Tiến Độ C2 (%)'] = disp_oil['progress_pct_c2'].astype(str) + '%'
+
             if is_en():
                 disp_oil.rename(columns={
                     'machine_code': 'Machine Tag',
+                    'machine_code_510': 'Tech Code (PE_510)',
                     'machine_name': 'Equipment Name',
                     'oil_type': 'Lubricant Type',
                     'oil_capacity_l': 'Capacity (L)',
@@ -5501,13 +5571,16 @@ elif task_num == 7:
                     'change_date_c1': 'Cycle 1 Date',
                     'change_status_c1': 'Cycle 1 Status',
                     'run_hours_c2': 'Cycle 2 Run Hours (h)',
+                    'remaining_hours_c2': 'Remaining Hours (h)',
+                    'Tiến Độ C2 (%)': 'Cycle 2 Progress %',
                     'alert_status_c2': 'Cycle 2 Alert',
                     'Tỷ Lệ Giờ Đạt C1': 'Cycle 1 Completion %'
                 }, inplace=True)
-                ordered_cols = ['Machine Tag', 'Equipment Name', 'Lubricant Type', 'Capacity (L)', 'Interval (h)', 'Cycle 1 Run Hours (h)', 'Cycle 1 Completion %', 'Cycle 1 Date', 'Cycle 1 Status', 'Cycle 2 Run Hours (h)', 'Cycle 2 Alert']
+                ordered_cols = ['Machine Tag', 'Tech Code (PE_510)', 'Equipment Name', 'Lubricant Type', 'Capacity (L)', 'Interval (h)', 'Cycle 1 Run Hours (h)', 'Cycle 1 Completion %', 'Cycle 1 Date', 'Cycle 1 Status', 'Cycle 2 Run Hours (h)', 'Remaining Hours (h)', 'Cycle 2 Progress %', 'Cycle 2 Alert']
             else:
                 disp_oil.rename(columns={
-                    'machine_code': 'Mã Máy',
+                    'machine_code': 'Mã Máy (PE)',
+                    'machine_code_510': 'Mã Kỹ Thuật (PE_510)',
                     'machine_name': 'Tên Thiết Bị',
                     'oil_type': 'Loại Nhớt Bôi Trơn',
                     'oil_capacity_l': 'Dung Tích (L)',
@@ -5516,20 +5589,23 @@ elif task_num == 7:
                     'change_date_c1': 'Ngày Thay Lần 1',
                     'change_status_c1': 'Trạng Thái Lần 1',
                     'run_hours_c2': 'Giờ Chu Kỳ 2 (h)',
+                    'remaining_hours_c2': 'Giờ Còn Lại (h)',
                     'alert_status_c2': 'Nhắc Nhở Chu Kỳ 2'
                 }, inplace=True)
-                ordered_cols = ['Mã Máy', 'Tên Thiết Bị', 'Loại Nhớt Bôi Trơn', 'Dung Tích (L)', 'Định Mức (h)', 'Giờ Chạy Lần 1 (h)', 'Tỷ Lệ Giờ Đạt C1', 'Ngày Thay Lần 1', 'Trạng Thái Lần 1', 'Giờ Chu Kỳ 2 (h)', 'Nhắc Nhở Chu Kỳ 2']
+                ordered_cols = ['Mã Máy (PE)', 'Mã Kỹ Thuật (PE_510)', 'Tên Thiết Bị', 'Loại Nhớt Bôi Trơn', 'Dung Tích (L)', 'Định Mức (h)', 'Giờ Chạy Lần 1 (h)', 'Tỷ Lệ Giờ Đạt C1', 'Ngày Thay Lần 1', 'Trạng Thái Lần 1', 'Giờ Chu Kỳ 2 (h)', 'Giờ Còn Lại (h)', 'Tiến Độ C2 (%)', 'Nhắc Nhở Chu Kỳ 2']
             
             avail_oil_cols = [c for c in ordered_cols if c in disp_oil.columns]
             st.dataframe(disp_oil[avail_oil_cols], hide_index=True, use_container_width=True)
 
             st.markdown("---")
             st.markdown(f"##### 🔍 {t('Chi Tiết Kế Hoạch 10 Chu Kỳ Thay Nhớt Từng Máy Ép', 'Detailed 10-Cycle Oil Change Schedule per Machine')}")
-            sel_pe = st.selectbox(
+            pe_options = [f"{pe} ({PE_MACHINE_MAPPING.get(pe, pe)})" for pe in [f"PE{i}" for i in range(1, 9)]]
+            sel_pe_label = st.selectbox(
                 t("Chọn máy ép để kiểm tra chi tiết toàn bộ chu kỳ:", "Select pellet mill for full cycle details:"),
-                [f"PE{i}" for i in range(1, 9)],
+                pe_options,
                 key="sb_oil_pe_detail"
             )
+            sel_pe = sel_pe_label.split(' ')[0] if sel_pe_label else "PE1"
             
             if sel_pe in oil_details and not oil_details[sel_pe].empty:
                 df_pe_dt = oil_details[sel_pe].copy()

@@ -39,23 +39,40 @@ SCOPES = [
 ]
 
 # ==============================================================================
+# MÃ HÓA MÁY ÉP VIÊN (PE vs PE_510)
+# ==============================================================================
+PE_MACHINE_MAPPING = {
+    'PE1': 'PE1510',
+    'PE2': 'PE2510',
+    'PE3': 'PE3510',
+    'PE4': 'PE4510',
+    'PE5': 'PE5510',
+    'PE6': 'PE6510',
+    'PE7': 'PE7510',
+    'PE8': 'PE8510'
+}
+PE_510_TO_PE = {v: k for k, v in PE_MACHINE_MAPPING.items()}
+
+# ==============================================================================
 # BẢNG DANH MỤC MÃ HÓA NHÂN SỰ & VỊ TRÍ VẬN HÀNH (CHUẨN HÓA THEO GOOGLE SHEETS)
 # ==============================================================================
 POSITION_DIRECTORY = {
     'Ca A': {
         'code': 'Ca A',
         'current_name': 'Sắc',
-        'full_name': 'Ca Trưởng Sắc (Ca A)',
+        'full_name': 'Ca Trưởng (Ca A)',
+        'display_name': 'Ca Trưởng Sắc (Ca A)',
         'retired_names': ['Hải'],
-        'moved_names': [],
-        'pattern': r'\bca a\b|sắc|sac|\bhải\b|\bhai\b',
+        'moved_names': ['Thành'],
+        'pattern': r'\bca a\b|sắc|sac|\bhải\b|\bhai\b|\bthành\b|\bthanh\b',
         'color': '#16a34a',
         'icon': '🟢'
     },
     'Ca B': {
         'code': 'Ca B',
         'current_name': 'Tài',
-        'full_name': 'Ca Trưởng Tài (Ca B)',
+        'full_name': 'Ca Trưởng (Ca B)',
+        'display_name': 'Ca Trưởng Tài (Ca B)',
         'retired_names': [],
         'moved_names': ['Lâm'],
         'pattern': r'\bca b\b|tài|tai|\blâm\b|\blam\b',
@@ -65,7 +82,8 @@ POSITION_DIRECTORY = {
     'Ca C': {
         'code': 'Ca C',
         'current_name': 'Long',
-        'full_name': 'Ca Trưởng Long (Ca C)',
+        'full_name': 'Ca Trưởng (Ca C)',
+        'display_name': 'Ca Trưởng Long (Ca C)',
         'retired_names': [],
         'moved_names': [],
         'pattern': r'\bca c\b|long',
@@ -116,7 +134,7 @@ POSITION_DIRECTORY = {
         'code': 'QĐ',
         'current_name': 'Thành',
         'full_name': 'Quản Đốc (Thành)',
-        'pattern': r'\bqđ\b|\bqd\b|thành|thanh',
+        'pattern': r'\bqđ\b|\bqd\b|quản đốc|quan doc',
         'color': '#eab308',
         'icon': '👑'
     },
@@ -146,8 +164,8 @@ def match_shift_leader(row_val: str, target_filter: str) -> bool:
     row_str = str(row_val).lower()
     tgt = str(target_filter).lower()
     
-    if 'ca a' in tgt or 'sắc' in tgt or 'sac' in tgt or 'hải' in tgt:
-        return bool(re.search(r'\bca a\b|sắc|sac|\bhải\b|\bhai\b', row_str))
+    if 'ca a' in tgt or 'sắc' in tgt or 'sac' in tgt or 'hải' in tgt or 'thành' in tgt or 'thanh' in tgt:
+        return bool(re.search(r'\bca a\b|sắc|sac|\bhải\b|\bhai\b|\bthành\b|\bthanh\b', row_str))
     if 'ca b' in tgt or 'tài' in tgt or 'tai' in tgt or 'lâm' in tgt:
         return bool(re.search(r'\bca b\b|tài|tai|\blâm\b|\blam\b', row_str))
     if 'ca c' in tgt or 'long' in tgt:
@@ -159,6 +177,32 @@ def match_shift_leader(row_val: str, target_filter: str) -> bool:
     if 'xh' in tgt or 'xuất hàng' in tgt:
         return bool(re.search(r'\bxh\b|xuất hàng|xuat hang', row_str))
     return tgt in row_str
+
+
+def get_standard_shift_code(val: Any) -> str:
+    """
+    Chuẩn hóa tên ca trưởng từ dữ liệu cũ (Thành Ca A, Lâm Ca B, Long Ca C)
+    và dữ liệu hiện tại (Sắc Ca A, Tài Ca B, Long Ca C) về mã ca chuẩn:
+    'Ca A', 'Ca B', 'Ca C', 'BT-VS', 'OFF', 'XH'.
+    """
+    if val is None or pd.isna(val):
+        return ''
+    s = str(val).strip().lower()
+    if not s:
+        return ''
+    if re.search(r'\bca a\b|sắc|sac|\bhải\b|\bhai\b|\bthành\b|\bthanh\b', s):
+        return 'Ca A'
+    if re.search(r'\bca b\b|tài|tai|\blâm\b|\blam\b', s):
+        return 'Ca B'
+    if re.search(r'\bca c\b|long', s):
+        return 'Ca C'
+    if re.search(r'bt[-_]?vs|bảo trì|bao tri|vệ sinh', s):
+        return 'BT-VS'
+    if re.search(r'\boff\b|nghỉ|nghĩ', s):
+        return 'OFF'
+    if re.search(r'\bxh\b|xuất hàng|xuat hang', s):
+        return 'XH'
+    return str(val).strip()
 
 
 
@@ -2611,21 +2655,35 @@ class DataLoader:
             return True, f"Đã lưu thành công báo cáo ca băm dăm ({team} - {shift_choice}) ngày {d_str}!"
         return False, "Không thể lưu dữ liệu ca băm. Vui lòng kiểm tra lại."
 
-    def load_oil_change_data(self) -> Dict[str, Any]:
+    def load_oil_change_data(self, df_shifts: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
         """
         Nạp dữ liệu Lịch thay nhớt hộp số máy ép PE1 - PE8 (Mobil Glygoyle 460).
-        Sử dụng values_batch_get để đọc toàn bộ 8 máy và danh mục trong 1 request API duy nhất,
-        tránh lỗi 429 quota và tăng tốc độ tải trang tối đa.
-        Trả về:
-          - 'summary': DataFrame tổng hợp 8 máy ép
-          - 'details': Dict[str, DataFrame] chi tiết 10 chu kỳ của từng máy PE1-PE8
-          - 'title': Tên bảng tính
+        Ngày 18/09/2026 đã hoàn tất thay nhớt Lần 1 cho toàn bộ 8 máy ép (PE1–PE8), chu kỳ 2 tính từ 0h.
+        Code chỉ tính giờ chạy phát sinh của từng máy ép sau ngày 18/09/2026 cho chu kỳ bảo dưỡng hiện tại.
+        Bổ sung mã hóa PE vs PE_510 (PE1510 - PE8510).
         """
         cache_paths = [
             os.path.join(os.path.dirname(__file__), "assets", "cache_oil_summary.parquet"),
             os.path.join("assets", "cache_oil_summary.parquet"),
             os.path.join("deploy_files", "assets", "cache_oil_summary.parquet")
         ]
+
+        # Nạp dữ liệu ca để tính giờ phát sinh chu kỳ 2 sau ngày 18/09/2026 nếu chưa được truyền vào
+        if df_shifts is None or df_shifts.empty:
+            for s_cp in [
+                os.path.join(os.path.dirname(__file__), "assets", "cache_shifts.parquet"),
+                os.path.join("assets", "cache_shifts.parquet"),
+                os.path.join("deploy_files", "assets", "cache_shifts.parquet")
+            ]:
+                if os.path.exists(s_cp):
+                    try:
+                        df_shifts = pd.read_parquet(s_cp)
+                        if not df_shifts.empty:
+                            break
+                    except Exception:
+                        pass
+
+        OIL_CYCLE_1_CUTOFF = pd.to_datetime('2026-09-18')
 
         if not self.oil_spreadsheet:
             self.connect()
@@ -2637,6 +2695,20 @@ class DataLoader:
                     try:
                         df_cached = pd.read_parquet(cp)
                         if not df_cached.empty:
+                            # Cập nhật mã 510 và giờ chạy chu kỳ 2 nếu có df_shifts
+                            if 'machine_code_510' not in df_cached.columns:
+                                df_cached['machine_code_510'] = df_cached['machine_code'].map(PE_MACHINE_MAPPING).fillna(df_cached['machine_code'])
+                            if df_shifts is not None and not df_shifts.empty:
+                                mask_post = pd.to_datetime(df_shifts['date']) > OIL_CYCLE_1_CUTOFF
+                                for c_idx, r in df_cached.iterrows():
+                                    pe = r['machine_code']
+                                    c_name = f'h_{pe}'
+                                    if c_name in df_shifts.columns:
+                                        h2_act = float(pd.to_numeric(df_shifts.loc[mask_post, c_name], errors='coerce').fillna(0.0).sum())
+                                        df_cached.at[c_idx, 'run_hours_c2'] = round(h2_act, 1)
+                                        std_h = float(r.get('standard_hours', 4000.0))
+                                        df_cached.at[c_idx, 'remaining_hours_c2'] = max(0.0, round(std_h - h2_act, 1))
+                                        df_cached.at[c_idx, 'progress_pct_c2'] = round(h2_act / std_h * 100, 1) if std_h > 0 else 0.0
                             return {'summary': df_cached, 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép (Cache)"}
                     except Exception:
                         pass
@@ -2667,6 +2739,9 @@ class DataLoader:
         summary_rows = []
         details = {}
 
+        # Mặt nạ lọc giờ chạy phát sinh sau ngày 18/09/2026 từ df_shifts
+        mask_c2_shifts = (pd.to_datetime(df_shifts['date']) > OIL_CYCLE_1_CUTOFF) if (df_shifts is not None and not df_shifts.empty and 'date' in df_shifts.columns) else None
+
         for idx, pe in enumerate(pe_list):
             vr_vals = vrs[idx + 1].get('values', []) if len(vrs) > idx + 1 else []
             records = []
@@ -2675,16 +2750,11 @@ class DataLoader:
                 for r in vr_vals[1:]:
                     rec = {headers[k]: (r[k].strip() if k < len(r) else '') for k in range(len(headers))}
                     records.append(rec)
-                df_pe = pd.DataFrame(records)
-            else:
-                df_pe = pd.DataFrame()
-            details[pe] = df_pe
-
+            
             row1 = records[0] if len(records) > 0 else {}
             row2 = records[1] if len(records) > 1 else {}
 
             h1_str = str(row1.get('So h', row1.get('So h hoạt dọng', '0'))).strip()
-            h2_str = str(row2.get('So h', row2.get('So h hoạt dọng', '0'))).strip()
             dinh_muc_str = str(row1.get('Dinh muc (h)', row1.get('Dinh muc', '4000'))).strip()
 
             m_name = f"Máy ép viên Andritz PM30-{5+idx+1}"
@@ -2695,19 +2765,45 @@ class DataLoader:
 
             std_h = clean_number(dinh_muc_str) if clean_number(dinh_muc_str) > 0 else 4000.0
             h1_num = clean_number(h1_str)
-            h2_num = clean_number(h2_str)
+            if h1_num == 0.0 and len(records) > 0:
+                h1_num = clean_number(str(row1.get('So h hoạt dọng', '4000')))
 
-            alert_c2 = str(row2.get('Trạng thái nhắc nhở', '')).strip()
-            if not alert_c2:
-                if h2_num >= std_h:
-                    alert_c2 = 'Cần thay nhớt'
-                elif h2_num >= std_h * 0.95:
-                    alert_c2 = 'Sắp đến hạn (≥95%)'
-                else:
-                    alert_c2 = 'Bình thường'
+            # TÍNH GIỜ CHẠY PHÁT SINH CHU KỲ 2 SAU NGÀY 18/09/2026 TỪ NHẬT KÝ SẢN XUẤT
+            h2_actual = 0.0
+            pe_col = f'h_{pe}'
+            if mask_c2_shifts is not None and pe_col in df_shifts.columns:
+                h2_actual = float(pd.to_numeric(df_shifts.loc[mask_c2_shifts, pe_col], errors='coerce').fillna(0.0).sum())
+            else:
+                # Dự phòng từ sheet nếu không có df_shifts
+                h2_str = str(row2.get('So h', row2.get('So h hoạt dọng', '0'))).strip()
+                h2_actual = clean_number(h2_str)
 
+            h2_num = round(h2_actual, 1)
+            rem_h2 = max(0.0, round(std_h - h2_num, 1))
+            pct_c2 = round(h2_num / std_h * 100, 1) if std_h > 0 else 0.0
+
+            if h2_num >= std_h:
+                alert_c2 = 'Cần thay nhớt (≥4.000h)'
+            elif h2_num >= std_h * 0.95:
+                alert_c2 = 'Sắp đến hạn (≥95%)'
+            elif h2_num >= std_h * 0.8:
+                alert_c2 = 'Lưu ý theo dõi (≥80%)'
+            else:
+                alert_c2 = 'Bình thường'
+
+            # Cập nhật lại bản ghi dòng 2 trong bảng chi tiết chu kỳ của từng máy
+            if len(records) > 1:
+                records[1]['So h'] = f"{h2_num:.1f}"
+                records[1]['So h hoạt dọng'] = f"{h2_num:.1f}"
+                records[1]['Trạng thái nhắc nhở'] = alert_c2
+                records[1]['Ghi chu'] = f"Giờ chạy tính từ sau 18/09/2026: {h2_num:.1f}h (còn {rem_h2:.1f}h)"
+
+            details[pe] = pd.DataFrame(records) if records else pd.DataFrame()
+
+            code_510 = PE_MACHINE_MAPPING.get(pe, f"{pe}510")
             summary_rows.append({
                 'machine_code': pe,
+                'machine_code_510': code_510,
                 'machine_name': m_name,
                 'oil_type': 'Mobil Glygoyle 460',
                 'oil_capacity_l': 208,
@@ -2716,6 +2812,8 @@ class DataLoader:
                 'change_date_c1': str(row1.get('Ngày thay nhớt', '18/09/2026')),
                 'change_status_c1': str(row1.get('Trạng thái thay nhớt', 'Đã thay')),
                 'run_hours_c2': h2_num,
+                'remaining_hours_c2': rem_h2,
+                'progress_pct_c2': pct_c2,
                 'alert_status_c2': alert_c2
             })
 

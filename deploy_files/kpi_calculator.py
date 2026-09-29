@@ -28,6 +28,21 @@ KPI_WEIGHT_PRODUCTIVITY = 20.0    # Trọng số năng suất máy ép viên (20
 KPI_TARGET_MOISTURE = 9.0         # Chỉ tiêu độ ẩm chuẩn (%): 9.0%
 KPI_TARGET_PRODUCTIVITY = 4.0     # Chỉ tiêu năng suất chuẩn (tấn/h): 4.0 tấn/h
 
+# ==============================================================================
+# MÃ HÓA MÁY ÉP VIÊN (PE vs PE_510)
+# ==============================================================================
+PE_MACHINE_MAPPING = {
+    'PE1': 'PE1510',
+    'PE2': 'PE2510',
+    'PE3': 'PE3510',
+    'PE4': 'PE4510',
+    'PE5': 'PE5510',
+    'PE6': 'PE6510',
+    'PE7': 'PE7510',
+    'PE8': 'PE8510'
+}
+PE_510_TO_PE = {v: k for k, v in PE_MACHINE_MAPPING.items()}
+
 # Danh mục thiết bị
 EQUIPMENT_INFO = {
     'HM118': {'name': 'Nghiền búa thô HM118', 'brand': 'Andritz', 'group': 'Nghiền búa thô', 'col': 'h_HM118'},
@@ -38,14 +53,14 @@ EQUIPMENT_INFO = {
     'HM147': {'name': 'Nghiền búa tinh HM147', 'brand': 'SHT', 'group': 'Nghiền búa tinh', 'col': 'h_HM147'},
     'HM247': {'name': 'Nghiền búa tinh HM247', 'brand': 'Andritz', 'group': 'Nghiền búa tinh', 'col': 'h_HM247'},
     'HM347': {'name': 'Nghiền búa tinh HM347', 'brand': 'Andritz', 'group': 'Nghiền búa tinh', 'col': 'h_HM347'},
-    'PE1': {'name': 'Máy ép viên PE1', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE1'},
-    'PE2': {'name': 'Máy ép viên PE2', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE2'},
-    'PE3': {'name': 'Máy ép viên PE3', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE3'},
-    'PE4': {'name': 'Máy ép viên PE4', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE4'},
-    'PE5': {'name': 'Máy ép viên PE5', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE5'},
-    'PE6': {'name': 'Máy ép viên PE6', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE6'},
-    'PE7': {'name': 'Máy ép viên PE7', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE7'},
-    'PE8': {'name': 'Máy ép viên PE8', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE8'},
+    'PE1': {'name': 'Máy ép viên PE1 (PE1510)', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE1', 'code_510': 'PE1510'},
+    'PE2': {'name': 'Máy ép viên PE2 (PE2510)', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE2', 'code_510': 'PE2510'},
+    'PE3': {'name': 'Máy ép viên PE3 (PE3510)', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE3', 'code_510': 'PE3510'},
+    'PE4': {'name': 'Máy ép viên PE4 (PE4510)', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE4', 'code_510': 'PE4510'},
+    'PE5': {'name': 'Máy ép viên PE5 (PE5510)', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE5', 'code_510': 'PE5510'},
+    'PE6': {'name': 'Máy ép viên PE6 (PE6510)', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE6', 'code_510': 'PE6510'},
+    'PE7': {'name': 'Máy ép viên PE7 (PE7510)', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE7', 'code_510': 'PE7510'},
+    'PE8': {'name': 'Máy ép viên PE8 (PE8510)', 'brand': 'Pellet Mill', 'group': 'Máy ép viên', 'col': 'h_PE8', 'code_510': 'PE8510'},
 }
 
 def evaluate_electricity(kwh_per_ton: float) -> Dict[str, Any]:
@@ -444,6 +459,7 @@ def get_equipment_statistics(df_shifts: pd.DataFrame, start_date: Any = None, en
 
         stats.append({
             'Mã TB': code,
+            'Mã Kỹ Thuật': info.get('code_510', code),
             'Tên thiết bị': info['name'],
             'Hãng / Chủng loại': info['brand'],
             'Cụm thiết bị': info['group'],
@@ -459,42 +475,87 @@ def get_equipment_statistics(df_shifts: pd.DataFrame, start_date: Any = None, en
 
 def get_shift_leader_kpis(df_shifts: pd.DataFrame) -> pd.DataFrame:
     """
-    Thống kê và so sánh hiệu suất sản xuất theo từng Ca Trưởng.
+    Thống kê và so sánh hiệu suất sản xuất theo từng Ca Trưởng chuẩn hóa: Ca A, Ca B, Ca C.
+    Dữ liệu cũ: Thành (Ca A), Lâm (Ca B), Long (Ca C).
+    Dữ liệu hiện tại: Sắc (Ca A), Tài (Ca B), Long (Ca C).
+    Luôn group và tổng hợp theo mã ca chuẩn: Ca A, Ca B, Ca C.
     """
     if df_shifts.empty or 'shift_leader' not in df_shifts.columns or 'san_luong_tan' not in df_shifts.columns:
         return pd.DataFrame()
 
-    valid = df_shifts[(df_shifts['san_luong_tan'] > 0) & (df_shifts['shift_leader'].astype(str).str.strip() != '')]
+    valid = df_shifts[(df_shifts['san_luong_tan'] > 0) & (df_shifts['shift_leader'].astype(str).str.strip() != '')].copy()
     if valid.empty:
         return pd.DataFrame()
 
-    grouped = valid.groupby('shift_leader').agg(
-        so_ca=('row_index', 'count'),
-        tong_san_luong=('san_luong_tan', 'sum'),
-        san_luong_tb=('san_luong_tan', 'mean'),
-        tong_dien=('dien_kwh', 'sum'),
-        tong_gio_ep=('tong_gio_ep', 'sum'),
-    ).reset_index()
+    standard_shifts = [
+        {
+            'code': 'Ca A',
+            'pattern': r'\bca a\b|sắc|sac|\bhải\b|\bhai\b|\bthành\b|\bthanh\b',
+            'rep': 'Sắc (trước: Thành, Hải)'
+        },
+        {
+            'code': 'Ca B',
+            'pattern': r'\bca b\b|tài|tai|\blâm\b|\blam\b',
+            'rep': 'Tài (trước: Lâm)'
+        },
+        {
+            'code': 'Ca C',
+            'pattern': r'\bca c\b|long',
+            'rep': 'Long'
+        }
+    ]
 
-    grouped['suat_dien_tb'] = np.where(grouped['tong_san_luong'] > 0, grouped['tong_dien'] / grouped['tong_san_luong'], 0.0)
-    grouped['nang_suat_tb'] = np.where(grouped['tong_gio_ep'] > 0, grouped['tong_san_luong'] / grouped['tong_gio_ep'], 0.0)
+    records = []
+    matched_indices = set()
+    for sc in standard_shifts:
+        mask = valid['shift_leader'].astype(str).str.contains(sc['pattern'], case=False, na=False)
+        sub = valid[mask]
+        matched_indices.update(sub.index)
+        if sub.empty:
+            continue
+        so_ca = int(len(sub))
+        tong_sl = float(sub['san_luong_tan'].sum())
+        sl_tb = float(sub['san_luong_tan'].mean())
+        tong_dien = float(sub['dien_kwh'].sum()) if 'dien_kwh' in sub.columns else 0.0
+        tong_gio = float(sub['tong_gio_ep'].sum()) if 'tong_gio_ep' in sub.columns else 0.0
 
-    # Làm tròn
-    grouped['tong_san_luong'] = grouped['tong_san_luong'].round(2)
-    grouped['san_luong_tb'] = grouped['san_luong_tb'].round(2)
-    grouped['suat_dien_tb'] = grouped['suat_dien_tb'].round(1)
-    grouped['nang_suat_tb'] = grouped['nang_suat_tb'].round(2)
+        suat_dien = (tong_dien / tong_sl) if tong_sl > 0 else 0.0
+        nang_suat = (tong_sl / tong_gio) if tong_gio > 0 else 0.0
 
-    grouped.rename(columns={
-        'shift_leader': 'Ca Trưởng',
-        'so_ca': 'Số ca phụ trách',
-        'tong_san_luong': 'Tổng sản lượng (tấn)',
-        'san_luong_tb': 'Sản lượng TB/ca (tấn)',
-        'suat_dien_tb': 'Điện năng TB (kWh/tấn)',
-        'nang_suat_tb': 'Năng suất ép TB (tấn/h)'
-    }, inplace=True)
+        records.append({
+            'Ca Trưởng': sc['code'],
+            'Số ca phụ trách': so_ca,
+            'Tổng sản lượng (tấn)': round(tong_sl, 2),
+            'Sản lượng TB/ca (tấn)': round(sl_tb, 2),
+            'Điện năng TB (kWh/tấn)': round(suat_dien, 1),
+            'Năng suất ép TB (tấn/h)': round(nang_suat, 2)
+        })
 
-    return grouped.sort_values('Tổng sản lượng (tấn)', ascending=False).reset_index(drop=True)
+    # Nếu có các ca phụ trợ khác có sản lượng mà không thuộc 3 ca chuẩn (ví dụ BT_VS)
+    remaining = valid.loc[~valid.index.isin(matched_indices)]
+    if not remaining.empty:
+        for other_name, grp in remaining.groupby('shift_leader'):
+            so_ca = int(len(grp))
+            tong_sl = float(grp['san_luong_tan'].sum())
+            sl_tb = float(grp['san_luong_tan'].mean())
+            tong_dien = float(grp['dien_kwh'].sum()) if 'dien_kwh' in grp.columns else 0.0
+            tong_gio = float(grp['tong_gio_ep'].sum()) if 'tong_gio_ep' in grp.columns else 0.0
+            suat_dien = (tong_dien / tong_sl) if tong_sl > 0 else 0.0
+            nang_suat = (tong_sl / tong_gio) if tong_gio > 0 else 0.0
+            records.append({
+                'Ca Trưởng': str(other_name),
+                'Số ca phụ trách': so_ca,
+                'Tổng sản lượng (tấn)': round(tong_sl, 2),
+                'Sản lượng TB/ca (tấn)': round(sl_tb, 2),
+                'Điện năng TB (kWh/tấn)': round(suat_dien, 1),
+                'Năng suất ép TB (tấn/h)': round(nang_suat, 2)
+            })
+
+    if not records:
+        return pd.DataFrame()
+
+    res_df = pd.DataFrame(records)
+    return res_df.sort_values('Tổng sản lượng (tấn)', ascending=False).reset_index(drop=True)
 
 
 def calculate_kpi_components(
@@ -957,8 +1018,9 @@ def get_all_leaders_dashboard_summary(
     leader_configs = {
         'Sắc': {
             'code': 'Ca A',
-            'pattern': r'\bca a\b|sắc|sac|\bhải\b|\bhai\b',
-            'display_name': 'Ca Trưởng Sắc (Ca A)',
+            'pattern': r'\bca a\b|sắc|sac|\bhải\b|\bhai\b|\bthành\b|\bthanh\b',
+            'display_name': 'Ca Trưởng (Ca A)',
+            'full_title': 'Ca Trưởng Ca A (Sắc / trước: Thành, Hải)',
             'color': '#16a34a',
             'bg_color': '#f0fdf4',
             'border_color': '#22c55e',
@@ -968,7 +1030,8 @@ def get_all_leaders_dashboard_summary(
         'Tài': {
             'code': 'Ca B',
             'pattern': r'\bca b\b|tài|tai|\blâm\b|\blam\b',
-            'display_name': 'Ca Trưởng Tài (Ca B)',
+            'display_name': 'Ca Trưởng (Ca B)',
+            'full_title': 'Ca Trưởng Ca B (Tài / trước: Lâm)',
             'color': '#ea580c',
             'bg_color': '#fff7ed',
             'border_color': '#f97316',
@@ -978,7 +1041,8 @@ def get_all_leaders_dashboard_summary(
         'Long': {
             'code': 'Ca C',
             'pattern': r'\bca c\b|long',
-            'display_name': 'Ca Trưởng Long (Ca C)',
+            'display_name': 'Ca Trưởng (Ca C)',
+            'full_title': 'Ca Trưởng Ca C (Long)',
             'color': '#2563eb',
             'bg_color': '#eff6ff',
             'border_color': '#3b82f6',
@@ -1014,10 +1078,10 @@ def get_all_leaders_dashboard_summary(
         mask_leader = df_shifts['shift_leader'].astype(str).str.contains(cfg['pattern'], case=False, na=False)
         df_ldr = df_shifts[mask_leader].copy()
 
-        # Dữ liệu từ sheet 'Data KPI' của ca trưởng này
+        # Dữ liệu từ sheet 'Data KPI' của ca trưởng này (khớp theo pattern chuẩn hóa)
         kpi_ldr = pd.DataFrame()
         if df_kpi_daily is not None and not df_kpi_daily.empty and 'ca_truong' in df_kpi_daily.columns:
-            kpi_ldr = df_kpi_daily[df_kpi_daily['ca_truong'].astype(str).str.contains(ca_code, case=False, na=False)].copy()
+            kpi_ldr = df_kpi_daily[df_kpi_daily['ca_truong'].astype(str).str.contains(cfg['pattern'], case=False, na=False)].copy()
 
         # 1. Lọc theo kỳ được chọn
         ldr_dates = pd.to_datetime(df_ldr['date'], errors='coerce')
@@ -1501,6 +1565,11 @@ def get_all_leaders_dashboard_summary(
             'Định Mức Kỹ Thuật': 'Thang 100 điểm'
         }
     ]
+
+    # Bổ sung alias theo mã ca chuẩn: Ca A, Ca B, Ca C
+    leaders_summary['Ca A'] = leaders_summary.get('Sắc', {})
+    leaders_summary['Ca B'] = leaders_summary.get('Tài', {})
+    leaders_summary['Ca C'] = leaders_summary.get('Long', {})
 
     return {
         'leaders': leaders_summary,
