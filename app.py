@@ -338,58 +338,128 @@ if calculate_kpi_components is None:
 def load_all_factory_data():
     """Tải và lưu đệm dữ liệu từ các Google Sheets trong 60 giây (tự động làm mới sau mỗi 1 phút)"""
     loader = DataLoader()
-    loader.connect()
-    df_shifts = loader.load_shift_data()
-    df_daily = loader.load_daily_summary()
-    df_weekly = loader.load_weekly_report()
-    df_monthly = loader.load_monthly_report()
-    df_kcs = loader.load_kcs_data()
-    df_diezen = loader.load_diezen_data()
+    try:
+        loader.connect()
+    except Exception as e:
+        print(f"[-] Loader connect warning: {e}")
+
+    try:
+        df_shifts = loader.load_shift_data()
+    except Exception as e:
+        print(f"[-] Lỗi nạp shift data: {e}")
+        df_shifts = pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
+
+    try:
+        df_daily = loader.load_daily_summary()
+    except Exception as e:
+        print(f"[-] Lỗi nạp daily summary: {e}")
+        df_daily = pd.DataFrame()
+
+    try:
+        df_weekly = loader.load_weekly_report()
+    except Exception as e:
+        print(f"[-] Lỗi nạp weekly report: {e}")
+        df_weekly = pd.DataFrame()
+
+    try:
+        df_monthly = loader.load_monthly_report()
+    except Exception as e:
+        print(f"[-] Lỗi nạp monthly report: {e}")
+        df_monthly = pd.DataFrame()
+
+    try:
+        df_kcs = loader.load_kcs_data()
+    except Exception as e:
+        print(f"[-] Lỗi nạp kcs data: {e}")
+        df_kcs = pd.DataFrame()
+
+    try:
+        df_diezen = loader.load_diezen_data()
+    except Exception as e:
+        print(f"[-] Lỗi nạp diezen data: {e}")
+        df_diezen = pd.DataFrame()
     
     # Dữ liệu từ file KPI mới (2026 Nhat ky KPI)
-    df_wm_weekly, df_wm_monthly = loader.load_wm_kpi_scores()
-    leaders_kpi = loader.load_all_leaders_kpi()
+    try:
+        df_wm_weekly, df_wm_monthly = loader.load_wm_kpi_scores()
+    except Exception as e:
+        print(f"[-] Lỗi nạp wm kpi scores: {e}")
+        df_wm_weekly, df_wm_monthly = pd.DataFrame(), pd.DataFrame()
+
+    try:
+        leaders_kpi = loader.load_all_leaders_kpi()
+    except Exception as e:
+        print(f"[-] Lỗi nạp leaders kpi: {e}")
+        leaders_kpi = {'weekly': pd.DataFrame(), 'monthly': pd.DataFrame()}
 
     # Đồng bộ điểm số chính xác từ các sheet chi tiết (Ca A, Ca B, Ca C) nếu có
-    if leaders_kpi and 'weekly' in leaders_kpi and not leaders_kpi['weekly'].empty:
-        df_lw = leaders_kpi['weekly']
-        if 'ca_truong' in df_lw.columns and 'diem_kpi' in df_lw.columns and 'week' in df_lw.columns:
-            p_w = df_lw.pivot_table(index='week', columns='ca_truong', values='diem_kpi')
-            for ca in ['Ca A', 'Ca B', 'Ca C']:
-                if ca in p_w.columns and not df_wm_weekly.empty and 'week' in df_wm_weekly.columns:
-                    df_wm_weekly[ca] = df_wm_weekly['week'].map(p_w[ca])
-                    if ca == 'Ca A': df_wm_weekly['Sắc'] = df_wm_weekly[ca]
-                    elif ca == 'Ca B': df_wm_weekly['Tài'] = df_wm_weekly[ca]
-                    elif ca == 'Ca C': df_wm_weekly['Long'] = df_wm_weekly[ca]
+    try:
+        if leaders_kpi and 'weekly' in leaders_kpi and not leaders_kpi['weekly'].empty:
+            df_lw = leaders_kpi['weekly']
+            if 'ca_truong' in df_lw.columns and 'diem_kpi' in df_lw.columns and 'week' in df_lw.columns:
+                p_w = df_lw.pivot_table(index='week', columns='ca_truong', values='diem_kpi')
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    if ca in p_w.columns and not df_wm_weekly.empty and 'week' in df_wm_weekly.columns:
+                        df_wm_weekly[ca] = df_wm_weekly['week'].map(p_w[ca])
+                        if ca == 'Ca A': df_wm_weekly['Sắc'] = df_wm_weekly[ca]
+                        elif ca == 'Ca B': df_wm_weekly['Tài'] = df_wm_weekly[ca]
+                        elif ca == 'Ca C': df_wm_weekly['Long'] = df_wm_weekly[ca]
 
-    if leaders_kpi and 'monthly' in leaders_kpi and not leaders_kpi['monthly'].empty:
-        df_lm = leaders_kpi['monthly']
-        if 'ca_truong' in df_lm.columns and 'diem_kpi' in df_lm.columns and 'month_label' in df_lm.columns:
-            p_m = df_lm.pivot_table(index='month_label', columns='ca_truong', values='diem_kpi')
-            for ca in ['Ca A', 'Ca B', 'Ca C']:
-                if ca in p_m.columns and not df_wm_monthly.empty and 'month_label' in df_wm_monthly.columns:
-                    df_wm_monthly[ca] = df_wm_monthly['month_label'].map(p_m[ca])
-                    if ca == 'Ca A': df_wm_monthly['Sắc'] = df_wm_monthly[ca]
-                    elif ca == 'Ca B': df_wm_monthly['Tài'] = df_wm_monthly[ca]
-                    elif ca == 'Ca C': df_wm_monthly['Long'] = df_wm_monthly[ca]
-    df_chart_moist = loader.load_kpi_chart_data('Chart moisture')
-    df_chart_dien = loader.load_kpi_chart_data('Chart dien')
-    df_chart_cap = loader.load_kpi_chart_data('Chart capacity')
-    df_chart_sl = loader.load_kpi_sl_chart_data()
+        if leaders_kpi and 'monthly' in leaders_kpi and not leaders_kpi['monthly'].empty:
+            df_lm = leaders_kpi['monthly']
+            if 'ca_truong' in df_lm.columns and 'diem_kpi' in df_lm.columns and 'month_label' in df_lm.columns:
+                p_m = df_lm.pivot_table(index='month_label', columns='ca_truong', values='diem_kpi')
+                for ca in ['Ca A', 'Ca B', 'Ca C']:
+                    if ca in p_m.columns and not df_wm_monthly.empty and 'month_label' in df_wm_monthly.columns:
+                        df_wm_monthly[ca] = df_wm_monthly['month_label'].map(p_m[ca])
+                        if ca == 'Ca A': df_wm_monthly['Sắc'] = df_wm_monthly[ca]
+                        elif ca == 'Ca B': df_wm_monthly['Tài'] = df_wm_monthly[ca]
+                        elif ca == 'Ca C': df_wm_monthly['Long'] = df_wm_monthly[ca]
+    except Exception as e:
+        print(f"[-] Lỗi đồng bộ leaders kpi: {e}")
+
+    try:
+        df_chart_moist = loader.load_kpi_chart_data('Chart moisture')
+        df_chart_dien = loader.load_kpi_chart_data('Chart dien')
+        df_chart_cap = loader.load_kpi_chart_data('Chart capacity')
+        df_chart_sl = loader.load_kpi_sl_chart_data()
+    except Exception as e:
+        print(f"[-] Lỗi nạp chart data: {e}")
+        df_chart_moist = pd.DataFrame()
+        df_chart_dien = pd.DataFrame()
+        df_chart_cap = pd.DataFrame()
+        df_chart_sl = pd.DataFrame()
 
     # Dữ liệu Sự Cố và Bảo Trì mới
-    df_incidents = loader.load_incident_data()
-    df_maint_log = loader.load_maintenance_log()
-    df_maint_plan = loader.load_maintenance_plan_monthly()
-    df_4m = loader.load_4m_management()
-    tpm_data = loader.load_tpm_improvements()
-    grease_data = loader.load_pm30_grease_data()
+    try:
+        df_incidents = loader.load_incident_data()
+        df_maint_log = loader.load_maintenance_log()
+        df_maint_plan = loader.load_maintenance_plan_monthly()
+        df_4m = loader.load_4m_management()
+        tpm_data = loader.load_tpm_improvements()
+        grease_data = loader.load_pm30_grease_data()
+    except Exception as e:
+        print(f"[-] Lỗi nạp maintenance data: {e}")
+        df_incidents = pd.DataFrame()
+        df_maint_log = pd.DataFrame()
+        df_maint_plan = pd.DataFrame()
+        df_4m = pd.DataFrame()
+        tpm_data = {'summary': {}, 'tasks': pd.DataFrame()}
+        grease_data = pd.DataFrame()
 
-    # Dữ liệu Quy Trình Chế Biến & Kỹ Thuật (ID: 1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw)
-    process_data = loader.load_wood_pellet_process_data()
+    # Dữ liệu Quy Trình Chế Biến & Kỹ Thuật
+    try:
+        process_data = loader.load_wood_pellet_process_data()
+    except Exception as e:
+        print(f"[-] Lỗi nạp process data: {e}")
+        process_data = {}
 
-    # Dữ liệu Lịch Thay Nhớt Hộp Số Máy Ép PE1-PE8 (ID: 1DRHrUPkLk7650XbxW1zZ73dp0k0Dcg4FZeKZriUKRso)
-    oil_change_data = loader.load_oil_change_data()
+    # Dữ liệu Lịch Thay Nhớt Hộp Số Máy Ép PE1-PE8
+    try:
+        oil_change_data = loader.load_oil_change_data()
+    except Exception as e:
+        print(f"[-] Lỗi nạp oil change data: {e}")
+        oil_change_data = {'summary': pd.DataFrame(), 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép"}
 
     return {
         'shifts': df_shifts,
@@ -414,12 +484,41 @@ def load_all_factory_data():
         'process_data': process_data,
         'oil_change_data': oil_change_data,
         'loader': loader,
-        'prod_title': loader.spreadsheet.title if loader.spreadsheet else "2026 BVN QB Nhật kí sản xuất",
-        'kpi_title': loader.kpi_spreadsheet.title if loader.kpi_spreadsheet else "2026 Nhat ky KPI",
-        'maint_log_title': loader.maint_log_spreadsheet.title if loader.maint_log_spreadsheet else "Maninternance BVNQB",
-        'maint_plan_title': loader.maint_plan_spreadsheet.title if loader.maint_plan_spreadsheet else "Mainternance BVN QB",
-        'oil_title': loader.oil_spreadsheet.title if loader.oil_spreadsheet else "Lịch thay nhớt hộp số máy ép"
+        'prod_title': loader.spreadsheet.title if (loader.spreadsheet and hasattr(loader.spreadsheet, 'title')) else "2026 BVN QB Nhật kí sản xuất",
+        'kpi_title': loader.kpi_spreadsheet.title if (loader.kpi_spreadsheet and hasattr(loader.kpi_spreadsheet, 'title')) else "2026 Nhat ky KPI",
+        'maint_log_title': loader.maint_log_spreadsheet.title if (loader.maint_log_spreadsheet and hasattr(loader.maint_log_spreadsheet, 'title')) else "Maninternance BVNQB",
+        'maint_plan_title': loader.maint_plan_spreadsheet.title if (loader.maint_plan_spreadsheet and hasattr(loader.maint_plan_spreadsheet, 'title')) else "Mainternance BVN QB",
+        'oil_title': loader.oil_spreadsheet.title if (loader.oil_spreadsheet and hasattr(loader.oil_spreadsheet, 'title')) else "Lịch thay nhớt hộp số máy ép"
     }
+
+# Khởi tạo mặc định an toàn cho toàn bộ biến dữ liệu trước khi nạp
+df_shifts = pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
+df_daily = pd.DataFrame()
+df_weekly = pd.DataFrame()
+df_monthly = pd.DataFrame()
+df_kcs = pd.DataFrame()
+df_diezen = pd.DataFrame()
+df_wm_weekly = pd.DataFrame()
+df_wm_monthly = pd.DataFrame()
+leaders_kpi = {'weekly': pd.DataFrame(), 'monthly': pd.DataFrame()}
+df_chart_moist = pd.DataFrame()
+df_chart_dien = pd.DataFrame()
+df_chart_cap = pd.DataFrame()
+df_chart_sl = pd.DataFrame()
+df_incidents = pd.DataFrame()
+df_maint_log = pd.DataFrame()
+df_maint_plan = pd.DataFrame()
+df_4m = pd.DataFrame()
+tpm_data = {'summary': {}, 'tasks': pd.DataFrame()}
+grease_data = pd.DataFrame()
+process_data = {}
+oil_change_data = {'summary': pd.DataFrame(), 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép"}
+app_loader = None
+sheet_title = "2026 BVN QB Nhật kí sản xuất"
+kpi_sheet_title = "2026 Nhat ky KPI"
+maint_log_title = "Maninternance BVNQB"
+maint_plan_title = "Mainternance BVN QB"
+oil_title = "Lịch thay nhớt hộp số máy ép"
 
 # ================= KIỂM TRA KHÓA CHẾ ĐỘ PUBLIC (CẤP QUYỀN XEM CHO: GĐ, QĐ, CA A, CA B, CA C, CHIPPER, QC, ADMIN & SANGMCC1@GMAIL.COM) =================
 if not check_viewer_authorization():
@@ -430,33 +529,33 @@ if not check_viewer_authorization():
 try:
     with st.spinner("Đang kết nối 6 Google Sheets và nạp dữ liệu sản xuất, KPI, bảo trì, quy trình & lịch thay nhớt..."):
         data = load_all_factory_data()
-        df_shifts = data['shifts']
-        df_daily = data['daily']
-        df_weekly = data['weekly']
-        df_monthly = data['monthly']
-        df_kcs = data['kcs']
-        df_diezen = data['diezen']
-        df_wm_weekly = data['wm_weekly']
-        df_wm_monthly = data['wm_monthly']
-        leaders_kpi = data['leaders_kpi']
-        df_chart_moist = data['chart_moist']
-        df_chart_dien = data['chart_dien']
-        df_chart_cap = data['chart_cap']
-        df_chart_sl = data.get('chart_sl', pd.DataFrame())
-        df_incidents = data.get('incidents', pd.DataFrame())
-        df_maint_log = data.get('maint_log', pd.DataFrame())
-        df_maint_plan = data.get('maint_plan', pd.DataFrame())
-        df_4m = data.get('maint_4m', pd.DataFrame())
-        tpm_data = data.get('tpm_data', {'summary': {}, 'tasks': pd.DataFrame()})
-        grease_data = data.get('grease_data', pd.DataFrame())
-        process_data = data.get('process_data', {})
-        oil_change_data = data.get('oil_change_data', {'summary': pd.DataFrame(), 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép"})
+        df_shifts = data.get('shifts', df_shifts)
+        df_daily = data.get('daily', df_daily)
+        df_weekly = data.get('weekly', df_weekly)
+        df_monthly = data.get('monthly', df_monthly)
+        df_kcs = data.get('kcs', df_kcs)
+        df_diezen = data.get('diezen', df_diezen)
+        df_wm_weekly = data.get('wm_weekly', df_wm_weekly)
+        df_wm_monthly = data.get('wm_monthly', df_wm_monthly)
+        leaders_kpi = data.get('leaders_kpi', leaders_kpi)
+        df_chart_moist = data.get('chart_moist', df_chart_moist)
+        df_chart_dien = data.get('chart_dien', df_chart_dien)
+        df_chart_cap = data.get('chart_cap', df_chart_cap)
+        df_chart_sl = data.get('chart_sl', df_chart_sl)
+        df_incidents = data.get('incidents', df_incidents)
+        df_maint_log = data.get('maint_log', df_maint_log)
+        df_maint_plan = data.get('maint_plan', df_maint_plan)
+        df_4m = data.get('maint_4m', df_4m)
+        tpm_data = data.get('tpm_data', tpm_data)
+        grease_data = data.get('grease_data', grease_data)
+        process_data = data.get('process_data', process_data)
+        oil_change_data = data.get('oil_change_data', oil_change_data)
         app_loader = data.get('loader', None)
-        sheet_title = data['prod_title']
-        kpi_sheet_title = data['kpi_title']
-        maint_log_title = data.get('maint_log_title', "Maninternance BVNQB")
-        maint_plan_title = data.get('maint_plan_title', "Mainternance BVN QB")
-        oil_title = data.get('oil_title', "Lịch thay nhớt hộp số máy ép")
+        sheet_title = data.get('prod_title', sheet_title)
+        kpi_sheet_title = data.get('kpi_title', kpi_sheet_title)
+        maint_log_title = data.get('maint_log_title', maint_log_title)
+        maint_plan_title = data.get('maint_plan_title', maint_plan_title)
+        oil_title = data.get('oil_title', oil_title)
 except Exception as e:
     st.error(f"❌ Không thể kết nối tới Google Sheets: {e}")
     st.info("Vui lòng kiểm tra file `credentials.json` và phân quyền chia sẻ bảng tính.")
@@ -826,10 +925,10 @@ ALL_MONTHS_12 = [f"Tháng {i}" for i in range(1, 13)]
 ALL_MONTHS_CODE_12 = [f"{i:02d}/2026" for i in range(1, 13)]
 
 # Tìm tuần và tháng mới nhất có dữ liệu thực tế để chọn làm mặc định
-latest_kpi_w_str = df_wm_weekly['week_label'].iloc[-1] if not df_wm_weekly.empty else "Tuần 38"
+latest_kpi_w_str = df_wm_weekly['week_label'].iloc[-1] if (not df_wm_weekly.empty and 'week_label' in df_wm_weekly.columns) else "Tuần 38"
 default_w_idx = ALL_WEEKS_52.index(latest_kpi_w_str) if latest_kpi_w_str in ALL_WEEKS_52 else 37
 
-latest_kpi_m_str = df_wm_monthly['month_label'].iloc[-1] if not df_wm_monthly.empty else "Tháng 9"
+latest_kpi_m_str = df_wm_monthly['month_label'].iloc[-1] if (not df_wm_monthly.empty and 'month_label' in df_wm_monthly.columns) else "Tháng 9"
 default_m_idx = ALL_MONTHS_12.index(latest_kpi_m_str) if latest_kpi_m_str in ALL_MONTHS_12 else 8
 default_m_code_idx = 8 # Tháng 09/2026
 
@@ -1395,8 +1494,8 @@ if is_week_mode and selected_week_sidebar:
         valid_dz_weeks = df_weekly[(df_weekly['diezen_lit'] > 0) & (df_weekly['week'] <= w_num)]
         if not valid_dz_weeks.empty:
             last_dz_row = valid_dz_weeks.iloc[-1]
-            dz_lit_w = float(last_dz_row['diezen_lit'])
-            dz_tb_w = float(last_dz_row['diezen_tb_lit_tan'])
+            dz_lit_w = float(last_dz_row.get('diezen_lit', 0.0))
+            dz_tb_w = float(last_dz_row.get('diezen_tb_lit_tan', 0.0))
 
     if ty_trong_w == 0:
         ty_trong_w = 645.0
@@ -1527,8 +1626,8 @@ elif is_month_mode and selected_month_sidebar:
         valid_dz = df_weekly[df_weekly['diezen_lit'] > 0]
         if not valid_dz.empty:
             last_dz = valid_dz.iloc[-1]
-            dz_lit_m = float(last_dz['diezen_lit'])
-            dz_tb_m = float(last_dz['diezen_tb_lit_tan'])
+            dz_lit_m = float(last_dz.get('diezen_lit', 0.0))
+            dz_tb_m = float(last_dz.get('diezen_tb_lit_tan', 0.0))
 
     if ty_trong_m == 0:
         ty_trong_m = 645.0
@@ -1758,8 +1857,8 @@ elif is_range_mode and date_range:
         valid_dz = df_weekly[df_weekly['diezen_lit'] > 0]
         if not valid_dz.empty:
             last_dz = valid_dz.iloc[-1]
-            dz_lit_r = float(last_dz['diezen_lit'])
-            dz_tb_r = float(last_dz['diezen_tb_lit_tan'])
+            dz_lit_r = float(last_dz.get('diezen_lit', 0.0))
+            dz_tb_r = float(last_dz.get('diezen_tb_lit_tan', 0.0))
 
     if ty_trong_r == 0:
         ty_trong_r = 645.0
@@ -1799,14 +1898,14 @@ else:
         cur_w_num = selected_date.isocalendar()[1]
         w_match = df_weekly[df_weekly['week'] == cur_w_num]
         if not w_match.empty and float(w_match.iloc[0].get('diezen_lit', 0)) > 0:
-            kpis['diezen_lit'] = float(w_match.iloc[0]['diezen_lit'])
-            kpis['diezen_tb_lit_tan'] = float(w_match.iloc[0]['diezen_tb_lit_tan'])
+            kpis['diezen_lit'] = float(w_match.iloc[0].get('diezen_lit', 0.0))
+            kpis['diezen_tb_lit_tan'] = float(w_match.iloc[0].get('diezen_tb_lit_tan', 0.0))
         else:
             valid_dz = df_weekly[df_weekly['diezen_lit'] > 0]
             if not valid_dz.empty:
                 last_dz = valid_dz.iloc[-1]
-                kpis['diezen_lit'] = float(last_dz['diezen_lit'])
-                kpis['diezen_tb_lit_tan'] = float(last_dz['diezen_tb_lit_tan'])
+                kpis['diezen_lit'] = float(last_dz.get('diezen_lit', 0.0))
+                kpis['diezen_tb_lit_tan'] = float(last_dz.get('diezen_tb_lit_tan', 0.0))
 
     if selected_leader not in ["Tất cả", "All"] and 'date' in df_filtered_shifts.columns and not df_filtered_shifts.empty and 'date' in kpis:
         k_dt = pd.to_datetime(kpis['date']).date()
@@ -3291,8 +3390,8 @@ elif task_num == 2:
 
         if not df_wm_weekly.empty or (not df_leaders_w.empty and 'diem_kpi' in df_leaders_w.columns):
             st.markdown("---")
-            min_w_label = sorted_kpi_weeks_order[0] if sorted_kpi_weeks_order else (df_wm_weekly['week_label'].iloc[0] if not df_wm_weekly.empty else "Tuần 1")
-            max_w_label = sorted_kpi_weeks_order[-1] if sorted_kpi_weeks_order else (df_wm_weekly['week_label'].iloc[-1] if not df_wm_weekly.empty else "Tuần 40")
+            min_w_label = sorted_kpi_weeks_order[0] if sorted_kpi_weeks_order else (df_wm_weekly['week_label'].iloc[0] if (not df_wm_weekly.empty and 'week_label' in df_wm_weekly.columns) else "Tuần 1")
+            max_w_label = sorted_kpi_weeks_order[-1] if sorted_kpi_weeks_order else (df_wm_weekly['week_label'].iloc[-1] if (not df_wm_weekly.empty and 'week_label' in df_wm_weekly.columns) else "Tuần 40")
             st.markdown(f"#### 📈 {t('Diễn Biến Tổng Điểm KPI Ca Trưởng Qua Các Tuần', 'Shift Leader KPI Trend Across Weeks')} ({min_w_label} - {max_w_label})")
             fig_trend_w = go.Figure()
             colors_l = {'Ca A': '#16a34a', 'Ca B': '#ea580c', 'Ca C': '#2563eb', 'Sắc': '#16a34a', 'Tài': '#ea580c', 'Long': '#2563eb'}
@@ -4145,7 +4244,7 @@ elif task_num == 3:
             index=default_w_idx,
             key="sb_week_rep_tab2"
         )
-        row_w_df = df_weekly[df_weekly['week_label'] == sel_w_rep] if not df_weekly.empty else pd.DataFrame()
+        row_w_df = df_weekly[df_weekly['week_label'] == sel_w_rep] if (not df_weekly.empty and 'week_label' in df_weekly.columns) else pd.DataFrame()
         if not row_w_df.empty:
             r_w_val = row_w_df.iloc[0]
             cw1, cw2, cw3, cw4 = st.columns(4)
@@ -4201,7 +4300,7 @@ elif task_num == 3:
             index=default_m_code_idx,
             key="sb_month_rep_tab2"
         )
-        row_m_df = df_monthly[df_monthly['month_label'] == sel_m_rep] if not df_monthly.empty else pd.DataFrame()
+        row_m_df = df_monthly[df_monthly['month_label'] == sel_m_rep] if (not df_monthly.empty and 'month_label' in df_monthly.columns) else pd.DataFrame()
         if not row_m_df.empty:
             r_val = row_m_df.iloc[0]
             cm1, cm2, cm3 = st.columns(3)
@@ -5382,8 +5481,8 @@ elif task_num == 8:
         last_kcs = df_kcs.iloc[-1] if not df_kcs.empty else {}
         c_k1, c_k2, c_k3, c_k4 = st.columns(4)
         am_vien_val = last_kcs.get('am_vien_pct', 0.0)
-        tro_val = last_kcs.get('do_tro_pct', 0.0)
-        ty_trong_latest = df_daily['ty_trong_vien'].dropna().iloc[-1] if (not df_daily.empty and 'ty_trong_vien' in df_daily.columns and (df_daily['ty_trong_vien'] > 0).any()) else 0.0
+        valid_tt = df_daily[df_daily['ty_trong_vien'] > 0]['ty_trong_vien'] if (not df_daily.empty and 'ty_trong_vien' in df_daily.columns) else pd.Series(dtype=float)
+        ty_trong_latest = float(valid_tt.iloc[-1]) if not valid_tt.empty else 0.0
         
         with c_k1:
             st.metric(t("💧 Độ Ẩm Viên Mẫu Mới Nhất", "💧 Latest Pellet Moisture"), f"{am_vien_val:.2f}%" if am_vien_val > 0 else "N/A", t("Chuẩn 8.0 - 9.5%", "Target 8.0 - 9.5%"))

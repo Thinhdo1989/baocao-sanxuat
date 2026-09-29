@@ -952,12 +952,12 @@ def check_viewer_authorization() -> bool:
 
     # 2. Kiểm tra Streamlit Cloud OAuth User
     try:
-        if hasattr(st, "experimental_user"):
-            u_email = getattr(st.experimental_user, "email", None)
-            if u_email and str(u_email).strip().lower() == AUTHORIZED_VIEWER_EMAIL.lower():
-                return True
         if hasattr(st, "user"):
             u_email = getattr(st.user, "email", None)
+            if u_email and str(u_email).strip().lower() == AUTHORIZED_VIEWER_EMAIL.lower():
+                return True
+        elif hasattr(st, "experimental_user"):
+            u_email = getattr(st.experimental_user, "email", None)
             if u_email and str(u_email).strip().lower() == AUTHORIZED_VIEWER_EMAIL.lower():
                 return True
     except Exception:

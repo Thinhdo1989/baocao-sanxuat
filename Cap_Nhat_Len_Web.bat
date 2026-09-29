@@ -9,6 +9,7 @@ echo =====================================================================
 echo.
 echo [1/3] Kiem tra va dong bo file moi nhat vao deploy_files...
 xcopy /Y /Q *.py deploy_files\ >nul 2>&1
+copy /Y requirements.txt deploy_files\requirements.txt >nul 2>&1
 
 echo [2/3] Luu cac thay doi vao Git...
 git add -A

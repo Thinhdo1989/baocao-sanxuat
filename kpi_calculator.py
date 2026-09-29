@@ -415,7 +415,14 @@ def get_equipment_statistics(df_shifts: pd.DataFrame, start_date: Any = None, en
     if end_date:
         df = df[df['date'] <= pd.to_datetime(end_date)]
 
-    num_days = max(1, (df['date'].max() - df['date'].min()).days + 1)
+    if df.empty or 'date' not in df.columns or df['date'].dropna().empty:
+        num_days = 1
+    else:
+        try:
+            delta = (df['date'].max() - df['date'].min()).days
+            num_days = max(1, delta + 1) if pd.notna(delta) else 1
+        except Exception:
+            num_days = 1
     num_shifts = len(df)
 
     stats = []
@@ -427,7 +434,7 @@ def get_equipment_statistics(df_shifts: pd.DataFrame, start_date: Any = None, en
         series = df[col]
         total_hours = float(series.sum())
         active_shifts = int((series > 0).sum())
-        avg_hours_per_day = total_hours / num_days
+        avg_hours_per_day = total_hours / num_days if num_days > 0 else 0.0
         avg_hours_active_shift = total_hours / active_shifts if active_shifts > 0 else 0.0
         
         # Max lý thuyết mỗi ca là 8h, mỗi ngày 24h
@@ -468,8 +475,8 @@ def get_shift_leader_kpis(df_shifts: pd.DataFrame) -> pd.DataFrame:
         tong_gio_ep=('tong_gio_ep', 'sum'),
     ).reset_index()
 
-    grouped['suat_dien_tb'] = grouped['tong_dien'] / grouped['tong_san_luong']
-    grouped['nang_suat_tb'] = grouped['tong_san_luong'] / grouped['tong_gio_ep']
+    grouped['suat_dien_tb'] = np.where(grouped['tong_san_luong'] > 0, grouped['tong_dien'] / grouped['tong_san_luong'], 0.0)
+    grouped['nang_suat_tb'] = np.where(grouped['tong_gio_ep'] > 0, grouped['tong_san_luong'] / grouped['tong_gio_ep'], 0.0)
 
     # Làm tròn
     grouped['tong_san_luong'] = grouped['tong_san_luong'].round(2)

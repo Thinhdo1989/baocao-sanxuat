@@ -2,6 +2,7 @@
 Module kết nối và chuẩn hóa dữ liệu từ Google Sheets cho Nhà máy viên nén gỗ.
 """
 import os
+import sys
 import re
 import json
 import time
@@ -627,147 +628,148 @@ class DataLoader:
         Đọc và chuẩn hóa dữ liệu tổng hợp ngày từ sheet 'Daily report'.
         Sheet này ở dạng xoay ngang: Cột là từng ngày, Hàng là các chỉ tiêu.
         """
-        rows = self.get_sheet_values('Daily report')
-        if len(rows) < 11:
+        try:
+            rows = self.get_sheet_values('Daily report')
+            if len(rows) < 11:
+                return pd.DataFrame()
+
+            dates_row = rows[2]
+            records = []
+
+            for col_idx in range(2, len(dates_row)):
+                date_raw = dates_row[col_idx].strip()
+                if not date_raw or date_raw == '-':
+                    continue
+                date_dt = parse_vn_date(date_raw)
+                if not date_dt:
+                    continue
+
+                san_luong = clean_number(rows[3][col_idx]) if len(rows) > 3 and col_idx < len(rows[3]) else 0.0
+                record = {
+                    'date': date_dt,
+                    'date_str': date_dt.strftime('%d/%m/%Y'),
+                    'san_luong_tan': san_luong,
+                    'tong_nguyen_lieu_tan': clean_number(rows[4][col_idx]) if len(rows) > 4 and col_idx < len(rows[4]) else 0.0,
+                    'tong_nl_dot_tan': clean_number(rows[5][col_idx]) if len(rows) > 5 and col_idx < len(rows[5]) else 0.0,
+                    'ty_le_che_bien': clean_number(rows[6][col_idx]) if len(rows) > 6 and col_idx < len(rows[6]) else 0.0,
+                    'do_am_tb_pct': clean_number(rows[7][col_idx]) if len(rows) > 7 and col_idx < len(rows[7]) else 0.0,
+                    'ty_trong_vien': clean_number(rows[8][col_idx]) if len(rows) > 8 and col_idx < len(rows[8]) else 0.0,
+                    'nang_suat_tb_tph': clean_number(rows[9][col_idx]) if len(rows) > 9 and col_idx < len(rows[9]) else 0.0,
+                    'nguyen_lieu_nhap_tan': clean_number(rows[10][col_idx]) if len(rows) > 10 and col_idx < len(rows[10]) else 0.0,
+                    'chi_tieu_tan': clean_number(rows[11][col_idx]) if len(rows) > 11 and col_idx < len(rows[11]) else 0.0,
+                }
+                if record['san_luong_tan'] > 0 or record['tong_nguyen_lieu_tan'] > 0:
+                    records.append(record)
+
+            df = pd.DataFrame(records)
+            if not df.empty:
+                df = df.sort_values('date').reset_index(drop=True)
+            return df
+        except Exception as e:
+            print(f"[-] Lỗi nạp Daily report: {e}")
             return pd.DataFrame()
-
-        # Dòng 3 (index 2): Danh sách Ngày (bắt đầu từ cột 2)
-        # Dòng 4: Khối lượng sản xuất (tấn)
-        # Dòng 5: Tổng nguyên liệu (tấn)
-        # Dòng 6: Tổng nguyên liệu đốt (tấn)
-        # Dòng 7: Tỷ lệ chế biến (n)
-        # Dòng 8: Độ ẩm trung bình (%)
-        # Dòng 9: Tỷ trọng viên (kg/m3)
-        # Dòng 10: Năng suất trung bình (tấn/h)
-        # Dòng 11: Tổng nguyên liệu nhập (tấn)
-        # Dòng 12: Chỉ tiêu sản lượng (tấn)
-        dates_row = rows[2]
-        records = []
-
-        for col_idx in range(2, len(dates_row)):
-            date_raw = dates_row[col_idx].strip()
-            if not date_raw or date_raw == '-':
-                continue
-            date_dt = parse_vn_date(date_raw)
-            if not date_dt:
-                continue
-
-            san_luong = clean_number(rows[3][col_idx]) if len(rows) > 3 and col_idx < len(rows[3]) else 0.0
-            # Nếu sản lượng bằng 0 hoặc chưa có thì vẫn lưu nếu có chỉ số khác
-            record = {
-                'date': date_dt,
-                'date_str': date_dt.strftime('%d/%m/%Y'),
-                'san_luong_tan': san_luong,
-                'tong_nguyen_lieu_tan': clean_number(rows[4][col_idx]) if len(rows) > 4 and col_idx < len(rows[4]) else 0.0,
-                'tong_nl_dot_tan': clean_number(rows[5][col_idx]) if len(rows) > 5 and col_idx < len(rows[5]) else 0.0,
-                'ty_le_che_bien': clean_number(rows[6][col_idx]) if len(rows) > 6 and col_idx < len(rows[6]) else 0.0,
-                'do_am_tb_pct': clean_number(rows[7][col_idx]) if len(rows) > 7 and col_idx < len(rows[7]) else 0.0,
-                'ty_trong_vien': clean_number(rows[8][col_idx]) if len(rows) > 8 and col_idx < len(rows[8]) else 0.0,
-                'nang_suat_tb_tph': clean_number(rows[9][col_idx]) if len(rows) > 9 and col_idx < len(rows[9]) else 0.0,
-                'nguyen_lieu_nhap_tan': clean_number(rows[10][col_idx]) if len(rows) > 10 and col_idx < len(rows[10]) else 0.0,
-                'chi_tieu_tan': clean_number(rows[11][col_idx]) if len(rows) > 11 and col_idx < len(rows[11]) else 0.0,
-            }
-            if record['san_luong_tan'] > 0 or record['tong_nguyen_lieu_tan'] > 0:
-                records.append(record)
-
-        df = pd.DataFrame(records)
-        if not df.empty:
-            df = df.sort_values('date').reset_index(drop=True)
-        return df
 
     def load_weekly_report(self) -> pd.DataFrame:
         """
         Đọc và chuẩn hóa dữ liệu báo cáo tuần từ sheet 'weekly report'.
         Bao gồm: sản lượng, suất điện, dầu diezen, độ ẩm, độ tro, tỷ lệ chế biến.
         """
-        rows = self.get_sheet_values('weekly report')
-        if len(rows) < 17:
+        try:
+            rows = self.get_sheet_values('weekly report')
+            if len(rows) < 17:
+                return pd.DataFrame()
+
+            # Dòng 2 (index 1): Số tuần (Tuần 31, 32, ...)
+            week_row = rows[1]
+            records = []
+
+            for col_idx in range(2, len(week_row)):
+                week_str = week_row[col_idx].strip().replace(',0', '').replace('.0', '')
+                if not week_str or not week_str.isdigit():
+                    continue
+                week_num = int(week_str)
+
+                # Lấy các chỉ tiêu theo dòng
+                san_luong = clean_number(rows[2][col_idx]) if len(rows) > 2 and col_idx < len(rows[2]) else 0.0
+                if san_luong == 0 and clean_number(rows[3][col_idx]) == 0:
+                    continue
+
+                record = {
+                    'week': week_num,
+                    'week_label': f"Tuần {week_num}",
+                    'san_luong_tan': san_luong,
+                    'gio_hoat_dong': clean_number(rows[3][col_idx]) if len(rows) > 3 and col_idx < len(rows[3]) else 0.0,
+                    'nang_suat_ep_tph': clean_number(rows[4][col_idx]) if len(rows) > 4 and col_idx < len(rows[4]) else 0.0,
+                    'dien_kwh': clean_number(rows[5][col_idx]) if len(rows) > 5 and col_idx < len(rows[5]) else 0.0,
+                    'tien_dien_vnd': clean_number(rows[6][col_idx]) if len(rows) > 6 and col_idx < len(rows[6]) else 0.0,
+                    'dien_tb_kwh_tan': clean_number(rows[7][col_idx]) if len(rows) > 7 and col_idx < len(rows[7]) else 0.0,
+                    'tien_dien_per_tan': clean_number(rows[8][col_idx]) if len(rows) > 8 and col_idx < len(rows[8]) else 0.0,
+                    'diezen_lit': clean_number(rows[9][col_idx]) if len(rows) > 9 and col_idx < len(rows[9]) else 0.0,
+                    'diezen_tb_lit_tan': clean_number(rows[10][col_idx]) if len(rows) > 10 and col_idx < len(rows[10]) else 0.0,
+                    'do_am_vien_pct': clean_number(rows[11][col_idx]) if len(rows) > 11 and col_idx < len(rows[11]) else 0.0,
+                    'ty_trong_vien': clean_number(rows[12][col_idx]) if len(rows) > 12 and col_idx < len(rows[12]) else 0.0,
+                    'do_tro_pct': clean_number(rows[13][col_idx]) if len(rows) > 13 and col_idx < len(rows[13]) else 0.0,
+                    'nguyen_lieu_tan': clean_number(rows[14][col_idx]) if len(rows) > 14 and col_idx < len(rows[14]) else 0.0,
+                    'nl_dot_tan': clean_number(rows[15][col_idx]) if len(rows) > 15 and col_idx < len(rows[15]) else 0.0,
+                    'ty_le_che_bien': clean_number(rows[16][col_idx]) if len(rows) > 16 and col_idx < len(rows[16]) else 0.0,
+                }
+                records.append(record)
+
+            df = pd.DataFrame(records)
+            if not df.empty:
+                df = df.sort_values('week').reset_index(drop=True)
+            return df
+        except Exception as e:
+            print(f"[-] Lỗi nạp weekly report: {e}")
             return pd.DataFrame()
-
-        # Dòng 2 (index 1): Số tuần (Tuần 31, 32, ...)
-        week_row = rows[1]
-        records = []
-
-        for col_idx in range(2, len(week_row)):
-            week_str = week_row[col_idx].strip().replace(',0', '').replace('.0', '')
-            if not week_str or not week_str.isdigit():
-                continue
-            week_num = int(week_str)
-
-            # Lấy các chỉ tiêu theo dòng
-            san_luong = clean_number(rows[2][col_idx]) if len(rows) > 2 and col_idx < len(rows[2]) else 0.0
-            if san_luong == 0 and clean_number(rows[3][col_idx]) == 0:
-                continue
-
-            record = {
-                'week': week_num,
-                'week_label': f"Tuần {week_num}",
-                'san_luong_tan': san_luong,
-                'gio_hoat_dong': clean_number(rows[3][col_idx]) if len(rows) > 3 and col_idx < len(rows[3]) else 0.0,
-                'nang_suat_ep_tph': clean_number(rows[4][col_idx]) if len(rows) > 4 and col_idx < len(rows[4]) else 0.0,
-                'dien_kwh': clean_number(rows[5][col_idx]) if len(rows) > 5 and col_idx < len(rows[5]) else 0.0,
-                'tien_dien_vnd': clean_number(rows[6][col_idx]) if len(rows) > 6 and col_idx < len(rows[6]) else 0.0,
-                'dien_tb_kwh_tan': clean_number(rows[7][col_idx]) if len(rows) > 7 and col_idx < len(rows[7]) else 0.0,
-                'tien_dien_per_tan': clean_number(rows[8][col_idx]) if len(rows) > 8 and col_idx < len(rows[8]) else 0.0,
-                'diezen_lit': clean_number(rows[9][col_idx]) if len(rows) > 9 and col_idx < len(rows[9]) else 0.0,
-                'diezen_tb_lit_tan': clean_number(rows[10][col_idx]) if len(rows) > 10 and col_idx < len(rows[10]) else 0.0,
-                'do_am_vien_pct': clean_number(rows[11][col_idx]) if len(rows) > 11 and col_idx < len(rows[11]) else 0.0,
-                'ty_trong_vien': clean_number(rows[12][col_idx]) if len(rows) > 12 and col_idx < len(rows[12]) else 0.0,
-                'do_tro_pct': clean_number(rows[13][col_idx]) if len(rows) > 13 and col_idx < len(rows[13]) else 0.0,
-                'nguyen_lieu_tan': clean_number(rows[14][col_idx]) if len(rows) > 14 and col_idx < len(rows[14]) else 0.0,
-                'nl_dot_tan': clean_number(rows[15][col_idx]) if len(rows) > 15 and col_idx < len(rows[15]) else 0.0,
-                'ty_le_che_bien': clean_number(rows[16][col_idx]) if len(rows) > 16 and col_idx < len(rows[16]) else 0.0,
-            }
-            records.append(record)
-
-        df = pd.DataFrame(records)
-        if not df.empty:
-            df = df.sort_values('week').reset_index(drop=True)
-        return df
 
     def load_monthly_report(self) -> pd.DataFrame:
         """
         Đọc và chuẩn hóa dữ liệu báo cáo tháng từ sheet 'Monthly report'.
         """
-        rows = self.get_sheet_values('Monthly report')
-        if len(rows) < 17:
+        try:
+            rows = self.get_sheet_values('Monthly report')
+            if len(rows) < 17:
+                return pd.DataFrame()
+
+            month_row = rows[0]
+            records = []
+
+            for col_idx in range(2, len(month_row)):
+                m_str = month_row[col_idx].strip()
+                if not m_str or m_str in ['-', 'Năm', '2026']:
+                    continue
+
+                san_luong = clean_number(rows[1][col_idx]) if len(rows) > 1 and col_idx < len(rows[1]) else 0.0
+                if san_luong == 0:
+                    continue
+
+                record = {
+                    'month_label': m_str,
+                    'san_luong_tan': san_luong,
+                    'gio_hoat_dong': clean_number(rows[2][col_idx]) if len(rows) > 2 and col_idx < len(rows[2]) else 0.0,
+                    'nang_suat_ep_tph': clean_number(rows[3][col_idx]) if len(rows) > 3 and col_idx < len(rows[3]) else 0.0,
+                    'dien_kwh': clean_number(rows[4][col_idx]) if len(rows) > 4 and col_idx < len(rows[4]) else 0.0,
+                    'tien_dien_vnd': clean_number(rows[5][col_idx]) if len(rows) > 5 and col_idx < len(rows[5]) else 0.0,
+                    'dien_tb_kwh_tan': clean_number(rows[6][col_idx]) if len(rows) > 6 and col_idx < len(rows[6]) else 0.0,
+                    'tien_dien_per_tan': clean_number(rows[7][col_idx]) if len(rows) > 7 and col_idx < len(rows[7]) else 0.0,
+                    'diezen_lit': clean_number(rows[8][col_idx]) if len(rows) > 8 and col_idx < len(rows[8]) else 0.0,
+                    'diezen_tb_lit_tan': clean_number(rows[9][col_idx]) if len(rows) > 9 and col_idx < len(rows[9]) else 0.0,
+                    'do_am_vien_pct': clean_number(rows[10][col_idx]) if len(rows) > 10 and col_idx < len(rows[10]) else 0.0,
+                    'ty_trong_vien': clean_number(rows[11][col_idx]) if len(rows) > 11 and col_idx < len(rows[11]) else 0.0,
+                    'do_tro_pct': clean_number(rows[12][col_idx]) if len(rows) > 12 and col_idx < len(rows[12]) else 0.0,
+                    'nguyen_lieu_sx_tan': clean_number(rows[13][col_idx]) if len(rows) > 13 and col_idx < len(rows[13]) else 0.0,
+                    'nl_dot_tan': clean_number(rows[14][col_idx]) if len(rows) > 14 and col_idx < len(rows[14]) else 0.0,
+                    'ty_le_che_bien': clean_number(rows[15][col_idx]) if len(rows) > 15 and col_idx < len(rows[15]) else 0.0,
+                    'nl_mua_tan': clean_number(rows[16][col_idx]) if len(rows) > 16 and col_idx < len(rows[16]) else 0.0,
+                    'ton_kho_tan': clean_number(rows[17][col_idx]) if len(rows) > 17 and col_idx < len(rows[17]) else 0.0,
+                }
+                records.append(record)
+
+            return pd.DataFrame(records)
+        except Exception as e:
+            print(f"[-] Lỗi nạp Monthly report: {e}")
             return pd.DataFrame()
-
-        month_row = rows[0]
-        records = []
-
-        for col_idx in range(2, len(month_row)):
-            m_str = month_row[col_idx].strip()
-            if not m_str or m_str in ['-', 'Năm', '2026']:
-                continue
-
-            san_luong = clean_number(rows[1][col_idx]) if len(rows) > 1 and col_idx < len(rows[1]) else 0.0
-            if san_luong == 0:
-                continue
-
-            record = {
-                'month_label': m_str,
-                'san_luong_tan': san_luong,
-                'gio_hoat_dong': clean_number(rows[2][col_idx]) if len(rows) > 2 and col_idx < len(rows[2]) else 0.0,
-                'nang_suat_ep_tph': clean_number(rows[3][col_idx]) if len(rows) > 3 and col_idx < len(rows[3]) else 0.0,
-                'dien_kwh': clean_number(rows[4][col_idx]) if len(rows) > 4 and col_idx < len(rows[4]) else 0.0,
-                'tien_dien_vnd': clean_number(rows[5][col_idx]) if len(rows) > 5 and col_idx < len(rows[5]) else 0.0,
-                'dien_tb_kwh_tan': clean_number(rows[6][col_idx]) if len(rows) > 6 and col_idx < len(rows[6]) else 0.0,
-                'tien_dien_per_tan': clean_number(rows[7][col_idx]) if len(rows) > 7 and col_idx < len(rows[7]) else 0.0,
-                'diezen_lit': clean_number(rows[8][col_idx]) if len(rows) > 8 and col_idx < len(rows[8]) else 0.0,
-                'diezen_tb_lit_tan': clean_number(rows[9][col_idx]) if len(rows) > 9 and col_idx < len(rows[9]) else 0.0,
-                'do_am_vien_pct': clean_number(rows[10][col_idx]) if len(rows) > 10 and col_idx < len(rows[10]) else 0.0,
-                'ty_trong_vien': clean_number(rows[11][col_idx]) if len(rows) > 11 and col_idx < len(rows[11]) else 0.0,
-                'do_tro_pct': clean_number(rows[12][col_idx]) if len(rows) > 12 and col_idx < len(rows[12]) else 0.0,
-                'nguyen_lieu_sx_tan': clean_number(rows[13][col_idx]) if len(rows) > 13 and col_idx < len(rows[13]) else 0.0,
-                'nl_dot_tan': clean_number(rows[14][col_idx]) if len(rows) > 14 and col_idx < len(rows[14]) else 0.0,
-                'ty_le_che_bien': clean_number(rows[15][col_idx]) if len(rows) > 15 and col_idx < len(rows[15]) else 0.0,
-                'nl_mua_tan': clean_number(rows[16][col_idx]) if len(rows) > 16 and col_idx < len(rows[16]) else 0.0,
-                'ton_kho_tan': clean_number(rows[17][col_idx]) if len(rows) > 17 and col_idx < len(rows[17]) else 0.0,
-            }
-            records.append(record)
-
-        return pd.DataFrame(records)
 
     @staticmethod
     def compute_kcs_average_moisture(df_kcs: pd.DataFrame, target_date: Any, shift_name: str) -> float:
@@ -943,41 +945,45 @@ class DataLoader:
         """
         Đọc và chuẩn hóa dữ liệu tiêu thụ dầu Diezen từ sheet 'Diezen'.
         """
-        rows = self.get_sheet_values('Diezen')
-        if len(rows) < 2:
-            return pd.DataFrame()
+        try:
+            rows = self.get_sheet_values('Diezen')
+            if len(rows) < 2:
+                return pd.DataFrame()
 
-        header = rows[0]
-        records = []
-        for r in rows[1:]:
-            if not r or len(r) < 2:
-                continue
-            week_str = r[1].strip()
-            if not week_str or not week_str.isdigit():
-                continue
-            
-            week_num = int(week_str)
-            item = {
-                'month': r[0].strip(),
-                'week': week_num,
-                'week_label': f"Tuần {week_num}",
-            }
-            total_lit = 0.0
-            for col_idx in range(2, len(header)):
-                col_name = header[col_idx].strip()
-                if not col_name:
+            header = rows[0]
+            records = []
+            for r in rows[1:]:
+                if not r or len(r) < 2:
                     continue
-                val = clean_number(r[col_idx] if col_idx < len(r) else 0)
-                item[col_name] = val
-                total_lit += val
-            item['tong_diezen_lit'] = total_lit
-            if total_lit > 0:
-                records.append(item)
+                week_str = r[1].strip()
+                if not week_str or not week_str.isdigit():
+                    continue
+                
+                week_num = int(week_str)
+                item = {
+                    'month': r[0].strip(),
+                    'week': week_num,
+                    'week_label': f"Tuần {week_num}",
+                }
+                total_lit = 0.0
+                for col_idx in range(2, len(header)):
+                    col_name = header[col_idx].strip()
+                    if not col_name:
+                        continue
+                    val = clean_number(r[col_idx] if col_idx < len(r) else 0)
+                    item[col_name] = val
+                    total_lit += val
+                item['tong_diezen_lit'] = total_lit
+                if total_lit > 0:
+                    records.append(item)
 
-        df = pd.DataFrame(records)
-        if not df.empty:
-            df = df.sort_values('week').reset_index(drop=True)
-        return df
+            df = pd.DataFrame(records)
+            if not df.empty:
+                df = df.sort_values('week').reset_index(drop=True)
+            return df
+        except Exception as e:
+            print(f"[-] Lỗi nạp Diezen data: {e}")
+            return pd.DataFrame()
 
     def load_wm_kpi_scores(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -1095,129 +1101,134 @@ class DataLoader:
           Col 28: Trọng số độ ẩm (30), Col 29: Điểm ẩm, Col 30: Điện năng TB, Col 33: Năng suất TB,
           Col 34: Chỉ tiêu NS (4), Col 35: Trọng số NS (20), Col 36: Điểm năng suất, Col 37: Điểm KPI (/100)
         """
-        target_sheets = [leader_name]
-        alias_candidates = {
-            'Ca A': ['Ca A', 'Sắc', 'Hải', 'Thành'],
-            'Ca B': ['Ca B', 'Tài', 'Lâm'],
-            'Ca C': ['Ca C', 'Long'],
-            'Sắc': ['Ca A', 'Sắc'],
-            'Tài': ['Ca B', 'Tài'],
-            'Long': ['Ca C', 'Long']
-        }
-        if leader_name in alias_candidates:
-            for s in alias_candidates[leader_name]:
-                if s not in target_sheets:
-                    target_sheets.append(s)
+        try:
+            target_sheets = [leader_name]
+            alias_candidates = {
+                'Ca A': ['Ca A', 'Sắc', 'Hải', 'Thành'],
+                'Ca B': ['Ca B', 'Tài', 'Lâm'],
+                'Ca C': ['Ca C', 'Long'],
+                'Sắc': ['Ca A', 'Sắc'],
+                'Tài': ['Ca B', 'Tài'],
+                'Long': ['Ca C', 'Long']
+            }
+            if leader_name in alias_candidates:
+                for s in alias_candidates[leader_name]:
+                    if s not in target_sheets:
+                        target_sheets.append(s)
 
-        rows = []
-        actual_sheet = leader_name
-        for s in target_sheets:
-            rows = self.get_kpi_sheet_values(s)
-            if rows and len(rows) > 1:
-                actual_sheet = s
-                break
+            rows = []
+            actual_sheet = leader_name
+            for s in target_sheets:
+                rows = self.get_kpi_sheet_values(s)
+                if rows and len(rows) > 1:
+                    actual_sheet = s
+                    break
 
-        if not rows or len(rows) < 2:
-            return pd.DataFrame(), pd.DataFrame()
+            if not rows or len(rows) < 2:
+                return pd.DataFrame(), pd.DataFrame()
 
-        std_name = 'Ca A' if leader_name in ['Ca A', 'Sắc', 'Hải', 'Thành'] else (
-            'Ca B' if leader_name in ['Ca B', 'Tài', 'Lâm'] else (
-                'Ca C' if leader_name in ['Ca C', 'Long'] else leader_name
+            std_name = 'Ca A' if leader_name in ['Ca A', 'Sắc', 'Hải', 'Thành'] else (
+                'Ca B' if leader_name in ['Ca B', 'Tài', 'Lâm'] else (
+                    'Ca C' if leader_name in ['Ca C', 'Long'] else leader_name
+                )
             )
-        )
 
-        weekly_records = []
-        monthly_records = []
+            weekly_records = []
+            monthly_records = []
 
-        for r in rows[1:]:
-            # 1. Phần Tuần: Col 0-17
-            if len(r) > 17 and str(r[0]).strip() and clean_number(r[0]) > 0:
-                w_num = int(clean_number(r[0]))
-                so_ca = clean_number(r[2]) if len(r) > 2 else 0.0
-                ct_sl = clean_number(r[3]) if len(r) > 3 else 0.0
-                sl_act = clean_number(r[4]) if len(r) > 4 else 0.0
-                d_sl = clean_number(r[6]) if len(r) > 6 else 0.0
-                if d_sl == 0 and ct_sl > 0 and sl_act > 0:
-                    d_sl = round((sl_act / ct_sl) * 50.0, 2)
+            for r in rows[1:]:
+                # 1. Phần Tuần: Col 0-17
+                if len(r) > 17 and str(r[0]).strip() and clean_number(r[0]) > 0:
+                    w_num = int(clean_number(r[0]))
+                    so_ca = clean_number(r[2]) if len(r) > 2 else 0.0
+                    ct_sl = clean_number(r[3]) if len(r) > 3 else 0.0
+                    sl_act = clean_number(r[4]) if len(r) > 4 else 0.0
+                    d_sl = clean_number(r[6]) if len(r) > 6 else 0.0
+                    if d_sl == 0 and ct_sl > 0 and sl_act > 0:
+                        d_sl = round((sl_act / ct_sl) * 50.0, 2)
 
-                am_tb = clean_number(r[7]) if len(r) > 7 else 0.0
-                d_am = clean_number(r[10]) if len(r) > 10 else 0.0
-                if d_am == 0 and am_tb > 0:
-                    d_am = round((am_tb / 9.0) * 30.0, 2)
+                    am_tb = clean_number(r[7]) if len(r) > 7 else 0.0
+                    d_am = clean_number(r[10]) if len(r) > 10 else 0.0
+                    if d_am == 0 and am_tb > 0:
+                        d_am = round((am_tb / 9.0) * 30.0, 2)
 
-                dien_tb = clean_number(r[11]) if len(r) > 11 else 0.0
-                ns_tb = clean_number(r[13]) if len(r) > 13 else 0.0
-                d_ns = clean_number(r[16]) if len(r) > 16 else 0.0
-                if d_ns == 0 and ns_tb > 0:
-                    d_ns = round((ns_tb / 4.0) * 20.0, 2)
+                    dien_tb = clean_number(r[11]) if len(r) > 11 else 0.0
+                    ns_tb = clean_number(r[13]) if len(r) > 13 else 0.0
+                    d_ns = clean_number(r[16]) if len(r) > 16 else 0.0
+                    if d_ns == 0 and ns_tb > 0:
+                        d_ns = round((ns_tb / 4.0) * 20.0, 2)
 
-                kpi_score = clean_number(r[17]) if len(r) > 17 else 0.0
-                if kpi_score == 0 and (d_sl > 0 or d_am > 0 or d_ns > 0):
-                    kpi_score = round(d_sl + d_am + d_ns, 2)
+                    kpi_score = clean_number(r[17]) if len(r) > 17 else 0.0
+                    if kpi_score == 0 and (d_sl > 0 or d_am > 0 or d_ns > 0):
+                        kpi_score = round(d_sl + d_am + d_ns, 2)
 
-                if sl_act > 0 or kpi_score > 0 or so_ca > 0:
-                    weekly_records.append({
-                        'week': w_num,
-                        'week_label': f"Tuần {w_num}",
-                        'ca_truong': std_name,
-                        'so_ca': so_ca,
-                        'chi_tieu_sl': ct_sl,
-                        'sl_thuc_te': sl_act,
-                        'diem_sl': d_sl,
-                        'do_am_tb': am_tb,
-                        'diem_am': d_am,
-                        'dien_tb': dien_tb,
-                        'diem_dien': 0.0,
-                        'nang_suat_tb': ns_tb,
-                        'diem_nang_suat': d_ns,
-                        'diem_kpi': kpi_score,
-                    })
+                    if sl_act > 0 or kpi_score > 0 or so_ca > 0:
+                        weekly_records.append({
+                            'week': w_num,
+                            'week_label': f"Tuần {w_num}",
+                            'ca_truong': std_name,
+                            'so_ca': so_ca,
+                            'chi_tieu_sl': ct_sl,
+                            'sl_thuc_te': sl_act,
+                            'diem_sl': d_sl,
+                            'do_am_tb': am_tb,
+                            'diem_am': d_am,
+                            'dien_tb': dien_tb,
+                            'diem_dien': 0.0,
+                            'nang_suat_tb': ns_tb,
+                            'diem_nang_suat': d_ns,
+                            'diem_kpi': kpi_score,
+                        })
 
-            # 2. Phần Tháng: Col 19-37
-            if len(r) > 37 and str(r[19]).strip() and 'tháng' in str(r[19]).strip().lower():
-                m_label = str(r[19]).strip()
-                so_ca_m = clean_number(r[21]) if len(r) > 21 else 0.0
-                ct_sl_m = clean_number(r[22]) if len(r) > 22 else 0.0
-                sl_m = clean_number(r[23]) if len(r) > 23 else 0.0
-                d_sl_m = clean_number(r[25]) if len(r) > 25 else 0.0
-                if d_sl_m == 0 and ct_sl_m > 0 and sl_m > 0:
-                    d_sl_m = round((sl_m / ct_sl_m) * 50.0, 2)
+                # 2. Phần Tháng: Col 19-37
+                if len(r) > 37 and str(r[19]).strip() and 'tháng' in str(r[19]).strip().lower():
+                    m_label = str(r[19]).strip()
+                    so_ca_m = clean_number(r[21]) if len(r) > 21 else 0.0
+                    ct_sl_m = clean_number(r[22]) if len(r) > 22 else 0.0
+                    sl_m = clean_number(r[23]) if len(r) > 23 else 0.0
+                    d_sl_m = clean_number(r[25]) if len(r) > 25 else 0.0
+                    if d_sl_m == 0 and ct_sl_m > 0 and sl_m > 0:
+                        d_sl_m = round((sl_m / ct_sl_m) * 50.0, 2)
 
-                am_m = clean_number(r[26]) if len(r) > 26 else 0.0
-                d_am_m = clean_number(r[29]) if len(r) > 29 else 0.0
-                if d_am_m == 0 and am_m > 0:
-                    d_am_m = round((am_m / 9.0) * 30.0, 2)
+                    am_m = clean_number(r[26]) if len(r) > 26 else 0.0
+                    d_am_m = clean_number(r[29]) if len(r) > 29 else 0.0
+                    if d_am_m == 0 and am_m > 0:
+                        d_am_m = round((am_m / 9.0) * 30.0, 2)
 
-                dien_m = clean_number(r[30]) if len(r) > 30 else 0.0
-                ns_m = clean_number(r[33]) if len(r) > 33 else 0.0
-                d_ns_m = clean_number(r[36]) if len(r) > 36 else 0.0
-                if d_ns_m == 0 and ns_m > 0:
-                    d_ns_m = round((ns_m / 4.0) * 20.0, 2)
+                    dien_m = clean_number(r[30]) if len(r) > 30 else 0.0
+                    ns_m = clean_number(r[33]) if len(r) > 33 else 0.0
+                    d_ns_m = clean_number(r[36]) if len(r) > 36 else 0.0
+                    if d_ns_m == 0 and ns_m > 0:
+                        d_ns_m = round((ns_m / 4.0) * 20.0, 2)
 
-                kpi_m = clean_number(r[37]) if len(r) > 37 else 0.0
-                if kpi_m == 0 and (d_sl_m > 0 or d_am_m > 0 or d_ns_m > 0):
-                    kpi_m = round(d_sl_m + d_am_m + d_ns_m, 2)
+                    kpi_m = clean_number(r[37]) if len(r) > 37 else 0.0
+                    if kpi_m == 0 and (d_sl_m > 0 or d_am_m > 0 or d_ns_m > 0):
+                        kpi_m = round(d_sl_m + d_am_m + d_ns_m, 2)
 
-                if sl_m > 0 or kpi_m > 0 or so_ca_m > 0:
-                    monthly_records.append({
-                        'month_label': m_label,
-                        'ca_truong': std_name,
-                        'so_ca': so_ca_m,
-                        'chi_tieu_sl': ct_sl_m,
-                        'sl_thuc_te': sl_m,
-                        'diem_sl': d_sl_m,
-                        'do_am_tb': am_m,
-                        'diem_am': d_am_m,
-                        'dien_tb': dien_m,
-                        'diem_dien': 0.0,
-                        'nang_suat_tb': ns_m,
-                        'diem_nang_suat': d_ns_m,
-                        'diem_kpi': kpi_m,
-                    })
+                    if sl_m > 0 or kpi_m > 0 or so_ca_m > 0:
+                        monthly_records.append({
+                            'month_label': m_label,
+                            'ca_truong': std_name,
+                            'so_ca': so_ca_m,
+                            'chi_tieu_sl': ct_sl_m,
+                            'sl_thuc_te': sl_m,
+                            'diem_sl': d_sl_m,
+                            'do_am_tb': am_m,
+                            'diem_am': d_am_m,
+                            'dien_tb': dien_m,
+                            'diem_dien': 0.0,
+                            'nang_suat_tb': ns_m,
+                            'diem_nang_suat': d_ns_m,
+                            'diem_kpi': kpi_m,
+                        })
 
-        df_w = pd.DataFrame(weekly_records)
-        df_m = pd.DataFrame(monthly_records)
-        return df_w, df_m
+            df_w = pd.DataFrame(weekly_records)
+            df_m = pd.DataFrame(monthly_records)
+            return df_w, df_m
+
+        except Exception as e:
+            print(f"[-] Lỗi nạp leader KPI sheet '{leader_name}': {e}")
+            return pd.DataFrame(), pd.DataFrame()
 
     def load_all_leaders_kpi(self) -> Dict[str, pd.DataFrame]:
         """
@@ -1303,137 +1314,145 @@ class DataLoader:
         Đọc dữ liệu so sánh 3 ca theo ngày từ sheet 'chart capacity' hoặc tạo động từ 'Data KPI'.
         Hỗ trợ: 'Chart moisture', 'Chart dien', 'Chart capacity'
         """
-        s_lower = sheet_name.strip().lower()
-        if 'cap' in s_lower:
-            for s_try in ['chart capacity', 'Chart capacity', sheet_name]:
-                rows = self.get_kpi_sheet_values(s_try)
-                if rows and len(rows) >= 3:
-                    records = []
-                    for r in rows[2:]:
-                        if not r or not str(r[0]).strip():
-                            continue
-                        date_dt = parse_vn_date(r[0])
-                        if not date_dt:
-                            continue
-                        val_a = clean_number(r[1]) if len(r) > 1 and str(r[1]).strip() not in ['', '-'] else None
-                        val_b = clean_number(r[2]) if len(r) > 2 and str(r[2]).strip() not in ['', '-'] else None
-                        val_c = clean_number(r[3]) if len(r) > 3 and str(r[3]).strip() not in ['', '-'] else None
-                        item = {
-                            'date': date_dt,
-                            'date_str': date_dt.strftime('%d/%m/%Y'),
-                            'Ca A': val_a,
-                            'Ca B': val_b,
-                            'Ca C': val_c,
-                            'Long': val_c,
-                            'Sắc': val_b,
-                            'Tài': val_c,
-                        }
-                        if any(v is not None for v in [val_a, val_b, val_c]):
-                            records.append(item)
-                    if records:
-                        df = pd.DataFrame(records)
-                        return df.sort_values('date').reset_index(drop=True)
+        try:
+            s_lower = sheet_name.strip().lower()
+            if 'cap' in s_lower:
+                for s_try in ['chart capacity', 'Chart capacity', sheet_name]:
+                    rows = self.get_kpi_sheet_values(s_try)
+                    if rows and len(rows) >= 3:
+                        records = []
+                        for r in rows[2:]:
+                            if not r or not str(r[0]).strip():
+                                continue
+                            date_dt = parse_vn_date(r[0])
+                            if not date_dt:
+                                continue
+                            val_a = clean_number(r[1]) if len(r) > 1 and str(r[1]).strip() not in ['', '-'] else None
+                            val_b = clean_number(r[2]) if len(r) > 2 and str(r[2]).strip() not in ['', '-'] else None
+                            val_c = clean_number(r[3]) if len(r) > 3 and str(r[3]).strip() not in ['', '-'] else None
+                            item = {
+                                'date': date_dt,
+                                'date_str': date_dt.strftime('%d/%m/%Y'),
+                                'Ca A': val_a,
+                                'Ca B': val_b,
+                                'Ca C': val_c,
+                                'Long': val_c,
+                                'Sắc': val_b,
+                                'Tài': val_c,
+                            }
+                            if any(v is not None for v in [val_a, val_b, val_c]):
+                                records.append(item)
+                        if records:
+                            df = pd.DataFrame(records)
+                            return df.sort_values('date').reset_index(drop=True)
 
-        # 2. Tạo động từ Data KPI
-        df_shifts = self.load_kpi_daily_shifts()
-        if df_shifts.empty:
+            # 2. Tạo động từ Data KPI
+            df_shifts = self.load_kpi_daily_shifts()
+            if df_shifts.empty:
+                return pd.DataFrame()
+
+            metric_col = 'nang_suat_tb'
+            tieu_chuan = 4.0
+            if 'moist' in s_lower or 'ẩm' in s_lower:
+                metric_col = 'do_am_tb'
+                tieu_chuan = 9.0
+            elif 'dien' in s_lower or 'điện' in s_lower:
+                metric_col = 'dien_tb'
+                tieu_chuan = 175.0
+
+            records = []
+            for dt_val, group in df_shifts.groupby('date'):
+                item = {
+                    'date': dt_val,
+                    'date_str': dt_val.strftime('%d/%m/%Y'),
+                    'Ca A': None,
+                    'Ca B': None,
+                    'Ca C': None,
+                    'Long': None,
+                    'Sắc': None,
+                    'Tài': None,
+                    'Tieu_chuan': tieu_chuan
+                }
+                vals = []
+                for _, row in group.iterrows():
+                    ca = str(row.get('ca_truong', '')).strip()
+                    val = float(row.get(metric_col, 0.0))
+                    if val > 0:
+                        vals.append(val)
+                        if 'ca a' in ca.lower() or 'thành' in ca.lower():
+                            item['Ca A'] = val
+                        elif 'ca b' in ca.lower() or 'lâm' in ca.lower() or 'sắc' in ca.lower():
+                            item['Ca B'] = val
+                            item['Sắc'] = val
+                        elif 'ca c' in ca.lower() or 'long' in ca.lower() or 'tài' in ca.lower():
+                            item['Ca C'] = val
+                            item['Long'] = val
+                            item['Tài'] = val
+                if vals:
+                    item['Trung_binh'] = round(sum(vals) / len(vals), 2)
+                if any(item[k] is not None for k in ['Ca A', 'Ca B', 'Ca C', 'Long', 'Sắc', 'Tài']):
+                    records.append(item)
+
+            df = pd.DataFrame(records)
+            if not df.empty:
+                df = df.sort_values('date').reset_index(drop=True)
+            return df
+        except Exception as e:
+            print(f"[-] Lỗi nạp KPI chart data '{sheet_name}': {e}")
             return pd.DataFrame()
-
-        metric_col = 'nang_suat_tb'
-        tieu_chuan = 4.0
-        if 'moist' in s_lower or 'ẩm' in s_lower:
-            metric_col = 'do_am_tb'
-            tieu_chuan = 9.0
-        elif 'dien' in s_lower or 'điện' in s_lower:
-            metric_col = 'dien_tb'
-            tieu_chuan = 175.0
-
-        records = []
-        for dt_val, group in df_shifts.groupby('date'):
-            item = {
-                'date': dt_val,
-                'date_str': dt_val.strftime('%d/%m/%Y'),
-                'Ca A': None,
-                'Ca B': None,
-                'Ca C': None,
-                'Long': None,
-                'Sắc': None,
-                'Tài': None,
-                'Tieu_chuan': tieu_chuan
-            }
-            vals = []
-            for _, row in group.iterrows():
-                ca = str(row.get('ca_truong', '')).strip()
-                val = float(row.get(metric_col, 0.0))
-                if val > 0:
-                    vals.append(val)
-                    if 'ca a' in ca.lower() or 'thành' in ca.lower():
-                        item['Ca A'] = val
-                    elif 'ca b' in ca.lower() or 'lâm' in ca.lower() or 'sắc' in ca.lower():
-                        item['Ca B'] = val
-                        item['Sắc'] = val
-                    elif 'ca c' in ca.lower() or 'long' in ca.lower() or 'tài' in ca.lower():
-                        item['Ca C'] = val
-                        item['Long'] = val
-                        item['Tài'] = val
-            if vals:
-                item['Trung_binh'] = round(sum(vals) / len(vals), 2)
-            if any(item[k] is not None for k in ['Ca A', 'Ca B', 'Ca C', 'Long', 'Sắc', 'Tài']):
-                records.append(item)
-
-        df = pd.DataFrame(records)
-        if not df.empty:
-            df = df.sort_values('date').reset_index(drop=True)
-        return df
 
     def load_kpi_sl_chart_data(self) -> pd.DataFrame:
         """
         Đọc/tạo dữ liệu so sánh sản lượng thực tế và chỉ tiêu của các ca theo ngày từ Data KPI.
         """
-        df_shifts = self.load_kpi_daily_shifts()
-        if df_shifts.empty:
+        try:
+            df_shifts = self.load_kpi_daily_shifts()
+            if df_shifts.empty:
+                return pd.DataFrame()
+
+            records = []
+            for dt_val, group in df_shifts.groupby('date'):
+                item = {
+                    'date': dt_val,
+                    'date_str': dt_val.strftime('%d/%m/%Y'),
+                    'Ca A_actual': None, 'Ca A_target': None,
+                    'Ca B_actual': None, 'Ca B_target': None,
+                    'Ca C_actual': None, 'Ca C_target': None,
+                    'Long_actual': None, 'Long_target': None,
+                    'Sac_actual': None, 'Sac_target': None,
+                    'Tai_actual': None, 'Tai_target': None,
+                }
+                for _, row in group.iterrows():
+                    ca = str(row.get('ca_truong', '')).strip().lower()
+                    act = float(row.get('sl_thuc_te', 0.0))
+                    tgt = float(row.get('chi_tieu_sl', 0.0))
+                    if act > 0 or tgt > 0:
+                        if 'ca a' in ca or 'thành' in ca:
+                            item['Ca A_actual'] = act if act > 0 else None
+                            item['Ca A_target'] = tgt if tgt > 0 else None
+                        elif 'ca b' in ca or 'lâm' in ca or 'sắc' in ca:
+                            item['Ca B_actual'] = act if act > 0 else None
+                            item['Ca B_target'] = tgt if tgt > 0 else None
+                            item['Sac_actual'] = act if act > 0 else None
+                            item['Sac_target'] = tgt if tgt > 0 else None
+                        elif 'ca c' in ca or 'long' in ca or 'tài' in ca:
+                            item['Ca C_actual'] = act if act > 0 else None
+                            item['Ca C_target'] = tgt if tgt > 0 else None
+                            item['Long_actual'] = act if act > 0 else None
+                            item['Long_target'] = tgt if tgt > 0 else None
+                            item['Tai_actual'] = act if act > 0 else None
+                            item['Tai_target'] = tgt if tgt > 0 else None
+
+                if any(item[k] is not None for k in ['Ca A_actual', 'Ca B_actual', 'Ca C_actual', 'Long_actual', 'Sac_actual', 'Tai_actual']):
+                    records.append(item)
+
+            df = pd.DataFrame(records)
+            if not df.empty:
+                df = df.sort_values('date').reset_index(drop=True)
+            return df
+        except Exception as e:
+            print(f"[-] Lỗi nạp KPI SL chart data: {e}")
             return pd.DataFrame()
-
-        records = []
-        for dt_val, group in df_shifts.groupby('date'):
-            item = {
-                'date': dt_val,
-                'date_str': dt_val.strftime('%d/%m/%Y'),
-                'Ca A_actual': None, 'Ca A_target': None,
-                'Ca B_actual': None, 'Ca B_target': None,
-                'Ca C_actual': None, 'Ca C_target': None,
-                'Long_actual': None, 'Long_target': None,
-                'Sac_actual': None, 'Sac_target': None,
-                'Tai_actual': None, 'Tai_target': None,
-            }
-            for _, row in group.iterrows():
-                ca = str(row.get('ca_truong', '')).strip().lower()
-                act = float(row.get('sl_thuc_te', 0.0))
-                tgt = float(row.get('chi_tieu_sl', 0.0))
-                if act > 0 or tgt > 0:
-                    if 'ca a' in ca or 'thành' in ca:
-                        item['Ca A_actual'] = act if act > 0 else None
-                        item['Ca A_target'] = tgt if tgt > 0 else None
-                    elif 'ca b' in ca or 'lâm' in ca or 'sắc' in ca:
-                        item['Ca B_actual'] = act if act > 0 else None
-                        item['Ca B_target'] = tgt if tgt > 0 else None
-                        item['Sac_actual'] = act if act > 0 else None
-                        item['Sac_target'] = tgt if tgt > 0 else None
-                    elif 'ca c' in ca or 'long' in ca or 'tài' in ca:
-                        item['Ca C_actual'] = act if act > 0 else None
-                        item['Ca C_target'] = tgt if tgt > 0 else None
-                        item['Long_actual'] = act if act > 0 else None
-                        item['Long_target'] = tgt if tgt > 0 else None
-                        item['Tai_actual'] = act if act > 0 else None
-                        item['Tai_target'] = tgt if tgt > 0 else None
-
-            if any(item[k] is not None for k in ['Ca A_actual', 'Ca B_actual', 'Ca C_actual', 'Long_actual', 'Sac_actual', 'Tai_actual']):
-                records.append(item)
-
-        df = pd.DataFrame(records)
-        if not df.empty:
-            df = df.sort_values('date').reset_index(drop=True)
-        return df
 
     def load_kpi_daily_shifts(self, df_kcs: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
