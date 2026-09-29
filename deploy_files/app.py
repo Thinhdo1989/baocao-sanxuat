@@ -279,16 +279,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-from data_loader import DataLoader, DEFAULT_SHIFT_COLUMNS, match_shift_leader, POSITION_DIRECTORY, parse_vn_date
-import kpi_calculator
 import importlib
+import data_loader
+try:
+    data_loader = importlib.reload(data_loader)
+except Exception:
+    pass
+from data_loader import DataLoader, DEFAULT_SHIFT_COLUMNS, match_shift_leader, POSITION_DIRECTORY, parse_vn_date
 
-# Tự động nạp lại kpi_calculator nếu server Streamlit Cloud đang giữ module cũ trong cache bộ nhớ
-if not hasattr(kpi_calculator, 'calculate_kpi_components'):
-    try:
-        kpi_calculator = importlib.reload(kpi_calculator)
-    except Exception:
-        pass
+import kpi_calculator
+try:
+    kpi_calculator = importlib.reload(kpi_calculator)
+except Exception:
+    pass
 
 classify_shift_counts = getattr(kpi_calculator, 'classify_shift_counts')
 get_latest_day_kpis = getattr(kpi_calculator, 'get_latest_day_kpis')
@@ -1967,25 +1970,72 @@ active_range = date_range if is_range_mode else None
 active_t_date = selected_date if is_day_mode else None
 active_y_num = 2026 if is_year_mode else None
 
-all_db_summary = get_all_leaders_dashboard_summary(
-    df_shifts=df_shifts,
-    kpis_tong=kpis,
-    df_daily=df_daily,
-    df_kcs=df_kcs,
-    df_chart_dien=df_chart_dien,
-    df_chart_cap=df_chart_cap,
-    df_chart_moist=df_chart_moist,
-    leaders_kpi=leaders_kpi,
-    df_wm_weekly=df_wm_weekly,
-    df_wm_monthly=df_wm_monthly,
-    df_incidents=df_incidents,
-    target_date=active_t_date,
-    week_num=active_w_num,
-    month_num=active_m_num,
-    date_range=active_range,
-    year_num=active_y_num,
-    df_kpi_daily=df_kpi_shifts
-)
+try:
+    all_db_summary = get_all_leaders_dashboard_summary(
+        df_shifts=df_shifts,
+        kpis_tong=kpis,
+        df_daily=df_daily,
+        df_kcs=df_kcs,
+        df_chart_dien=df_chart_dien,
+        df_chart_cap=df_chart_cap,
+        df_chart_moist=df_chart_moist,
+        leaders_kpi=leaders_kpi,
+        df_wm_weekly=df_wm_weekly,
+        df_wm_monthly=df_wm_monthly,
+        df_incidents=df_incidents,
+        target_date=active_t_date,
+        week_num=active_w_num,
+        month_num=active_m_num,
+        date_range=active_range,
+        year_num=active_y_num,
+        df_kpi_daily=df_kpi_shifts
+    )
+except TypeError:
+    try:
+        import kpi_calculator
+        kpi_calculator = importlib.reload(kpi_calculator)
+        get_all_leaders_dashboard_summary = getattr(kpi_calculator, 'get_all_leaders_dashboard_summary')
+        all_db_summary = get_all_leaders_dashboard_summary(
+            df_shifts=df_shifts,
+            kpis_tong=kpis,
+            df_daily=df_daily,
+            df_kcs=df_kcs,
+            df_chart_dien=df_chart_dien,
+            df_chart_cap=df_chart_cap,
+            df_chart_moist=df_chart_moist,
+            leaders_kpi=leaders_kpi,
+            df_wm_weekly=df_wm_weekly,
+            df_wm_monthly=df_wm_monthly,
+            df_incidents=df_incidents,
+            target_date=active_t_date,
+            week_num=active_w_num,
+            month_num=active_m_num,
+            date_range=active_range,
+            year_num=active_y_num,
+            df_kpi_daily=df_kpi_shifts
+        )
+    except Exception:
+        all_db_summary = get_all_leaders_dashboard_summary(
+            df_shifts=df_shifts,
+            kpis_tong=kpis,
+            df_daily=df_daily,
+            df_kcs=df_kcs,
+            df_chart_dien=df_chart_dien,
+            df_chart_cap=df_chart_cap,
+            df_chart_moist=df_chart_moist,
+            leaders_kpi=leaders_kpi,
+            df_wm_weekly=df_wm_weekly,
+            df_wm_monthly=df_wm_monthly,
+            df_incidents=df_incidents,
+            target_date=active_t_date,
+            week_num=active_w_num,
+            month_num=active_m_num,
+            date_range=active_range,
+            year_num=active_y_num
+        )
+except Exception as e:
+    print(f"[-] Lỗi nạp Dashboard Ca Trưởng: {e}")
+    all_db_summary = {'leaders': {}, 'comparison_df': pd.DataFrame()}
 
 # Hàm trợ giúp làm sạch chuỗi HTML (tránh markdown hiểu nhầm 4 khoảng trắng là code block)
 def clean_html(raw_html: str) -> str:

@@ -1528,6 +1528,7 @@ class DataLoader:
 
         df = pd.DataFrame(records)
         if not df.empty:
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
             df = df.sort_values('date').reset_index(drop=True)
             for cp in cache_paths:
                 try:

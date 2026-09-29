@@ -3,6 +3,7 @@ Module tính toán các chỉ số sản xuất (KPI), suất tiêu hao và gắ
 """
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
+import os
 import re
 import pandas as pd
 import numpy as np
@@ -945,7 +946,8 @@ def get_all_leaders_dashboard_summary(
     month_num: Optional[int] = None,
     date_range: Optional[Tuple[datetime, datetime]] = None,
     year_num: Optional[int] = None,
-    df_kpi_daily: Optional[pd.DataFrame] = None
+    df_kpi_daily: Optional[pd.DataFrame] = None,
+    **kwargs
 ) -> Dict[str, Any]:
     """
     Tính toán và chuẩn bị dữ liệu Dashboard hoàn chỉnh cho 3 Ca Trưởng (Long, Sắc, Tài)
@@ -1018,21 +1020,22 @@ def get_all_leaders_dashboard_summary(
             kpi_ldr = df_kpi_daily[df_kpi_daily['ca_truong'].astype(str).str.contains(ca_code, case=False, na=False)].copy()
 
         # 1. Lọc theo kỳ được chọn
+        ldr_dates = pd.to_datetime(df_ldr['date'], errors='coerce')
         if year_num is not None:
-            p_shifts = df_ldr[df_ldr['date'].dt.year == year_num]
+            p_shifts = df_ldr[ldr_dates.dt.year == int(year_num)]
             period_label = f"Năm {year_num}"
         elif month_num is not None:
-            p_shifts = df_ldr[df_ldr['date'].dt.month == month_num]
+            p_shifts = df_ldr[ldr_dates.dt.month == int(month_num)]
             period_label = f"Tháng {month_num}/2026"
         elif week_num is not None:
-            p_shifts = df_ldr[df_ldr['date'].dt.isocalendar().week == week_num]
+            p_shifts = df_ldr[ldr_dates.dt.isocalendar().week == int(week_num)]
             period_label = f"Tuần {week_num}"
         elif date_range is not None:
             p_shifts = df_ldr[(df_ldr['date'] >= date_range[0]) & (df_ldr['date'] <= date_range[1])]
             period_label = "Khoảng thời gian"
         elif target_date is not None:
             t_date = pd.to_datetime(target_date).date()
-            p_shifts = df_ldr[df_ldr['date'].dt.date == t_date]
+            p_shifts = df_ldr[ldr_dates.dt.date == t_date]
             period_label = t_date.strftime('%d/%m/%Y')
         else:
             p_shifts = df_ldr.tail(1)
@@ -1148,12 +1151,12 @@ def get_all_leaders_dashboard_summary(
         else:
             ref_d = datetime.now().date()
 
-        ref_w = week_num if week_num is not None else ref_d.isocalendar().week
-        ref_m = month_num if month_num is not None else ref_d.month
-        ref_y = year_num if year_num is not None else ref_d.year
+        ref_w = int(week_num) if week_num is not None else int(ref_d.isocalendar().week)
+        ref_m = int(month_num) if month_num is not None else int(ref_d.month)
+        ref_y = int(year_num) if year_num is not None else int(ref_d.year)
 
         # A. Kỳ NGÀY của ca trưởng
-        d_shifts = df_ldr[df_ldr['date'].dt.date == ref_d]
+        d_shifts = df_ldr[ldr_dates.dt.date == ref_d]
         d_act = d_shifts[d_shifts['san_luong_tan'] > 0]
         d_out = float(d_shifts['san_luong_tan'].sum())
         d_hours = float(d_shifts['tong_gio_ep'].sum())
@@ -1171,7 +1174,8 @@ def get_all_leaders_dashboard_summary(
 
         # Truy vết chính xác từ sheet 'Data KPI' cho ngày ref_d
         if not kpi_ldr.empty:
-            kpi_day = kpi_ldr[kpi_ldr['date'].dt.date == ref_d]
+            kpi_dates = pd.to_datetime(kpi_ldr['date'], errors='coerce')
+            kpi_day = kpi_ldr[kpi_dates.dt.date == ref_d]
             if not kpi_day.empty:
                 k_row = kpi_day.iloc[0]
                 k_out = float(k_row.get('sl_thuc_te', 0.0))
@@ -1200,7 +1204,7 @@ def get_all_leaders_dashboard_summary(
         day_kpi_eval = evaluate_kpi_score(day_kpi_score)
 
         # B. Kỳ TUẦN của ca trưởng
-        w_shifts = df_ldr[(df_ldr['date'].dt.isocalendar().week == ref_w) & (df_ldr['date'].dt.year == ref_y)]
+        w_shifts = df_ldr[(ldr_dates.dt.isocalendar().week == ref_w) & (ldr_dates.dt.year == ref_y)]
         w_act = w_shifts[w_shifts['san_luong_tan'] > 0]
         w_out = float(w_shifts['san_luong_tan'].sum())
         w_hours = float(w_shifts['tong_gio_ep'].sum())
@@ -1217,7 +1221,9 @@ def get_all_leaders_dashboard_summary(
 
         # Truy vết Tuần từ 'Data KPI'
         if not kpi_ldr.empty:
-            kpi_week = kpi_ldr[(kpi_ldr['week'] == ref_w) & (kpi_ldr['date'].dt.year == ref_y) & (kpi_ldr['sl_thuc_te'] > 0)]
+            kpi_dates = pd.to_datetime(kpi_ldr['date'], errors='coerce')
+            kpi_weeks = pd.to_numeric(kpi_ldr['week'], errors='coerce')
+            kpi_week = kpi_ldr[(kpi_weeks == ref_w) & (kpi_dates.dt.year == ref_y) & (kpi_ldr['sl_thuc_te'] > 0)]
             if not kpi_week.empty:
                 w_out = float(kpi_week['sl_thuc_te'].sum())
                 w_tgt = float(kpi_week['chi_tieu_sl'].sum())
@@ -1231,8 +1237,8 @@ def get_all_leaders_dashboard_summary(
 
         # Điểm thi đua KPI Tuần
         week_kpi_score = 0.0
-        if df_wm_weekly is not None and not df_wm_weekly.empty:
-            m_w = df_wm_weekly[df_wm_weekly['week'] == ref_w]
+        if df_wm_weekly is not None and not df_wm_weekly.empty and 'week' in df_wm_weekly.columns:
+            m_w = df_wm_weekly[pd.to_numeric(df_wm_weekly['week'], errors='coerce') == ref_w]
             if not m_w.empty:
                 k_r = m_w.iloc[0]
                 if name in k_r and pd.notna(k_r[name]):
@@ -1247,7 +1253,7 @@ def get_all_leaders_dashboard_summary(
         week_kpi_eval = evaluate_kpi_score(week_kpi_score)
 
         # C. Kỳ THÁNG của ca trưởng
-        m_shifts = df_ldr[(df_ldr['date'].dt.month == ref_m) & (df_ldr['date'].dt.year == ref_y) & (df_ldr['san_luong_tan'] > 0)]
+        m_shifts = df_ldr[(ldr_dates.dt.month == ref_m) & (ldr_dates.dt.year == ref_y) & (df_ldr['san_luong_tan'] > 0)]
         m_out = float(m_shifts['san_luong_tan'].sum())
         m_hours = float(m_shifts['tong_gio_ep'].sum())
         m_kwh = float(m_shifts['dien_kwh'].sum())
@@ -1263,7 +1269,9 @@ def get_all_leaders_dashboard_summary(
 
         # Truy vết Tháng từ 'Data KPI'
         if not kpi_ldr.empty:
-            kpi_month = kpi_ldr[(kpi_ldr['month'] == ref_m) & (kpi_ldr['date'].dt.year == ref_y) & (kpi_ldr['sl_thuc_te'] > 0)]
+            kpi_dates = pd.to_datetime(kpi_ldr['date'], errors='coerce')
+            kpi_months = pd.to_numeric(kpi_ldr['month'], errors='coerce')
+            kpi_month = kpi_ldr[(kpi_months == ref_m) & (kpi_dates.dt.year == ref_y) & (kpi_ldr['sl_thuc_te'] > 0)]
             if not kpi_month.empty:
                 m_out = float(kpi_month['sl_thuc_te'].sum())
                 m_tgt = float(kpi_month['chi_tieu_sl'].sum())
@@ -1277,8 +1285,8 @@ def get_all_leaders_dashboard_summary(
 
         # Điểm thi đua KPI Tháng
         month_kpi_score = 0.0
-        if df_wm_monthly is not None and not df_wm_monthly.empty:
-            m_m = df_wm_monthly[df_wm_monthly['month_label'].astype(str).str.contains(str(ref_m), na=False)]
+        if df_wm_monthly is not None and not df_wm_monthly.empty and 'month_label' in df_wm_monthly.columns:
+            m_m = df_wm_monthly[df_wm_monthly['month_label'].astype(str).str.contains(rf"\b{ref_m}\b", regex=True, na=False)]
             if not m_m.empty:
                 k_rm = m_m.iloc[0]
                 if name in k_rm and pd.notna(k_rm[name]):
