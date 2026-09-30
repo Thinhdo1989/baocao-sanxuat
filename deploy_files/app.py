@@ -318,7 +318,10 @@ PE_MACHINE_MAPPING = getattr(kpi_calculator, 'PE_MACHINE_MAPPING', {
 })
 PE_510_TO_PE = getattr(kpi_calculator, 'PE_510_TO_PE', {v: k for k, v in PE_MACHINE_MAPPING.items()})
 
-clean_numeric = getattr(kpi_calculator, 'clean_numeric', None)
+map_pe_code = getattr(kpi_calculator, 'map_pe_code', lambda x: PE_MACHINE_MAPPING.get(str(x).upper(), PE_510_TO_PE.get(str(x).upper(), str(x))))
+get_pe_aliases = getattr(kpi_calculator, 'get_pe_aliases', lambda x: [str(x), PE_MACHINE_MAPPING.get(str(x).upper(), str(x))])
+
+clean_numeric = getattr(data_loader, 'clean_numeric', getattr(kpi_calculator, 'clean_numeric', None))
 if clean_numeric is None:
     def clean_numeric(val: Any) -> float:
         if val is None or pd.isna(val) or str(val).strip() in ['-', '', 'None', 'nan', 'NaN', 'N/A']:
@@ -331,6 +334,7 @@ if clean_numeric is None:
         except Exception:
             return 0.0
 clean_number = clean_numeric
+clean_numeric_dataframe = getattr(data_loader, 'clean_numeric_dataframe', lambda df: df)
 
 KPI_WEIGHT_OUTPUT = getattr(kpi_calculator, 'KPI_WEIGHT_OUTPUT', 50.0)
 KPI_WEIGHT_MOISTURE = getattr(kpi_calculator, 'KPI_WEIGHT_MOISTURE', 30.0)
@@ -356,9 +360,9 @@ if calculate_kpi_components is None:
             'diem_kpi': round(diem_sl + diem_am + diem_ns, 2)
         }
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=600)
 def load_all_factory_data():
-    """Tải và lưu đệm dữ liệu từ các Google Sheets trong 60 giây (tự động làm mới sau mỗi 1 phút)"""
+    """Tải và lưu đệm dữ liệu từ các Google Sheets trong 600 giây (10 phút) để tối ưu hiệu năng và tránh quota limit"""
     loader = DataLoader()
     try:
         loader.connect()
@@ -1260,8 +1264,367 @@ with st.sidebar:
             - Đường kính viên: `6 - 8 mm`
             """)
 
+# Hàm trợ giúp làm sạch chuỗi HTML (tránh markdown hiểu nhầm 4 khoảng trắng là code block)
+def clean_html(raw_html: str) -> str:
+    return "\n".join(line.strip() for line in raw_html.strip().splitlines() if line.strip())
 
-# ================= BỘ LỌC THỜI GIAN ĐẦU TRANG =================
+# Banner tiêu đề phân mục chuẩn công nghiệp, tương thích hoàn hảo cả Light và Dark theme
+def render_section_banner(title: str, subtitle: str = "", accent_color: str = "#2563eb") -> str:
+    raw = f"""
+    <div style="background: linear-gradient(90deg, #1e293b 0%, #0f172a 100%); border-left: 5px solid {accent_color}; padding: 14px 20px; border-radius: 10px; margin: 18px 0 14px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <div style="font-size: 17px; font-weight: 800; color: #ffffff; letter-spacing: 0.2px;">{title}</div>
+        <div style="font-size: 12px; font-weight: 600; color: #94a3b8;">{subtitle}</div>
+    </div>
+    """
+    return clean_html(raw)
+
+# Hàm trợ giúp hiển thị 1 thẻ KPI
+def render_kpi_card_html(title, value, unit, badge_text, badge_cls="badge-info"):
+    raw = f"""
+    <div class="kpi-card">
+        <div class="kpi-title">{title}</div>
+        <div class="kpi-value">{value}<span class="kpi-unit">{unit}</span></div>
+        <div class="kpi-badge {badge_cls}">{badge_text}</div>
+    </div>
+    """
+    return clean_html(raw)
+
+# Hàm hiển thị 8 thẻ KPI của Toàn Nhà Máy
+def render_factory_dashboard_cards(kpis_data, df_weekly_data):
+    # Hàng 1: Vận hành & Năng suất (4 thẻ)
+    r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
+    with r1_c1:
+        delta_txt = t(f"{kpis_data.get('delta_output', 0):+,.1f} t so hôm trước", f"{kpis_data.get('delta_output', 0):+,.1f} t vs yesterday") if kpis_data.get('delta_output', 0) != 0 else t("Hôm nay", "Today")
+        st.markdown(render_kpi_card_html(t("Sản Lượng Thực Tế", "Actual Output"), f"{kpis_data.get('total_output', 0):,.1f}", t("Tấn", "Tons"), delta_txt, "badge-info"), unsafe_allow_html=True)
+    with r1_c2:
+        e_eval = kpis_data.get('electricity_eval', {})
+        b_cls = "badge-success" if e_eval.get('status') == 'EXCELLENT' else ("badge-info" if e_eval.get('status') == 'STANDARD' else "badge-danger")
+        e_badge = f"{e_eval.get('icon', '')} {translate_eval(e_eval.get('label', ''))}"
+        st.markdown(render_kpi_card_html(t("Suất Điện Tiêu Hao", "Specific Power"), f"{kpis_data.get('avg_electricity_kwh_ton', 0):.1f}", "kWh/t", e_badge, b_cls), unsafe_allow_html=True)
+    with r1_c3:
+        p_eval = kpis_data.get('productivity_eval', {})
+        b_cls = "badge-success" if p_eval.get('status') == 'PASS' else "badge-warning"
+        p_badge = f"{p_eval.get('icon', '')} {translate_eval(p_eval.get('label', ''))}"
+        st.markdown(render_kpi_card_html(t("Năng Suất Ép TB", "Avg Pellet Mill Rate"), f"{kpis_data.get('avg_productivity', 0):.2f}", t("Tấn/h", "Ton/h"), p_badge, b_cls), unsafe_allow_html=True)
+    with r1_c4:
+        st.markdown(render_kpi_card_html(t("Tổng Giờ Máy Ép", "Total Mill Hours"), f"{kpis_data.get('total_pellet_hours', 0):.1f}", t("Giờ", "Hours"), t("8 Máy Ép Viên", "8 Pellet Mills"), "badge-info"), unsafe_allow_html=True)
+
+    # Hàng 2: Chất Lượng & Tiêu Hao (4 thẻ)
+    r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
+    with r2_c1:
+        a_val = kpis_data.get('do_am_tb_pct', 0)
+        m_eval = kpis_data.get('moisture_eval', evaluate_moisture(a_val))
+        b_cls = "badge-success" if m_eval.get('status') == 'PASS' else ("badge-warning" if m_eval.get('status') == 'WARN' else "badge-danger")
+        m_badge = f"{m_eval.get('icon', '💧')} {translate_eval(m_eval.get('label', t('Chuẩn: 8.0 - 9.5%', 'Std: 8.0 - 9.5%')))}"
+        st.markdown(render_kpi_card_html(t("Độ Ẩm TB Viên (Ngày)", "Avg Pellet Moisture"), f"{a_val:.2f}", "%", m_badge, b_cls), unsafe_allow_html=True)
+    with r2_c2:
+        ty_val = kpis_data.get('ty_trong_vien', 0)
+        d_eval = kpis_data.get('density_eval', evaluate_density(ty_val))
+        b_cls = "badge-success" if d_eval.get('status') == 'PASS' else ("badge-warning" if d_eval.get('status') == 'WARN' else "badge-info")
+        d_badge = f"{d_eval.get('icon', '⚖️')} {translate_eval(d_eval.get('label', t('Chuẩn: ≥ 600 kg/m³', 'Std: ≥ 600 kg/m³')))}"
+        st.markdown(render_kpi_card_html(t("Tỷ Trọng Viên Nén", "Bulk Density"), f"{ty_val:,.1f}", "kg/m³", d_badge, b_cls), unsafe_allow_html=True)
+    with r2_c3:
+        st.markdown(render_kpi_card_html(t("Tỷ Lệ Chế Biến", "Processing Ratio"), f"{kpis_data.get('processing_ratio', 0):.2f}", t("lần", "x"), t("Định mức: 1.8 - 2.1", "Standard: 1.8 - 2.1"), "badge-info"), unsafe_allow_html=True)
+    with r2_c4:
+        k_dz = float(kpis_data.get('diezen_lit', 0.0))
+        k_dz_r = float(kpis_data.get('diezen_tb_lit_tan', 0.0))
+        if k_dz > 0 and k_dz_r > 0:
+            dz_disp_r = k_dz_r
+            dz_disp_sub = t(f"{k_dz:,.0f} Lít/kỳ", f"{k_dz:,.0f} L/period")
+        elif df_weekly_data is not None and not df_weekly_data.empty and 'diezen_lit' in df_weekly_data.columns:
+            valid_dz_weeks = df_weekly_data[df_weekly_data['diezen_lit'] > 0]
+            if not valid_dz_weeks.empty:
+                last_valid_row = valid_dz_weeks.iloc[-1]
+                dz_disp_r = float(last_valid_row.get('diezen_tb_lit_tan', 0.0))
+                last_w_num = int(last_valid_row.get('week', 0))
+                dz_disp_sub = t(f"{last_valid_row.get('diezen_lit', 0):,.0f} Lít (T{last_w_num})", f"{last_valid_row.get('diezen_lit', 0):,.0f} L (W{last_w_num})")
+            else:
+                dz_disp_r = 0.0
+                dz_disp_sub = t("Chưa có số liệu", "No data")
+        else:
+            dz_disp_r = 0.0
+            dz_disp_sub = t("Chưa có số liệu", "No data")
+
+        st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), f"{dz_disp_r:.1f}", t("Lít/tấn", "L/ton"), dz_disp_sub, "badge-info"), unsafe_allow_html=True)
+
+    # Hàng 3: Tồn Kho & Xuất Hàng Kho Thành Phẩm (Kho BVN Quảng Bình)
+    tk_val = float(kpis_data.get('ton_kho_tan', 0.0))
+    xh_val = float(kpis_data.get('xuat_hang_tan', 0.0))
+    r3_c1, r3_c2 = st.columns(2)
+    with r3_c1:
+        st.markdown(render_kpi_card_html(t("Tồn Kho Viên Nén (Cuối Kỳ)", "Pellet Inventory (End of Period)"), f"{tk_val:,.1f}", t("Tấn", "Tons"), t("📦 Kho Thành Phẩm BVN Quảng Bình", "📦 BVN Quang Binh Finished Warehouse"), "badge-info"), unsafe_allow_html=True)
+    with r3_c2:
+        xh_badge = t(f"🚛 {xh_val:,.1f} Tấn xuất kho", f"🚛 {xh_val:,.1f} Tons shipped") if xh_val > 0 else t("Chưa phát sinh xuất hàng trong kỳ", "No shipments in period")
+        xh_cls = "badge-success" if xh_val > 0 else "badge-info"
+        st.markdown(render_kpi_card_html(t("Lũy Kế Xuất Hàng (Trong Kỳ)", "Accumulated Shipments (In Period)"), f"{xh_val:,.1f}", t("Tấn", "Tons"), xh_badge, xh_cls), unsafe_allow_html=True)
+
+# Hàm hiển thị Vị trí 1: Dashboard Online trạng thái sản xuất của ngày trước đó / gần nhất
+def render_online_daily_dashboard(online_kpis: dict, df_weekly_data: pd.DataFrame, oil_change_data: dict, df_incidents_data: pd.DataFrame, df_daily_data: pd.DataFrame, df_shifts_data: pd.DataFrame = None):
+    online_date_str = online_kpis.get('date_str', 'N/A')
+    online_date = online_kpis.get('date')
+    if hasattr(online_date, 'strftime'):
+        online_date_str = online_date.strftime('%d/%m/%Y')
+
+    # 1. Header Banner Online với hiệu ứng Live Feed
+    st.markdown(clean_html(f"""
+    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); border: 1px solid #334155; border-left: 6px solid #ef4444; border-radius: 12px; padding: 12px 18px; margin: 6px 0 14px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.25);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="display: inline-block; width: 13px; height: 13px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 10px #22c55e;"></span>
+                <span style="font-size: 17px; font-weight: 900; color: #ffffff; letter-spacing: 0.3px;">
+                    {t(f"🔴 TRẠNG THÁI SẢN XUẤT ONLINE (NGÀY GẦN NHẤT: {online_date_str})", f"🔴 ONLINE PRODUCTION STATUS (LATEST RECORDED DAY: {online_date_str})")}
+                </span>
+                <span style="background: rgba(34, 197, 94, 0.2); border: 1px solid #22c55e; color: #86efac; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px;">ONLINE</span>
+            </div>
+            <div style="font-size: 12px; color: #94a3b8; font-weight: 600;">
+                🏢 {t("Nhà Máy Viên Nén Gỗ Năng Lượng BVN Quảng Bình", "BVN Quang Binh Wood Pellet Plant")} | 📊 {t("Dữ liệu tự động đồng bộ từ sheet Data KPI", "Auto-synced from sheet Data KPI")}
+            </div>
+        </div>
+    </div>
+    """), unsafe_allow_html=True)
+
+    # 2. Thẻ KPI tổng hợp ngày gần nhất
+    render_factory_dashboard_cards(online_kpis, df_weekly_data)
+
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+    # 3. Ba cụm chỉ số theo đúng yêu cầu: Cảnh báo vượt định mức, Sự cố trong ngày, Báo động hệ thống
+    c_alert, c_incident, c_alarm = st.columns(3)
+
+    with c_alert:
+        dien_val = float(online_kpis.get('avg_electricity_kwh_ton', 0.0))
+        ns_val = float(online_kpis.get('avg_productivity', 0.0))
+        am_val = float(online_kpis.get('do_am_tb_pct', 0.0))
+        tt_val = float(online_kpis.get('ty_trong_vien', 0.0))
+        cb_val = float(online_kpis.get('processing_ratio', 0.0))
+
+        if dien_val > 175.0:
+            diff_dien = dien_val - 175.0
+            pct_dien = (diff_dien / 175.0) * 100.0
+            dien_badge = f"<span style='color: #f87171; font-weight: 800;'>🔴 VƯỢT ĐỊNH MỨC +{diff_dien:.1f} kWh/t (+{pct_dien:.1f}%)</span>"
+            dien_card_border = "#ef4444"
+        elif dien_val >= 170.0:
+            dien_badge = "<span style='color: #38bdf8; font-weight: 700;'>🔵 ĐẠT CHUẨN (170 - 175 kWh/t)</span>"
+            dien_card_border = "#38bdf8"
+        elif dien_val > 0:
+            dien_badge = "<span style='color: #4ade80; font-weight: 700;'>🟢 TIẾT KIỆM ĐIỆN (&lt; 170 kWh/t)</span>"
+            dien_card_border = "#22c55e"
+        else:
+            dien_badge = "<span style='color: #94a3b8;'>--</span>"
+            dien_card_border = "#475569"
+
+        if ns_val > 0 and ns_val < 4.0:
+            diff_ns = 4.0 - ns_val
+            ns_badge = f"<span style='color: #facc15; font-weight: 800;'>🟡 DƯỚI ĐỊNH MỨC -{diff_ns:.2f} t/h</span>"
+        elif ns_val >= 4.0:
+            ns_badge = f"<span style='color: #4ade80; font-weight: 700;'>🟢 ĐẠT CHỈ TIÊU ({ns_val:.2f} t/h)</span>"
+        else:
+            ns_badge = "<span style='color: #94a3b8;'>--</span>"
+
+        if 8.0 <= am_val <= 9.5:
+            am_badge = f"<span style='color: #4ade80; font-weight: 700;'>🟢 ĐẠT CHUẨN ISO ({am_val:.2f}%)</span>"
+        elif am_val > 9.5:
+            am_badge = f"<span style='color: #f87171; font-weight: 800;'>🔴 CAO &gt; 9.5% ({am_val:.2f}%)</span>"
+        elif am_val > 0:
+            am_badge = f"<span style='color: #facc15; font-weight: 800;'>🟡 THẤP &lt; 8.0% ({am_val:.2f}%)</span>"
+        else:
+            am_badge = "<span style='color: #94a3b8;'>--</span>"
+
+        if tt_val >= 600.0:
+            tt_badge = f"<span style='color: #4ade80; font-weight: 700;'>🟢 ĐẠT CHUẨN XUẤT ({tt_val:.0f} kg/m³)</span>"
+        elif tt_val > 0:
+            tt_badge = f"<span style='color: #f87171; font-weight: 800;'>🔴 DƯỚI 600 kg/m³</span>"
+        else:
+            tt_badge = "<span style='color: #94a3b8;'>--</span>"
+
+        if 1.80 <= cb_val <= 2.10:
+            cb_badge = f"<span style='color: #4ade80; font-weight: 700;'>🟢 ĐẠT ĐỊNH MỨC ({cb_val:.2f} lần)</span>"
+        elif cb_val > 2.10:
+            cb_badge = f"<span style='color: #facc15; font-weight: 800;'>🟡 TIÊU HAO CAO ({cb_val:.2f} lần)</span>"
+        else:
+            cb_badge = f"<span style='color: #94a3b8;'>{cb_val:.2f} lần</span>" if cb_val > 0 else "<span style='color: #94a3b8;'>--</span>"
+
+        st.markdown(clean_html(f"""
+        <div style="background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid {dien_card_border}; border-radius: 10px; padding: 12px 14px; height: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+            <div style="font-size: 13.5px; font-weight: 800; color: #f87171; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                <span>⚠️</span> <span>{t("CẢNH BÁO VƯỢT ĐỊNH MỨC", "BENCHMARK ALERTS")}</span>
+            </div>
+            <div style="font-size: 11.5px; line-height: 1.8; color: #cbd5e1;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #334155; padding-bottom: 4px; margin-bottom: 4px;">
+                    <span>⚡ <strong>Suất Điện:</strong></span>
+                    <span>{dien_badge}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #334155; padding-bottom: 4px; margin-bottom: 4px;">
+                    <span>⚙️ <strong>Năng Suất Ép:</strong></span>
+                    <span>{ns_badge}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #334155; padding-bottom: 4px; margin-bottom: 4px;">
+                    <span>💧 <strong>Độ Ẩm Viên:</strong></span>
+                    <span>{am_badge}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #334155; padding-bottom: 4px; margin-bottom: 4px;">
+                    <span>⚖️ <strong>Tỷ Trọng:</strong></span>
+                    <span>{tt_badge}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>🪵 <strong>Tỷ Lệ Chế Biến:</strong></span>
+                    <span>{cb_badge}</span>
+                </div>
+            </div>
+        </div>
+        """), unsafe_allow_html=True)
+
+    with c_incident:
+        so_su_co = int(online_kpis.get('so_su_co', 0))
+        gio_dung_may = float(online_kpis.get('gio_dung_may', 0.0))
+        tb_su_co = str(online_kpis.get('thiet_bi_su_co', ''))
+
+        day_incidents = []
+        if df_incidents_data is not None and not df_incidents_data.empty and 'date' in df_incidents_data.columns and online_date is not None:
+            o_d = online_date.date() if hasattr(online_date, 'date') else pd.to_datetime(online_date).date()
+            match_inc = df_incidents_data[df_incidents_data['date'].dt.date == o_d]
+            for _, ir in match_inc.iterrows():
+                eq = str(ir.get('thiet_bi', ir.get('equipment_code', ir.get('vi_tri', '')))).strip()
+                desc = str(ir.get('noi_dung', ir.get('mo_ta', ''))).strip()
+                h_stop = float(ir.get('thoi_gian_dung_gio', ir.get('duration_hours', 0.0)))
+                status = str(ir.get('trang_thai', ir.get('status', 'Xử lý xong'))).strip()
+                day_incidents.append((eq, desc, h_stop, status))
+
+        if so_su_co > 0 or gio_dung_may > 0:
+            inc_color = "#f59e0b"
+            inc_status_badge = f"<span style='color: #fbbf24; font-weight: 800;'>⚠️ {so_su_co} vụ sự cố ({gio_dung_may:.1f}h dừng máy)</span>"
+        else:
+            inc_color = "#22c55e"
+            inc_status_badge = "<span style='color: #4ade80; font-weight: 700;'>🟢 Không có sự cố dừng máy</span>"
+
+        inc_items_html = ""
+        if day_incidents:
+            for eq, desc, hs, st_txt in day_incidents[:3]:
+                eq_str = eq if eq else "Thiết bị"
+                desc_str = (desc[:38] + "...") if len(desc) > 38 else desc
+                inc_items_html += f'<div style="font-size: 11px; background: rgba(255,255,255,0.06); border-left: 3px solid #f59e0b; padding: 4px 6px; margin-top: 4px; border-radius: 4px;"><strong style="color: #fde68a;">{eq_str}:</strong> {desc_str} <span style="color: #94a3b8;">({hs:.1f}h)</span></div>'
+        elif tb_su_co:
+            tb_str = (tb_su_co[:90] + "...") if len(tb_su_co) > 90 else tb_su_co
+            inc_items_html = f'<div style="font-size: 11px; color: #cbd5e1; margin-top: 4px;">{tb_str}</div>'
+        else:
+            inc_items_html = '<div style="font-size: 11.5px; color: #86efac; margin-top: 6px;">✨ Dây chuyền hoạt động liên tục, ổn định trong cả 3 ca sản xuất.</div>'
+
+        st.markdown(clean_html(f"""
+        <div style="background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid {inc_color}; border-radius: 10px; padding: 12px 14px; height: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+            <div style="font-size: 13.5px; font-weight: 800; color: #fbbf24; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+                <span style="display: flex; align-items: center; gap: 8px;"><span>🛠️</span> <span>{t("CHỈ SỐ SỰ CỐ TRONG NGÀY", "DAILY INCIDENTS")}</span></span>
+                <span style="font-size: 11px; background: #334155; padding: 1px 7px; border-radius: 10px; color: #94a3b8;">Dừng: {gio_dung_may:.1f}h</span>
+            </div>
+            <div style="font-size: 11.5px; line-height: 1.8; color: #cbd5e1;">
+                <div style="margin-bottom: 4px;">{inc_status_badge}</div>
+                {inc_items_html}
+            </div>
+        </div>
+        """), unsafe_allow_html=True)
+
+    with c_alarm:
+        oil_summary = oil_change_data.get('summary', pd.DataFrame()) if isinstance(oil_change_data, dict) else pd.DataFrame()
+        cnt_warn = 0
+        cnt_crit = 0
+        cnt_ok = 0
+        if not oil_summary.empty and 'run_hours_c2' in oil_summary.columns:
+            for _, mr in oil_summary.iterrows():
+                h2 = float(mr.get('run_hours_c2', 0.0))
+                if h2 >= 4000.0:
+                    cnt_crit += 1
+                elif h2 >= 3800.0:
+                    cnt_warn += 1
+                else:
+                    cnt_ok += 1
+        else:
+            cnt_ok = 8
+
+        ton_kho_val = float(online_kpis.get('ton_kho_tan', 0.0))
+        max_kho = 15000.0
+        pct_kho = min(100.0, (ton_kho_val / max_kho) * 100.0) if max_kho > 0 else 0.0
+        
+        if pct_kho >= 90.0:
+            tk_alarm_color = "#ef4444"
+            tk_alarm_txt = f"🔴 ĐẦY KHO ({pct_kho:.1f}%) - CẦN XUẤT HÀNG GẤP"
+        elif pct_kho >= 80.0:
+            tk_alarm_color = "#f59e0b"
+            tk_alarm_txt = f"🟡 KHO CAO ({pct_kho:.1f}%) - ƯU TIÊN BỐC XẾP"
+        else:
+            tk_alarm_color = "#22c55e"
+            tk_alarm_txt = f"🟢 DUNG LƯỢNG AN TOÀN ({pct_kho:.1f}%)"
+
+        if cnt_crit > 0:
+            oil_alarm_html = f"<span style='color: #f87171; font-weight: 800;'>🔴 {cnt_crit} máy cần thay nhớt ngay (≥ 4.000h)!</span>"
+        elif cnt_warn > 0:
+            oil_alarm_html = f"<span style='color: #facc15; font-weight: 800;'>🟡 {cnt_warn} máy sắp đến hạn (≥ 3.800h)</span>"
+        else:
+            oil_alarm_html = "<span style='color: #4ade80; font-weight: 700;'>🟢 8/8 Máy ép an toàn (&lt; 3.800h chu kỳ 2)</span>"
+
+        st.markdown(clean_html(f"""
+        <div style="background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid #ef4444; border-radius: 10px; padding: 12px 14px; height: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+            <div style="font-size: 13.5px; font-weight: 800; color: #f87171; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+                <span style="display: flex; align-items: center; gap: 8px;"><span>🚨</span> <span>{t("CHỈ SỐ BÁO ĐỘNG HỆ THỐNG", "SYSTEM ALARMS")}</span></span>
+                <span style="font-size: 10px; background: rgba(239,68,68,0.2); border: 1px solid #ef4444; padding: 1px 6px; border-radius: 10px; color: #fca5a5; font-weight: 700;">CHU KỲ 2</span>
+            </div>
+            <div style="font-size: 11.5px; line-height: 1.8; color: #cbd5e1;">
+                <div style="margin-bottom: 6px; border-bottom: 1px dashed #334155; padding-bottom: 4px;">
+                    <div>🛢️ <strong>Bảo dưỡng nhớt 8 máy ép PE:</strong></div>
+                    <div>{oil_alarm_html}</div>
+                    <div style="font-size: 10.5px; color: #94a3b8;">(Chu kỳ 2 tính từ sau 18/09/2026, định mức: 4.000h)</div>
+                </div>
+                <div>
+                    <div>📦 <strong>Báo động sức chứa kho thành phẩm:</strong></div>
+                    <div style="color: {tk_alarm_color}; font-weight: 700; font-size: 11px;">{tk_alarm_txt}</div>
+                    <div style="background: #334155; border-radius: 6px; height: 7px; width: 100%; margin-top: 3px; overflow: hidden;">
+                        <div style="background: {tk_alarm_color}; width: {pct_kho}%; height: 100%;"></div>
+                    </div>
+                    <div style="font-size: 10.5px; color: #94a3b8; margin-top: 2px; display: flex; justify-content: space-between;">
+                        <span>{ton_kho_val:,.1f} tấn</span>
+                        <span>Định mức: 15.000 tấn</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """), unsafe_allow_html=True)
+
+    # 4. Expander xem nhanh chi tiết 3 Ca Trưởng ngày hôm trước
+    shift_details = online_kpis.get('shift_details', [])
+    if shift_details:
+        with st.expander(t(f"👥 BẤM ĐỂ XEM CHI TIẾT 3 CA TRƯỞNG NGÀY {online_date_str} (CA A • CA B • CA C)", f"👥 CLICK TO VIEW 3 SHIFT LEADERS FOR {online_date_str} (SHIFT A • SHIFT B • SHIFT C)"), expanded=False):
+            col_ldr1, col_ldr2, col_ldr3 = st.columns(3)
+            ldr_cols = [col_ldr1, col_ldr2, col_ldr3]
+            for idx, sh in enumerate(shift_details[:3]):
+                with ldr_cols[idx % 3]:
+                    sh_name = sh.get('ca_truong', f'Ca {idx+1}')
+                    sh_out = float(sh.get('san_luong_tan', 0.0))
+                    sh_h = float(sh.get('tong_gio_ep', 0.0))
+                    sh_ns = float(sh.get('nang_suat_tph', 0.0))
+                    sh_elec = float(sh.get('dien_tb_kwh_tan', 0.0))
+                    st.markdown(clean_html(f"""
+                    <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; margin-top: 4px;">
+                        <div style="font-weight: 800; font-size: 14px; color: #38bdf8; border-bottom: 1px solid #475569; padding-bottom: 4px; margin-bottom: 6px;">
+                            👤 {sh_name}
+                        </div>
+                        <div style="font-size: 12px; line-height: 1.7; color: #cbd5e1;">
+                            <div>📦 <strong>Sản lượng:</strong> <span style="color: #ffffff; font-weight: 700;">{sh_out:,.1f}</span> tấn</div>
+                            <div>⏱️ <strong>Giờ máy ép:</strong> <span style="color: #ffffff; font-weight: 700;">{sh_h:.1f}</span> giờ</div>
+                            <div>⚙️ <strong>Năng suất ép:</strong> <span style="color: #ffffff; font-weight: 700;">{sh_ns:.2f}</span> tấn/h</div>
+                            <div>⚡ <strong>Suất điện:</strong> <span style="color: {'#f87171' if sh_elec > 175 else '#4ade80'}; font-weight: 700;">{sh_elec:.1f}</span> kWh/t</div>
+                        </div>
+                    </div>
+                    """), unsafe_allow_html=True)
+
+
+# ================= VỊ TRÍ 1: TRẠNG THÁI SẢN XUẤT ONLINE TOÀN NHÀ MÁY (NGÀY GẦN NHẤT) =================
+latest_online_date = df_daily['date'].max() if (not df_daily.empty and 'date' in df_daily.columns) else (df_shifts['date'].max() if not df_shifts.empty else datetime.now())
+online_kpis = get_latest_day_kpis(df_shifts, df_daily, df_kcs=df_kcs, target_date=latest_online_date)
+render_online_daily_dashboard(online_kpis, df_weekly, oil_change_data, df_incidents, df_daily, df_shifts)
+
+st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+st.markdown("---")
+
+
+# ================= VỊ TRÍ 2: BỘ LỌC THỜI GIAN THEO KỲ SẢN XUẤT (NGÀY / TUẦN / THÁNG / NĂM / KHOẢNG NGÀY) =================
 
 # Xác định ngày có dữ liệu gần nhất và danh sách các ngày
 max_date = df_shifts['date'].max() if ('date' in df_shifts.columns and not df_shifts.empty) else datetime.now()
@@ -1272,10 +1635,6 @@ if 'top_view_mode' not in st.session_state:
     st.session_state['top_view_mode'] = t("☀️ Theo Ngày", "☀️ Daily")
 if 'top_target_date' not in st.session_state:
     st.session_state['top_target_date'] = max_date.date()
-
-# Hàm trợ giúp làm sạch chuỗi HTML (tránh markdown hiểu nhầm 4 khoảng trắng là code block)
-def clean_html(raw_html: str) -> str:
-    return "\n".join(line.strip() for line in raw_html.strip().splitlines() if line.strip())
 
 # Danh sách chuẩn các chế độ lọc thời gian: Ngày / Tuần / Tháng / Năm / Khoảng ngày
 time_modes = get_time_modes(curr_lang)
@@ -2057,132 +2416,6 @@ except Exception as e:
     all_db_summary = {'leaders': {}, 'comparison_df': pd.DataFrame()}
 
 # Hàm trợ giúp làm sạch chuỗi HTML (tránh markdown hiểu nhầm 4 khoảng trắng là code block)
-def clean_html(raw_html: str) -> str:
-    return "\n".join(line.strip() for line in raw_html.strip().splitlines() if line.strip())
-
-# Banner tiêu đề phân mục chuẩn công nghiệp, tương thích hoàn hảo cả Light và Dark theme
-def render_section_banner(title: str, subtitle: str = "", accent_color: str = "#2563eb") -> str:
-    raw = f"""
-    <div style="background: linear-gradient(90deg, #1e293b 0%, #0f172a 100%); border-left: 5px solid {accent_color}; padding: 14px 20px; border-radius: 10px; margin: 18px 0 14px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-        <div style="font-size: 17px; font-weight: 800; color: #ffffff; letter-spacing: 0.2px;">{title}</div>
-        <div style="font-size: 12px; font-weight: 600; color: #94a3b8;">{subtitle}</div>
-    </div>
-    """
-    return clean_html(raw)
-
-# Hàm trợ giúp hiển thị 1 thẻ KPI
-def render_kpi_card_html(title, value, unit, badge_text, badge_cls="badge-info"):
-    raw = f"""
-    <div class="kpi-card">
-        <div class="kpi-title">{title}</div>
-        <div class="kpi-value">{value}<span class="kpi-unit">{unit}</span></div>
-        <div class="kpi-badge {badge_cls}">{badge_text}</div>
-    </div>
-    """
-    return clean_html(raw)
-
-# Hàm hiển thị 8 thẻ KPI của Toàn Nhà Máy
-def render_factory_dashboard_cards(kpis_data, df_weekly_data):
-    # Hàng 1: Vận hành & Năng suất (4 thẻ)
-    r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
-    with r1_c1:
-        delta_txt = t(f"{kpis_data.get('delta_output', 0):+,.1f} t so hôm trước", f"{kpis_data.get('delta_output', 0):+,.1f} t vs yesterday") if kpis_data.get('delta_output', 0) != 0 else t("Hôm nay", "Today")
-        st.markdown(render_kpi_card_html(t("Sản Lượng Thực Tế", "Actual Output"), f"{kpis_data.get('total_output', 0):,.1f}", t("Tấn", "Tons"), delta_txt, "badge-info"), unsafe_allow_html=True)
-    with r1_c2:
-        e_eval = kpis_data.get('electricity_eval', {})
-        b_cls = "badge-success" if e_eval.get('status') == 'EXCELLENT' else ("badge-info" if e_eval.get('status') == 'STANDARD' else "badge-danger")
-        e_badge = f"{e_eval.get('icon', '')} {translate_eval(e_eval.get('label', ''))}"
-        st.markdown(render_kpi_card_html(t("Suất Điện Tiêu Hao", "Specific Power"), f"{kpis_data.get('avg_electricity_kwh_ton', 0):.1f}", "kWh/t", e_badge, b_cls), unsafe_allow_html=True)
-    with r1_c3:
-        p_eval = kpis_data.get('productivity_eval', {})
-        b_cls = "badge-success" if p_eval.get('status') == 'PASS' else "badge-warning"
-        p_badge = f"{p_eval.get('icon', '')} {translate_eval(p_eval.get('label', ''))}"
-        st.markdown(render_kpi_card_html(t("Năng Suất Ép TB", "Avg Pellet Mill Rate"), f"{kpis_data.get('avg_productivity', 0):.2f}", t("Tấn/h", "Ton/h"), p_badge, b_cls), unsafe_allow_html=True)
-    with r1_c4:
-        st.markdown(render_kpi_card_html(t("Tổng Giờ Máy Ép", "Total Mill Hours"), f"{kpis_data.get('total_pellet_hours', 0):.1f}", t("Giờ", "Hours"), t("8 Máy Ép Viên", "8 Pellet Mills"), "badge-info"), unsafe_allow_html=True)
-
-    # Hàng 2: Chất Lượng & Tiêu Hao (4 thẻ)
-    r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
-    with r2_c1:
-        a_val = kpis_data.get('do_am_tb_pct', 0)
-        m_eval = kpis_data.get('moisture_eval', evaluate_moisture(a_val))
-        b_cls = "badge-success" if m_eval.get('status') == 'PASS' else ("badge-warning" if m_eval.get('status') == 'WARN' else "badge-danger")
-        m_badge = f"{m_eval.get('icon', '💧')} {translate_eval(m_eval.get('label', t('Chuẩn: 8.0 - 9.5%', 'Std: 8.0 - 9.5%')))}"
-        st.markdown(render_kpi_card_html(t("Độ Ẩm TB Viên (Ngày)", "Avg Pellet Moisture"), f"{a_val:.2f}", "%", m_badge, b_cls), unsafe_allow_html=True)
-    with r2_c2:
-        ty_val = kpis_data.get('ty_trong_vien', 0)
-        d_eval = kpis_data.get('density_eval', evaluate_density(ty_val))
-        b_cls = "badge-success" if d_eval.get('status') == 'PASS' else ("badge-warning" if d_eval.get('status') == 'WARN' else "badge-info")
-        d_badge = f"{d_eval.get('icon', '⚖️')} {translate_eval(d_eval.get('label', t('Chuẩn: ≥ 600 kg/m³', 'Std: ≥ 600 kg/m³')))}"
-        st.markdown(render_kpi_card_html(t("Tỷ Trọng Viên Nén", "Bulk Density"), f"{ty_val:,.1f}", "kg/m³", d_badge, b_cls), unsafe_allow_html=True)
-    with r2_c3:
-        st.markdown(render_kpi_card_html(t("Tỷ Lệ Chế Biến", "Processing Ratio"), f"{kpis_data.get('processing_ratio', 0):.2f}", t("lần", "x"), t("Định mức: 1.8 - 2.1", "Standard: 1.8 - 2.1"), "badge-info"), unsafe_allow_html=True)
-    with r2_c4:
-        # Lấy lượng dầu diezen từ kpis_data (được tính theo tuần/kỳ đang chọn), nếu = 0 thì lấy tuần gần nhất có số liệu chốt trong df_weekly
-        k_dz = float(kpis_data.get('diezen_lit', 0.0))
-        k_dz_r = float(kpis_data.get('diezen_tb_lit_tan', 0.0))
-        
-        if k_dz > 0 and k_dz_r > 0:
-            dz_disp_r = k_dz_r
-            dz_disp_sub = t(f"{k_dz:,.0f} Lít/kỳ", f"{k_dz:,.0f} L/period")
-        elif df_weekly_data is not None and not df_weekly_data.empty and 'diezen_lit' in df_weekly_data.columns:
-            valid_dz_weeks = df_weekly_data[df_weekly_data['diezen_lit'] > 0]
-            if not valid_dz_weeks.empty:
-                last_valid_row = valid_dz_weeks.iloc[-1]
-                dz_disp_r = float(last_valid_row.get('diezen_tb_lit_tan', 0.0))
-                last_w_num = int(last_valid_row.get('week', 0))
-                dz_disp_sub = t(f"{last_valid_row.get('diezen_lit', 0):,.0f} Lít (T{last_w_num})", f"{last_valid_row.get('diezen_lit', 0):,.0f} L (W{last_w_num})")
-            else:
-                dz_disp_r = 0.0
-                dz_disp_sub = t("Chưa có số liệu", "No data")
-        else:
-            dz_disp_r = 0.0
-            dz_disp_sub = t("Chưa có số liệu", "No data")
-
-        st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), f"{dz_disp_r:.1f}", t("Lít/tấn", "L/ton"), dz_disp_sub, "badge-info"), unsafe_allow_html=True)
-
-    # Hàng 3: Tồn Kho & Xuất Hàng Kho Thành Phẩm (Kho BVN Quảng Bình)
-    tk_val = float(kpis_data.get('ton_kho_tan', 0.0))
-    xh_val = float(kpis_data.get('xuat_hang_tan', 0.0))
-    r3_c1, r3_c2 = st.columns(2)
-    with r3_c1:
-        st.markdown(render_kpi_card_html(t("Tồn Kho Viên Nén (Cuối Kỳ)", "Pellet Inventory (End of Period)"), f"{tk_val:,.1f}", t("Tấn", "Tons"), t("📦 Kho Thành Phẩm BVN Quảng Bình", "📦 BVN Quang Binh Finished Warehouse"), "badge-info"), unsafe_allow_html=True)
-    with r3_c2:
-        xh_badge = t(f"🚛 {xh_val:,.1f} Tấn xuất kho", f"🚛 {xh_val:,.1f} Tons shipped") if xh_val > 0 else t("Chưa phát sinh xuất hàng trong kỳ", "No shipments in period")
-        xh_cls = "badge-success" if xh_val > 0 else "badge-info"
-        st.markdown(render_kpi_card_html(t("Lũy Kế Xuất Hàng (Trong Kỳ)", "Accumulated Shipments (In Period)"), f"{xh_val:,.1f}", t("Tấn", "Tons"), xh_badge, xh_cls), unsafe_allow_html=True)
-
-    # Cảnh báo nổi bật
-    e_eval = kpis_data.get('electricity_eval', {})
-    if e_eval.get('status') == 'WARNING':
-        st.error(t(
-            f"⚠️ **CẢNH BÁO ĐIỆN NĂNG:** Suất tiêu hao điện đạt **{kpis_data.get('avg_electricity_kwh_ton'):.1f} kWh/tấn**, vượt định mức trần 175 kWh/tấn (+{e_eval.get('diff')} kWh/tấn). Đề nghị kiểm tra phụ tải máy nghiền búa và hệ thống sấy.",
-            f"⚠️ **POWER ALERT:** Specific power consumption reached **{kpis_data.get('avg_electricity_kwh_ton'):.1f} kWh/ton**, exceeding the 175 kWh/ton limit (+{e_eval.get('diff')} kWh/ton). Please inspect hammer mill and dryer loads."
-        ))
-    elif e_eval.get('status') == 'EXCELLENT':
-        st.success(t(
-            f"✨ **HIỆU QUẢ CAO:** Suất tiêu hao điện chỉ **{kpis_data.get('avg_electricity_kwh_ton'):.1f} kWh/tấn**, thấp hơn định mức chuẩn 170 kWh/tấn.",
-            f"✨ **HIGH EFFICIENCY:** Specific power consumption is only **{kpis_data.get('avg_electricity_kwh_ton'):.1f} kWh/ton**, below the 170 kWh/ton standard."
-        ))
-
-    m_eval = kpis_data.get('moisture_eval', evaluate_moisture(kpis_data.get('do_am_tb_pct', 0)))
-    if m_eval.get('status') == 'ALERT':
-        st.error(t(
-            f"💧 **CẢNH BÁO ĐỘ ẨM VIÊN CAO:** Độ ẩm trung bình đạt **{kpis_data.get('do_am_tb_pct', 0):.2f}%**, vượt trần 9.5%. Đề nghị kiểm tra nhiệt độ trống sấy.",
-            f"💧 **HIGH MOISTURE ALERT:** Average moisture reached **{kpis_data.get('do_am_tb_pct', 0):.2f}%**, exceeding 9.5% ceiling. Please check rotary dryer temperatures."
-        ))
-    elif m_eval.get('status') == 'WARN':
-        st.warning(t(
-            f"💧 **LƯU Ý ĐỘ ẨM VIÊN THẤP:** Độ ẩm trung bình đạt **{kpis_data.get('do_am_tb_pct', 0):.2f}%** (< 8.0%), viên nén có nguy cơ giòn.",
-            f"💧 **LOW MOISTURE NOTICE:** Average moisture is **{kpis_data.get('do_am_tb_pct', 0):.2f}%** (< 8.0%), pellets may be brittle."
-        ))
-
-    if 0 < kpis_data.get('ty_trong_vien', 0) < DENSITY_BENCHMARK_MIN:
-        st.warning(t(
-            f"⚖️ **CẢNH BÁO TỶ TRỌNG:** Tỷ trọng viên nén đạt **{kpis_data.get('ty_trong_vien', 0):,.1f} kg/m³**, thấp hơn chuẩn xuất khẩu ({DENSITY_BENCHMARK_MIN:,.0f} kg/m³).",
-            f"⚖️ **BULK DENSITY ALERT:** Bulk density reached **{kpis_data.get('ty_trong_vien', 0):,.1f} kg/m³**, below export standard ({DENSITY_BENCHMARK_MIN:,.0f} kg/m³)."
-        ))
-
 # Hàm render nội dung thẻ của từng Ca Trưởng chuẩn công nghiệp (Đồng bộ 100% cấu trúc 3 Ca)
 def render_leader_card_html(ldr: dict, key: str, view_period: str = "☀️ Theo Ngày") -> str:
     name = ldr.get('name', key)

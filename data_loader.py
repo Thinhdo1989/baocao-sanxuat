@@ -53,6 +53,32 @@ PE_MACHINE_MAPPING = {
 }
 PE_510_TO_PE = {v: k for k, v in PE_MACHINE_MAPPING.items()}
 
+
+def map_pe_code(code: str) -> str:
+    """
+    Chuyển đổi linh hoạt giữa mã máy ép sản xuất (PE1-PE8) và bảo trì (PE1510-PE8510):
+    - 'PE1' -> 'PE1510'
+    - 'PE1510' -> 'PE1'
+    """
+    c = str(code).strip().upper()
+    if c in PE_MACHINE_MAPPING:
+        return PE_MACHINE_MAPPING[c]
+    if c in PE_510_TO_PE:
+        return PE_510_TO_PE[c]
+    return str(code).strip()
+
+
+def get_pe_aliases(code: str) -> List[str]:
+    """Trả về toàn bộ danh sách mã tương đương của máy ép để tìm kiếm/lọc"""
+    c = str(code).strip().upper()
+    aliases = [c]
+    if c in PE_MACHINE_MAPPING:
+        aliases.append(PE_MACHINE_MAPPING[c])
+    if c in PE_510_TO_PE:
+        aliases.append(PE_510_TO_PE[c])
+    return list(set(aliases))
+
+
 # ==============================================================================
 # BẢNG DANH MỤC MÃ HÓA NHÂN SỰ & VỊ TRÍ VẬN HÀNH (CHUẨN HÓA THEO GOOGLE SHEETS)
 # ==============================================================================
@@ -206,47 +232,181 @@ def get_standard_shift_code(val: Any) -> str:
 
 
 
+def normalize_header(header: Any) -> str:
+    """
+    Chuẩn hóa tiêu đề cột (Headers):
+    - Xóa bỏ ký tự xuống dòng '\n', '\r'
+    - Chuẩn hóa khoảng trắng kép thành khoảng trắng đơn
+    - Xóa khoảng trắng thừa ở đầu/cuối (strip)
+    Ví dụ: 'Thành phẩm\n(tấn)' -> 'Thành phẩm (tấn)'
+    """
+    if header is None:
+        return ""
+    h = str(header).replace('\r', ' ').replace('\n', ' ')
+    h = re.sub(r'\s+', ' ', h).strip()
+    return h
+
+
+def normalize_headers(headers: Any) -> List[str]:
+    """Chuẩn hóa danh sách các tiêu đề cột"""
+    if headers is None:
+        return []
+    return [normalize_header(h) for h in headers]
+
+
 def clean_numeric(val: Any) -> float:
     """
-    Xử lý lỗi định dạng số và phân cách hàng nghìn (Locale VN vs US).
-    Chuyển đổi chuỗi số từ Google Sheets / Excel về định dạng float chuẩn của Python:
-    - Trong Locale VN: Dấu chấm (.) phân cách hàng nghìn, dấu phẩy (,) là số thập phân.
-    - Xử lý các chuỗi trống, ký hiệu '-', 'None', NaN về 0.0.
-    - Bảo toàn số float/int có sẵn (không biến 4.0 thành 40.0).
+    Chuẩn hóa số liệu từ kiểu Việt Nam / Quốc tế về dạng float chuẩn Python:
+    - Trong Locale VN: Dấu chấm (.) phân cách hàng nghìn, dấu phẩy (,) là số thập phân (vd: 16.415,10 hoặc 3,76)
+    - Xử lý các chuỗi trống, ký hiệu '-', '--', 'None', 'nan', 'NaN', 'N/A' về 0.0
+    - Loại bỏ các ký hiệu đơn vị đo lường phổ biến (tấn, kWh, kg/m3, VND, Lít, %, h...)
+    - Bảo toàn số float/int có sẵn (không biến 4.0 thành 40.0)
+    - Trả về dạng float hợp lệ, tránh lỗi string object khi tính toán hoặc vẽ biểu đồ Plotly.
     """
-    if val is None or pd.isna(val) or str(val).strip() in ['-', '', 'None', 'nan', 'NaN', 'N/A']:
+    if val is None or pd.isna(val):
         return 0.0
     if isinstance(val, (int, float)) and not isinstance(val, bool):
         return float(val)
-    s = str(val).strip()
+
+    s = str(val).strip().replace('\xa0', ' ')
+    if not s or s in ['-', '--', '---', '', 'None', 'nan', 'NaN', 'N/A', 'n/a', 'null', 'Null']:
+        return 0.0
+
     # Loại bỏ các ký hiệu đơn vị đo lường phổ biến nếu có
     for u in ['tấn', 'tan', 'kWh', 'kwh', 'kg/m3', 'kg/m³', 'VND', 'vnd', 'Lít', 'lit', '%', 'h', '/']:
         s = s.replace(u, '')
     s = s.strip()
-    
-    # Xử lý định dạng VN vs US:
-    if ',' in s or s.count('.') > 1:
-        # Chuẩn VN: phân cách nghìn là '.', thập phân là ','
-        s = s.replace('.', '').replace(',', '.')
-    elif s.count('.') == 1:
-        parts = s.split('.')
-        # Nếu có đúng 3 chữ số sau dấu chấm và phần nguyên khác 0 -> phân cách hàng nghìn VN (vd: 4.000 -> 4000)
-        if len(parts[1]) == 3 and not (len(parts[0]) == 1 and parts[0] == '0'):
+
+    if not s or s in ['-', '--']:
+        return 0.0
+
+    # Xử lý dấu âm nếu có
+    is_negative = False
+    if s.startswith('-'):
+        is_negative = True
+        s = s[1:].strip()
+
+    # Nhận diện định dạng số:
+    # 1. Có cả dấu chấm '.' và dấu phẩy ',' (vd: 16.415,10 hoặc 16,415.10)
+    if '.' in s and ',' in s:
+        last_dot = s.rfind('.')
+        last_comma = s.rfind(',')
+        if last_comma > last_dot:
+            # Chuẩn VN: '.' hàng nghìn, ',' thập phân (vd: 16.415,10 -> 16415.10)
+            s = s.replace('.', '').replace(',', '.')
+        else:
+            # Chuẩn US: ',' hàng nghìn, '.' thập phân (vd: 16,415.10 -> 16415.10)
+            s = s.replace(',', '')
+    elif ',' in s:
+        # Chỉ có dấu phẩy:
+        if s.count(',') > 1:
+            # Nhiều dấu phẩy -> phân cách hàng nghìn US (vd: 1,234,567)
+            s = s.replace(',', '')
+        else:
+            # Chuẩn VN: dấu phẩy là phần thập phân (vd: 3,76 -> 3.76, 4,0 -> 4.0)
+            s = s.replace(',', '.')
+    elif '.' in s:
+        # Chỉ có dấu chấm:
+        if s.count('.') > 1:
+            # Nhiều dấu chấm -> phân cách hàng nghìn VN (vd: 1.234.567 -> 1234567)
             s = s.replace('.', '')
         else:
-            # Thập phân chuẩn US (vd: 4.0, 3.71)
-            pass
+            parts = s.split('.')
+            # Nếu có đúng 3 chữ số sau dấu chấm và phần nguyên khác 0 -> phân cách hàng nghìn VN (vd: 4.000 -> 4000, 16.415 -> 16415)
+            if len(parts[1]) == 3 and len(parts[0]) > 0 and parts[0] != '0':
+                s = s.replace('.', '')
+            else:
+                # Thập phân chuẩn US (vd: 4.0, 3.76, 0.12)
+                pass
     else:
-        s = s.replace('.', '').replace(',', '.')
-        
+        s = s.replace(' ', '')
+
     try:
-        return float(s)
+        res = float(s)
+        return -res if is_negative else res
     except Exception:
+        # Thử regex trích xuất số nếu còn ký tự lạ
+        m = re.search(r'[-+]?\d*\.?\d+', s)
+        if m:
+            try:
+                res = float(m.group(0))
+                return -res if is_negative else res
+            except Exception:
+                return 0.0
         return 0.0
 
 
 # Đồng bộ alias clean_number tương thích ngược toàn bộ hệ thống
 clean_number = clean_numeric
+
+
+def clean_numeric_series(series: pd.Series) -> pd.Series:
+    """Chuyển đổi toàn bộ một pandas Series về float chuẩn bằng hàm clean_numeric"""
+    if series is None or len(series) == 0:
+        return pd.Series(dtype=float)
+    return series.apply(clean_numeric).astype(float)
+
+
+def clean_numeric_dataframe(df: pd.DataFrame, numeric_cols: Optional[List[str]] = None) -> pd.DataFrame:
+    """
+    Chuẩn hóa các cột số liệu trong DataFrame về kiểu float hợp lệ:
+    - Loại bỏ hoàn toàn lỗi string object khi tính toán hoặc vẽ biểu đồ.
+    - Tự động chuẩn hóa tiêu đề cột (xóa '\n' và khoảng trắng thừa).
+    - Bảo toàn an toàn các cột dạng văn bản, danh mục, thời gian.
+    """
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    df.columns = normalize_headers(df.columns)
+
+    exclude_cols = {
+        'id', 'id_su_co', 'date', 'date_str', 'shift_leader', 'ca', 'ca_truong', 'performer', 
+        'tester', 'activity', 'description', 'solution', 'status', 'equipment',
+        'equipment_raw', 'equipment_list', 'die_code', 'notes', 'note', 'month_label', 'week_label', 'month_tab',
+        'time_sample', 'task', 'task_name', 'person_in_charge', 'material', 'materials', 'result',
+        'alert_status_c2', 'change_status_c1', 'change_date_c1', 'machine_code', 
+        'machine_code_510', 'machine_name', 'oil_type', 'pillar', 'objective', 'action',
+        'pic', 'deadline', 'evaluation', 'material_status', 'leader', 'equipment_code',
+        'priority', 'start_date', 'end_date', 'sensor_code', 'luoi_nghien_tho', 'luoi_nghien_tinh',
+        'chieu_dai_vien', 'ty_le_nl_dot', 'ty_le_phoi_tron', 'duration_str'
+    }
+
+    if numeric_cols is None:
+        target_cols = []
+        for c in df.columns:
+            c_str = str(c).strip().lower()
+            if c_str in exclude_cols or any(ex in c_str for ex in ['_str', 'status', 'desc', 'date', 'performer', 'solution', 'activity']):
+                continue
+            s = df[c]
+            if pd.api.types.is_numeric_dtype(s):
+                target_cols.append(c)
+                continue
+            if pd.api.types.is_datetime64_any_dtype(s) or pd.api.types.is_bool_dtype(s):
+                continue
+            # Kiểm tra mẫu dữ liệu để xác định cột số
+            valid = s.dropna().astype(str).str.strip()
+            valid = valid[~valid.isin(['', '-', '--', '---', 'None', 'nan', 'NaN', 'N/A', 'n/a', 'null'])]
+            if len(valid) == 0:
+                continue
+            sample = valid.iloc[:30]
+            num_matches = 0
+            for v in sample:
+                s_val = v
+                for u in ['tấn', 'tan', 'kWh', 'kwh', 'kg/m3', 'kg/m³', 'VND', 'vnd', 'Lít', 'lit', '%', 'h', '/']:
+                    s_val = s_val.replace(u, '')
+                s_val = s_val.replace('.', '').replace(',', '').replace(' ', '').replace('-', '').replace('+', '')
+                if s_val.isdigit():
+                    num_matches += 1
+            if (num_matches / len(sample)) >= 0.5:
+                target_cols.append(c)
+    else:
+        target_cols = [c for c in numeric_cols if c in df.columns]
+
+    for c in target_cols:
+        if c in df.columns:
+            df[c] = clean_numeric_series(df[c])
+    return df
+
 
 
 
@@ -441,7 +601,7 @@ class DataLoader:
         return True
 
     def get_sheet_values(self, sheet_name: str) -> List[List[str]]:
-        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính sản xuất với retry 4 lần kèm exponential backoff"""
+        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính sản xuất với retry 4 lần kèm exponential backoff và chuẩn hóa ngay dòng tiêu đề"""
         for attempt in range(4):
             try:
                 if not self.spreadsheet:
@@ -449,7 +609,10 @@ class DataLoader:
                 if not self.spreadsheet:
                     return []
                 ws = self.spreadsheet.worksheet(sheet_name)
-                return ws.get_all_values()
+                rows = ws.get_all_values()
+                if rows and len(rows) > 0:
+                    rows[0] = normalize_headers(rows[0])
+                return rows
             except Exception as e:
                 print(f"[-] Lỗi đọc sheet '{sheet_name}' (lần {attempt+1}/4): {e}")
                 if attempt < 3:
@@ -458,7 +621,7 @@ class DataLoader:
         return []
 
     def get_kpi_sheet_values(self, sheet_name: str) -> List[List[str]]:
-        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính đánh giá KPI với retry 4 lần kèm exponential backoff"""
+        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính đánh giá KPI với retry 4 lần kèm exponential backoff và chuẩn hóa ngay dòng tiêu đề"""
         for attempt in range(4):
             try:
                 if not self.kpi_spreadsheet:
@@ -466,7 +629,10 @@ class DataLoader:
                 if not self.kpi_spreadsheet:
                     return []
                 ws = self.kpi_spreadsheet.worksheet(sheet_name)
-                return ws.get_all_values()
+                rows = ws.get_all_values()
+                if rows and len(rows) > 0:
+                    rows[0] = normalize_headers(rows[0])
+                return rows
             except Exception as e:
                 print(f"[-] Lỗi đọc KPI sheet '{sheet_name}' (lần {attempt+1}/4): {e}")
                 if attempt < 3:
@@ -646,6 +812,7 @@ class DataLoader:
             # Nếu năng suất = 0 nhưng có sản lượng và giờ ép > 0 -> tự tính lại
             mask_ns = (df['nang_suat_tph'] == 0) & (df['san_luong_tan'] > 0) & (df['tong_gio_ep'] > 0)
             df.loc[mask_ns, 'nang_suat_tph'] = df.loc[mask_ns, 'san_luong_tan'] / df.loc[mask_ns, 'tong_gio_ep']
+            df = clean_numeric_dataframe(df)
 
             # Tự động cập nhật cache parquet dự phòng
             for cp in cache_paths:
@@ -661,57 +828,218 @@ class DataLoader:
                     try:
                         df_cached = pd.read_parquet(cp)
                         if not df_cached.empty and 'shift_leader' in df_cached.columns:
-                            return df_cached
+                            return clean_numeric_dataframe(df_cached)
                     except Exception:
                         pass
             df = pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
 
-        return df
+        return clean_numeric_dataframe(df)
 
-    def load_daily_summary(self) -> pd.DataFrame:
+    def load_daily_summary(self, df_shifts: Optional[pd.DataFrame] = None, df_kcs: Optional[pd.DataFrame] = None, df_incidents: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
-        Đọc và chuẩn hóa dữ liệu tổng hợp ngày từ sheet 'Daily report'.
-        Sheet này ở dạng xoay ngang: Cột là từng ngày, Hàng là các chỉ tiêu.
+        Đọc và tổng hợp dữ liệu báo cáo ngày chuẩn xác từ sheet 'Data KPI' (gid 1468211678)
+        của file KPI (2026 Nhat ky KPI), liên kết đầy đủ với:
+        - Sheet Product_Data: Tổng giờ ép, nguyên liệu nghiền thô, lò đốt, tồn kho, xuất hàng
+        - File Data KCS: Tỷ trọng viên nén, độ tro
+        - Sheet Su co: Số vụ sự cố, thời gian dừng máy
+        - Sheet weekly report: Dầu diezen tiêu thụ
         """
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_daily_summary.parquet"),
+            os.path.join("assets", "cache_daily_summary.parquet"),
+            os.path.join("deploy_files", "assets", "cache_daily_summary.parquet"),
+        ]
+
         try:
-            rows = self.get_sheet_values('Daily report')
-            if len(rows) < 11:
+            df_kpi = self.load_kpi_daily_shifts(df_kcs=df_kcs)
+            if df_kpi is None or df_kpi.empty:
+                for cp in cache_paths:
+                    if os.path.exists(cp):
+                        try:
+                            df_cached = pd.read_parquet(cp)
+                            if not df_cached.empty and 'san_luong_tan' in df_cached.columns:
+                                return df_cached
+                        except Exception:
+                            pass
                 return pd.DataFrame()
 
-            dates_row = rows[2]
-            records = []
+            # Liên kết các bảng dữ liệu phụ trợ
+            if df_shifts is None or df_shifts.empty:
+                try:
+                    df_shifts = self.load_shift_data()
+                except Exception:
+                    df_shifts = pd.DataFrame()
 
-            for col_idx in range(2, len(dates_row)):
-                date_raw = dates_row[col_idx].strip()
-                if not date_raw or date_raw == '-':
-                    continue
-                date_dt = parse_vn_date(date_raw)
-                if not date_dt:
-                    continue
+            if df_kcs is None or df_kcs.empty:
+                try:
+                    df_kcs = self.load_kcs_data()
+                except Exception:
+                    df_kcs = pd.DataFrame()
 
-                san_luong = clean_number(rows[3][col_idx]) if len(rows) > 3 and col_idx < len(rows[3]) else 0.0
-                record = {
-                    'date': date_dt,
-                    'date_str': date_dt.strftime('%d/%m/%Y'),
-                    'san_luong_tan': san_luong,
-                    'tong_nguyen_lieu_tan': clean_number(rows[4][col_idx]) if len(rows) > 4 and col_idx < len(rows[4]) else 0.0,
-                    'tong_nl_dot_tan': clean_number(rows[5][col_idx]) if len(rows) > 5 and col_idx < len(rows[5]) else 0.0,
-                    'ty_le_che_bien': clean_number(rows[6][col_idx]) if len(rows) > 6 and col_idx < len(rows[6]) else 0.0,
-                    'do_am_tb_pct': clean_number(rows[7][col_idx]) if len(rows) > 7 and col_idx < len(rows[7]) else 0.0,
-                    'ty_trong_vien': clean_number(rows[8][col_idx]) if len(rows) > 8 and col_idx < len(rows[8]) else 0.0,
-                    'nang_suat_tb_tph': clean_number(rows[9][col_idx]) if len(rows) > 9 and col_idx < len(rows[9]) else 0.0,
-                    'nguyen_lieu_nhap_tan': clean_number(rows[10][col_idx]) if len(rows) > 10 and col_idx < len(rows[10]) else 0.0,
-                    'chi_tieu_tan': clean_number(rows[11][col_idx]) if len(rows) > 11 and col_idx < len(rows[11]) else 0.0,
+            if df_incidents is None or df_incidents.empty:
+                try:
+                    df_incidents = self.load_incident_data()
+                except Exception:
+                    df_incidents = pd.DataFrame()
+
+            try:
+                df_weekly = self.load_weekly_report()
+            except Exception:
+                df_weekly = pd.DataFrame()
+
+            daily_records = []
+            for d, grp in df_kpi.groupby('date'):
+                d_date = d.date() if hasattr(d, 'date') else d
+                sl = float(grp['sl_thuc_te'].sum())
+                ct = float(grp['chi_tieu_sl'].sum())
+                
+                # Suất điện trung bình có trọng số theo sản lượng ca
+                v_dien_sl = grp[(grp['dien_tb'] > 0) & (grp['sl_thuc_te'] > 0)]
+                if not v_dien_sl.empty and v_dien_sl['sl_thuc_te'].sum() > 0:
+                    dien = float((v_dien_sl['dien_tb'] * v_dien_sl['sl_thuc_te']).sum() / v_dien_sl['sl_thuc_te'].sum())
+                else:
+                    v_dien = grp[grp['dien_tb'] > 0]['dien_tb']
+                    dien = float(v_dien.mean()) if not v_dien.empty else 0.0
+
+                # Năng suất ép trung bình
+                v_ns_sl = grp[(grp['nang_suat_tb'] > 0) & (grp['sl_thuc_te'] > 0)]
+                if not v_ns_sl.empty and v_ns_sl['sl_thuc_te'].sum() > 0:
+                    ns = float((v_ns_sl['nang_suat_tb'] * v_ns_sl['sl_thuc_te']).sum() / v_ns_sl['sl_thuc_te'].sum())
+                else:
+                    v_ns = grp[grp['nang_suat_tb'] > 0]['nang_suat_tb']
+                    ns = float(v_ns.mean()) if not v_ns.empty else 0.0
+
+                # Độ ẩm trung bình
+                v_am = grp[grp['do_am_tb'] > 0]['do_am_tb']
+                am = float(v_am.mean()) if not v_am.empty else 0.0
+
+                # Liên kết từ df_shifts
+                tong_gio_ep = 0.0
+                nl_tho = 0.0
+                nl_dot = 0.0
+                ton_kho = 0.0
+                xuat_hang = 0.0
+                pe_hours = {}
+                if not df_shifts.empty and 'date' in df_shifts.columns:
+                    s_grp = df_shifts[df_shifts['date'].dt.date == d_date]
+                    if not s_grp.empty:
+                        tong_gio_ep = float(s_grp['tong_gio_ep'].sum()) if 'tong_gio_ep' in s_grp.columns else 0.0
+                        nl_tho = float(s_grp['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in s_grp.columns else 0.0
+                        nl_dot = float(s_grp['nl_dot_tan'].sum()) if 'nl_dot_tan' in s_grp.columns else 0.0
+                        xuat_hang = float(s_grp['xuat_hang_tan'].sum()) if 'xuat_hang_tan' in s_grp.columns else 0.0
+                        valid_tk = s_grp[s_grp['ton_kho_tan'] > 0]['ton_kho_tan'] if 'ton_kho_tan' in s_grp.columns else pd.Series()
+                        if not valid_tk.empty:
+                            ton_kho = float(valid_tk.iloc[-1])
+                        for i in range(1, 9):
+                            pcol = f'h_PE{i}'
+                            if pcol in s_grp.columns:
+                                pe_hours[pcol] = float(s_grp[pcol].sum())
+
+                # Nếu ton_kho == 0, lấy tồn kho ngày gần nhất trước đó
+                if ton_kho == 0 and not df_shifts.empty and 'ton_kho_tan' in df_shifts.columns:
+                    sub_tk = df_shifts[(df_shifts['date'].dt.date <= d_date) & (df_shifts['ton_kho_tan'] > 0)]
+                    if not sub_tk.empty:
+                        ton_kho = float(sub_tk.iloc[-1]['ton_kho_tan'])
+
+                # Liên kết từ df_kcs
+                ty_trong = 0.0
+                do_tro = 0.0
+                if not df_kcs.empty and 'date' in df_kcs.columns:
+                    k_grp = df_kcs[df_kcs['date'].dt.date == d_date]
+                    if not k_grp.empty:
+                        valid_tt = k_grp[k_grp['density_vien'] > 0]['density_vien'] if 'density_vien' in k_grp.columns else pd.Series()
+                        if not valid_tt.empty:
+                            ty_trong = float(valid_tt.mean())
+                        valid_tr = k_grp[k_grp['do_tro_pct'] > 0]['do_tro_pct'] if 'do_tro_pct' in k_grp.columns else pd.Series()
+                        if not valid_tr.empty:
+                            do_tro = float(valid_tr.mean())
+
+                # Nếu chưa có tỷ trọng ngày đó, lấy gần nhất trước đó
+                if ty_trong == 0 and not df_kcs.empty and 'density_vien' in df_kcs.columns:
+                    past_tt = df_kcs[(df_kcs['date'].dt.date <= d_date) & (df_kcs['density_vien'] > 0)]
+                    if not past_tt.empty:
+                        ty_trong = float(past_tt.iloc[-1]['density_vien'])
+                    else:
+                        ty_trong = 640.0
+                elif ty_trong == 0:
+                    ty_trong = 640.0
+
+                # Liên kết từ df_incidents
+                so_su_co = 0
+                gio_dung_may = 0.0
+                su_co_list = []
+                if not df_incidents.empty and 'date' in df_incidents.columns:
+                    i_grp = df_incidents[df_incidents['date'].dt.date == d_date]
+                    if not i_grp.empty:
+                        so_su_co = len(i_grp)
+                        dur_col = 'thoi_gian_dung_gio' if 'thoi_gian_dung_gio' in i_grp.columns else ('duration_hours' if 'duration_hours' in i_grp.columns else None)
+                        if dur_col:
+                            gio_dung_may = float(i_grp[dur_col].sum())
+                        for _, ir in i_grp.iterrows():
+                            eq = str(ir.get('thiet_bi', ir.get('equipment_code', ir.get('vi_tri', '')))).strip()
+                            desc = str(ir.get('noi_dung', ir.get('mo_ta', ''))).strip()
+                            su_co_list.append(f"{eq}: {desc}" if eq else desc)
+
+                # Dầu diezen từ df_weekly
+                diezen_lit = 0.0
+                diezen_tb = 0.0
+                if not df_weekly.empty and 'week' in df_weekly.columns:
+                    w_num = d.isocalendar()[1] if hasattr(d, 'isocalendar') else 0
+                    w_match = df_weekly[df_weekly['week'] == w_num]
+                    if not w_match.empty:
+                        diezen_lit = float(w_match.iloc[0].get('diezen_lit', 0.0))
+                        diezen_tb = float(w_match.iloc[0].get('diezen_tb_lit_tan', 0.0))
+
+                tong_nl = nl_tho + nl_dot
+                ty_le_cb = (tong_nl / sl) if sl > 0 and tong_nl > 0 else 1.98
+
+                rec = {
+                    'date': d,
+                    'date_str': d.strftime('%d/%m/%Y'),
+                    'san_luong_tan': round(sl, 2),
+                    'chi_tieu_tan': round(ct, 2),
+                    'tong_gio_ep': round(tong_gio_ep, 1),
+                    'dien_tb_kwh_tan': round(dien, 1),
+                    'nang_suat_tb_tph': round(ns, 2),
+                    'do_am_tb_pct': round(am, 2),
+                    'ty_trong_vien': round(ty_trong, 1),
+                    'do_tro_pct': round(do_tro, 2),
+                    'tong_nguyen_lieu_tan': round(tong_nl, 2),
+                    'nghien_tho_tan': round(nl_tho, 2),
+                    'tong_nl_dot_tan': round(nl_dot, 2),
+                    'ty_le_che_bien': round(ty_le_cb, 2),
+                    'ton_kho_tan': round(ton_kho, 1),
+                    'xuat_hang_tan': round(xuat_hang, 2),
+                    'diezen_lit': round(diezen_lit, 1),
+                    'diezen_tb_lit_tan': round(diezen_tb, 2),
+                    'so_ca_san_xuat': int(len(grp[grp['sl_thuc_te'] > 0])),
+                    'so_su_co': so_su_co,
+                    'gio_dung_may': round(gio_dung_may, 1),
+                    'thiet_bi_su_co': "; ".join(su_co_list[:3]),
                 }
-                if record['san_luong_tan'] > 0 or record['tong_nguyen_lieu_tan'] > 0:
-                    records.append(record)
+                for pcol, ph in pe_hours.items():
+                    rec[pcol] = ph
+                daily_records.append(rec)
 
-            df = pd.DataFrame(records)
+            df = pd.DataFrame(daily_records)
             if not df.empty:
+                df['date'] = pd.to_datetime(df['date'], errors='coerce')
                 df = df.sort_values('date').reset_index(drop=True)
-            return df
+                for cp in cache_paths:
+                    try:
+                        os.makedirs(os.path.dirname(cp), exist_ok=True)
+                        df.to_parquet(cp, index=False)
+                    except Exception:
+                        pass
+            return clean_numeric_dataframe(df)
         except Exception as e:
-            print(f"[-] Lỗi nạp Daily report: {e}")
+            print(f"[-] Lỗi nạp và liên kết Daily report từ Data KPI: {e}")
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        return clean_numeric_dataframe(pd.read_parquet(cp))
+                    except Exception:
+                        pass
             return pd.DataFrame()
 
     def load_weekly_report(self) -> pd.DataFrame:
@@ -763,6 +1091,7 @@ class DataLoader:
             df = pd.DataFrame(records)
             if not df.empty:
                 df = df.sort_values('week').reset_index(drop=True)
+                df = clean_numeric_dataframe(df)
             return df
         except Exception as e:
             print(f"[-] Lỗi nạp weekly report: {e}")
@@ -811,7 +1140,7 @@ class DataLoader:
                 }
                 records.append(record)
 
-            return pd.DataFrame(records)
+            return clean_numeric_dataframe(pd.DataFrame(records))
         except Exception as e:
             print(f"[-] Lỗi nạp Monthly report: {e}")
             return pd.DataFrame()
@@ -984,7 +1313,7 @@ class DataLoader:
                     df.to_parquet(cp, index=False)
                 except Exception:
                     pass
-        return df
+        return clean_numeric_dataframe(df)
 
     def load_diezen_data(self) -> pd.DataFrame:
         """
@@ -1025,7 +1354,7 @@ class DataLoader:
             df = pd.DataFrame(records)
             if not df.empty:
                 df = df.sort_values('week').reset_index(drop=True)
-            return df
+            return clean_numeric_dataframe(df)
         except Exception as e:
             print(f"[-] Lỗi nạp Diezen data: {e}")
             return pd.DataFrame()
@@ -1125,7 +1454,7 @@ class DataLoader:
                 except Exception:
                     pass
 
-        return df_w, df_m
+        return clean_numeric_dataframe(df_w), clean_numeric_dataframe(df_m)
 
     def load_leader_kpi_sheet(self, leader_name: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -1269,7 +1598,7 @@ class DataLoader:
 
             df_w = pd.DataFrame(weekly_records)
             df_m = pd.DataFrame(monthly_records)
-            return df_w, df_m
+            return clean_numeric_dataframe(df_w), clean_numeric_dataframe(df_m)
 
         except Exception as e:
             print(f"[-] Lỗi nạp leader KPI sheet '{leader_name}': {e}")
@@ -1352,7 +1681,7 @@ class DataLoader:
                     except Exception:
                         pass
 
-        return {'weekly': df_all_w, 'monthly': df_all_m}
+        return {'weekly': clean_numeric_dataframe(df_all_w), 'monthly': clean_numeric_dataframe(df_all_m)}
 
     def load_kpi_chart_data(self, sheet_name: str) -> pd.DataFrame:
         """
@@ -1389,7 +1718,7 @@ class DataLoader:
                                 records.append(item)
                         if records:
                             df = pd.DataFrame(records)
-                            return df.sort_values('date').reset_index(drop=True)
+                            return clean_numeric_dataframe(df.sort_values('date').reset_index(drop=True))
 
             # 2. Tạo động từ Data KPI
             df_shifts = self.load_kpi_daily_shifts()
@@ -1441,7 +1770,7 @@ class DataLoader:
             df = pd.DataFrame(records)
             if not df.empty:
                 df = df.sort_values('date').reset_index(drop=True)
-            return df
+            return clean_numeric_dataframe(df)
         except Exception as e:
             print(f"[-] Lỗi nạp KPI chart data '{sheet_name}': {e}")
             return pd.DataFrame()
@@ -1494,7 +1823,7 @@ class DataLoader:
             df = pd.DataFrame(records)
             if not df.empty:
                 df = df.sort_values('date').reset_index(drop=True)
-            return df
+            return clean_numeric_dataframe(df)
         except Exception as e:
             print(f"[-] Lỗi nạp KPI SL chart data: {e}")
             return pd.DataFrame()
@@ -1581,7 +1910,7 @@ class DataLoader:
                     df.to_parquet(cp, index=False)
                 except Exception:
                     pass
-        return df
+        return clean_numeric_dataframe(df)
 
     def load_incident_data(self) -> pd.DataFrame:
         """
@@ -1660,7 +1989,7 @@ class DataLoader:
             })
 
         df = pd.DataFrame(records)
-        return df
+        return clean_numeric_dataframe(df)
 
     def load_maintenance_log(self) -> pd.DataFrame:
         """
@@ -1772,7 +2101,7 @@ class DataLoader:
                 'status': status if status else 'Hoàn thành'
             })
 
-        return pd.DataFrame(records)
+        return clean_numeric_dataframe(pd.DataFrame(records))
 
     def load_tpm_improvements(self) -> Dict[str, Any]:
         """
@@ -1826,7 +2155,7 @@ class DataLoader:
             summary['in_progress'] = len(df_tasks[df_tasks['status'].str.contains('Đang thực hiện|Đang làm', case=False, na=False)])
             summary['not_started'] = len(df_tasks[df_tasks['status'].str.contains('Chưa bắt đầu|Chưa làm', case=False, na=False)])
 
-        return {'summary': summary, 'tasks': df_tasks}
+        return {'summary': summary, 'tasks': clean_numeric_dataframe(df_tasks)}
 
     def load_pm30_grease_data(self) -> pd.DataFrame:
         """
@@ -1867,7 +2196,7 @@ class DataLoader:
                 'pulses': clean_number(r[9]) if len(r) > 9 else 0
             })
 
-        return pd.DataFrame(records)
+        return clean_numeric_dataframe(pd.DataFrame(records))
 
     def load_maintenance_plan_monthly(self) -> pd.DataFrame:
         """
@@ -1925,7 +2254,7 @@ class DataLoader:
                 except Exception as e:
                     print(f"[-] Lỗi đọc sheet {t}: {e}")
 
-        return pd.DataFrame(records)
+        return clean_numeric_dataframe(pd.DataFrame(records))
 
     def load_4m_management(self) -> pd.DataFrame:
         """
@@ -1966,7 +2295,7 @@ class DataLoader:
                 'evaluation': evaluation
             })
 
-        return pd.DataFrame(records)
+        return clean_numeric_dataframe(pd.DataFrame(records))
 
     def load_wood_pellet_process_data(self, force_reload: bool = False) -> Dict[str, Any]:
         """
@@ -2684,7 +3013,7 @@ class DataLoader:
                     except Exception:
                         pass
 
-        OIL_CYCLE_1_CUTOFF = pd.to_datetime('2026-09-18')
+        OIL_CYCLE_1_DATE = datetime(2026, 9, 18).date()
 
         if not self.oil_spreadsheet:
             self.connect()
@@ -2699,17 +3028,19 @@ class DataLoader:
                             # Cập nhật mã 510 và giờ chạy chu kỳ 2 nếu có df_shifts
                             if 'machine_code_510' not in df_cached.columns:
                                 df_cached['machine_code_510'] = df_cached['machine_code'].map(PE_MACHINE_MAPPING).fillna(df_cached['machine_code'])
-                            if df_shifts is not None and not df_shifts.empty:
-                                mask_post = pd.to_datetime(df_shifts['date']) > OIL_CYCLE_1_CUTOFF
+                            if df_shifts is not None and not df_shifts.empty and 'date' in df_shifts.columns:
+                                s_dates = pd.to_datetime(df_shifts['date'], errors='coerce').dt.date
+                                mask_post = (s_dates > OIL_CYCLE_1_DATE)
                                 for c_idx, r in df_cached.iterrows():
                                     pe = r['machine_code']
                                     c_name = f'h_{pe}'
                                     if c_name in df_shifts.columns:
-                                        h2_act = float(pd.to_numeric(df_shifts.loc[mask_post, c_name], errors='coerce').fillna(0.0).sum())
+                                        h2_act = float(clean_numeric_series(df_shifts.loc[mask_post, c_name]).sum())
                                         df_cached.at[c_idx, 'run_hours_c2'] = round(h2_act, 1)
-                                        std_h = float(r.get('standard_hours', 4000.0))
+                                        std_h = float(clean_numeric(r.get('standard_hours', 4000.0)))
                                         df_cached.at[c_idx, 'remaining_hours_c2'] = max(0.0, round(std_h - h2_act, 1))
                                         df_cached.at[c_idx, 'progress_pct_c2'] = round(h2_act / std_h * 100, 1) if std_h > 0 else 0.0
+                            df_cached = clean_numeric_dataframe(df_cached)
                             return {'summary': df_cached, 'details': {}, 'title': "Lịch thay nhớt hộp số máy ép (Cache)"}
                     except Exception:
                         pass
@@ -2729,25 +3060,28 @@ class DataLoader:
                     try:
                         df_cached = pd.read_parquet(cp)
                         if not df_cached.empty:
-                            return {'summary': df_cached, 'details': {}, 'title': f"{title} (Cache)"}
+                            return {'summary': clean_numeric_dataframe(df_cached), 'details': {}, 'title': f"{title} (Cache)"}
                     except Exception:
                         pass
             return {'summary': pd.DataFrame(), 'details': {}, 'title': title}
 
         dm_vals = vrs[0].get('values', []) if len(vrs) > 0 else []
-        df_dm = pd.DataFrame(dm_vals[1:], columns=dm_vals[0]) if len(dm_vals) > 1 else pd.DataFrame()
+        df_dm = pd.DataFrame(dm_vals[1:], columns=normalize_headers(dm_vals[0])) if len(dm_vals) > 1 else pd.DataFrame()
 
         summary_rows = []
         details = {}
 
         # Mặt nạ lọc giờ chạy phát sinh sau ngày 18/09/2026 từ df_shifts
-        mask_c2_shifts = (pd.to_datetime(df_shifts['date']) > OIL_CYCLE_1_CUTOFF) if (df_shifts is not None and not df_shifts.empty and 'date' in df_shifts.columns) else None
+        mask_c2_shifts = None
+        if df_shifts is not None and not df_shifts.empty and 'date' in df_shifts.columns:
+            shift_dates = pd.to_datetime(df_shifts['date'], errors='coerce').dt.date
+            mask_c2_shifts = (shift_dates > OIL_CYCLE_1_DATE)
 
         for idx, pe in enumerate(pe_list):
             vr_vals = vrs[idx + 1].get('values', []) if len(vrs) > idx + 1 else []
             records = []
             if len(vr_vals) > 1:
-                headers = [c.strip() for c in vr_vals[0]]
+                headers = normalize_headers(vr_vals[0])
                 for r in vr_vals[1:]:
                     rec = {headers[k]: (r[k].strip() if k < len(r) else '') for k in range(len(headers))}
                     records.append(rec)
@@ -2755,7 +3089,7 @@ class DataLoader:
             row1 = records[0] if len(records) > 0 else {}
             row2 = records[1] if len(records) > 1 else {}
 
-            h1_str = str(row1.get('So h', row1.get('So h hoạt dọng', '0'))).strip()
+            h1_str = str(row1.get('So h', row1.get('So h hoạt dọng', '4000'))).strip()
             dinh_muc_str = str(row1.get('Dinh muc (h)', row1.get('Dinh muc', '4000'))).strip()
 
             m_name = f"Máy ép viên Andritz PM30-{5+idx+1}"
@@ -2764,20 +3098,22 @@ class DataLoader:
                 if len(m_match) > 0:
                     m_name = str(m_match.values[0])
 
-            std_h = clean_number(dinh_muc_str) if clean_number(dinh_muc_str) > 0 else 4000.0
-            h1_num = clean_number(h1_str)
+            std_h = clean_numeric(dinh_muc_str) if clean_numeric(dinh_muc_str) > 0 else 4000.0
+            h1_num = clean_numeric(h1_str)
             if h1_num == 0.0 and len(records) > 0:
-                h1_num = clean_number(str(row1.get('So h hoạt dọng', '4000')))
+                h1_num = clean_numeric(str(row1.get('So h hoạt dọng', '4000')))
+            if h1_num == 0.0:
+                h1_num = 4000.0
 
             # TÍNH GIỜ CHẠY PHÁT SINH CHU KỲ 2 SAU NGÀY 18/09/2026 TỪ NHẬT KÝ SẢN XUẤT
             h2_actual = 0.0
             pe_col = f'h_{pe}'
             if mask_c2_shifts is not None and pe_col in df_shifts.columns:
-                h2_actual = float(pd.to_numeric(df_shifts.loc[mask_c2_shifts, pe_col], errors='coerce').fillna(0.0).sum())
+                h2_actual = float(clean_numeric_series(df_shifts.loc[mask_c2_shifts, pe_col]).sum())
             else:
                 # Dự phòng từ sheet nếu không có df_shifts
                 h2_str = str(row2.get('So h', row2.get('So h hoạt dọng', '0'))).strip()
-                h2_actual = clean_number(h2_str)
+                h2_actual = clean_numeric(h2_str)
 
             h2_num = round(h2_actual, 1)
             rem_h2 = max(0.0, round(std_h - h2_num, 1))
@@ -2797,9 +3133,12 @@ class DataLoader:
                 records[1]['So h'] = f"{h2_num:.1f}"
                 records[1]['So h hoạt dọng'] = f"{h2_num:.1f}"
                 records[1]['Trạng thái nhắc nhở'] = alert_c2
-                records[1]['Ghi chu'] = f"Giờ chạy tính từ sau 18/09/2026: {h2_num:.1f}h (còn {rem_h2:.1f}h)"
+                records[1]['Ghi chu'] = f"Giờ chạy tính từ sau 18/09/2026: {h2_num:.1f}h (còn {rem_h2:.1f}h / 4.000h)"
 
-            details[pe] = pd.DataFrame(records) if records else pd.DataFrame()
+            df_pe_details = pd.DataFrame(records) if records else pd.DataFrame()
+            if not df_pe_details.empty:
+                df_pe_details = clean_numeric_dataframe(df_pe_details)
+            details[pe] = df_pe_details
 
             code_510 = PE_MACHINE_MAPPING.get(pe, f"{pe}510")
             summary_rows.append({
@@ -2807,7 +3146,7 @@ class DataLoader:
                 'machine_code_510': code_510,
                 'machine_name': m_name,
                 'oil_type': 'Mobil Glygoyle 460',
-                'oil_capacity_l': 208,
+                'oil_capacity_l': 208.0,
                 'standard_hours': std_h,
                 'run_hours_c1': h1_num,
                 'change_date_c1': str(row1.get('Ngày thay nhớt', '18/09/2026')),
@@ -2819,6 +3158,8 @@ class DataLoader:
             })
 
         df_summary = pd.DataFrame(summary_rows)
+        if not df_summary.empty:
+            df_summary = clean_numeric_dataframe(df_summary)
 
         # Lưu cache parquet dự phòng
         if not df_summary.empty:
@@ -2834,6 +3175,158 @@ class DataLoader:
             'details': details,
             'title': title
         }
+
+
+# ==============================================================================
+# HÀM BỌC BỘ ĐỆM GOOGLE SHEETS BẰNG @st.cache_data(ttl=600)
+# ==============================================================================
+try:
+    import streamlit as st
+    cache_ttl_600 = st.cache_data(ttl=600)
+except Exception:
+    def cache_ttl_600(func):
+        return func
+
+
+@cache_ttl_600
+def get_cached_shift_data() -> pd.DataFrame:
+    """Nạp dữ liệu ca/ngày có bộ đệm 600 giây (10 phút)"""
+    loader = DataLoader()
+    return loader.load_shift_data()
+
+
+@cache_ttl_600
+def get_cached_daily_summary() -> pd.DataFrame:
+    """Nạp tổng hợp báo cáo ngày có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_daily_summary()
+
+
+@cache_ttl_600
+def get_cached_weekly_report() -> pd.DataFrame:
+    """Nạp báo cáo tuần có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_weekly_report()
+
+
+@cache_ttl_600
+def get_cached_monthly_report() -> pd.DataFrame:
+    """Nạp báo cáo tháng có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_monthly_report()
+
+
+@cache_ttl_600
+def get_cached_kcs_data() -> pd.DataFrame:
+    """Nạp dữ liệu KCS kiểm định có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_kcs_data()
+
+
+@cache_ttl_600
+def get_cached_diezen_data() -> pd.DataFrame:
+    """Nạp dữ liệu tiêu thụ dầu Diezen có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_diezen_data()
+
+
+@cache_ttl_600
+def get_cached_wm_kpi_scores() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Nạp điểm KPI W-M theo tuần/tháng có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_wm_kpi_scores()
+
+
+@cache_ttl_600
+def get_cached_all_leaders_kpi() -> Dict[str, pd.DataFrame]:
+    """Nạp chi tiết điểm KPI của 3 ca trưởng có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_all_leaders_kpi()
+
+
+@cache_ttl_600
+def get_cached_kpi_daily_shifts() -> pd.DataFrame:
+    """Nạp dữ liệu nhật ký ca KPI có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_kpi_daily_shifts()
+
+
+@cache_ttl_600
+def get_cached_kpi_chart_data(sheet_name: str) -> pd.DataFrame:
+    """Nạp dữ liệu biểu đồ KPI theo ngày có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_kpi_chart_data(sheet_name)
+
+
+@cache_ttl_600
+def get_cached_kpi_sl_chart_data() -> pd.DataFrame:
+    """Nạp dữ liệu biểu đồ sản lượng KPI có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_kpi_sl_chart_data()
+
+
+@cache_ttl_600
+def get_cached_incident_data() -> pd.DataFrame:
+    """Nạp dữ liệu sự cố sản xuất có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_incident_data()
+
+
+@cache_ttl_600
+def get_cached_maintenance_log() -> pd.DataFrame:
+    """Nạp nhật ký bảo trì thiết bị có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_maintenance_log()
+
+
+@cache_ttl_600
+def get_cached_maintenance_plan_monthly() -> pd.DataFrame:
+    """Nạp kế hoạch bảo trì theo tháng có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_maintenance_plan_monthly()
+
+
+@cache_ttl_600
+def get_cached_4m_management() -> pd.DataFrame:
+    """Nạp bảng quản trị 4M có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_4m_management()
+
+
+@cache_ttl_600
+def get_cached_tpm_improvements() -> Dict[str, Any]:
+    """Nạp dữ liệu TPM & cải tiến có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_tpm_improvements()
+
+
+@cache_ttl_600
+def get_cached_pm30_grease_data() -> pd.DataFrame:
+    """Nạp dữ liệu định lượng mỡ PM30-6 có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_pm30_grease_data()
+
+
+@cache_ttl_600
+def get_cached_wood_pellet_process_data() -> Dict[str, Any]:
+    """Nạp dữ liệu quy trình chế biến viên nén có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_wood_pellet_process_data()
+
+
+@cache_ttl_600
+def get_cached_organization_hr_data() -> Dict[str, Any]:
+    """Nạp dữ liệu cơ cấu tổ chức & định biên nhân sự có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_organization_hr_data()
+
+
+@cache_ttl_600
+def get_cached_oil_change_data() -> Dict[str, Any]:
+    """Nạp dữ liệu Lịch thay nhớt hộp số máy ép PE1-PE8 có bộ đệm 600 giây"""
+    loader = DataLoader()
+    return loader.load_oil_change_data()
+
 
 
 

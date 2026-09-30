@@ -30,36 +30,99 @@ KPI_TARGET_PRODUCTIVITY = 4.0     # Chỉ tiêu năng suất chuẩn (tấn/h): 
 
 def clean_numeric(val: Any) -> float:
     """
-    Xử lý lỗi định dạng số và phân cách hàng nghìn (Locale VN vs US).
-    Chuyển đổi chuỗi số từ Google Sheets / Excel về định dạng float chuẩn của Python:
-    - Trong Locale VN: Dấu chấm (.) phân cách hàng nghìn, dấu phẩy (,) là số thập phân.
-    - Xử lý các chuỗi trống, ký hiệu '-', 'None', NaN về 0.0.
-    - Bảo toàn số float/int có sẵn (không biến 4.0 thành 40.0).
+    Chuẩn hóa số liệu từ kiểu Việt Nam / Quốc tế về dạng float chuẩn Python:
+    - Trong Locale VN: Dấu chấm (.) phân cách hàng nghìn, dấu phẩy (,) là số thập phân (vd: 16.415,10 hoặc 3,76)
+    - Xử lý các chuỗi trống, ký hiệu '-', '--', 'None', 'nan', 'NaN', 'N/A' về 0.0
+    - Loại bỏ các ký hiệu đơn vị đo lường phổ biến (tấn, kWh, kg/m3, VND, Lít, %, h...)
+    - Bảo toàn số float/int có sẵn (không biến 4.0 thành 40.0)
+    - Trả về dạng float hợp lệ, tránh lỗi string object khi tính toán hoặc vẽ biểu đồ Plotly.
     """
-    if val is None or pd.isna(val) or str(val).strip() in ['-', '', 'None', 'nan', 'NaN', 'N/A']:
+    if val is None or pd.isna(val):
         return 0.0
     if isinstance(val, (int, float)) and not isinstance(val, bool):
         return float(val)
-    s = str(val).strip()
+
+    s = str(val).strip().replace('\xa0', ' ')
+    if not s or s in ['-', '--', '---', '', 'None', 'nan', 'NaN', 'N/A', 'n/a', 'null', 'Null']:
+        return 0.0
+
+    # Loại bỏ các ký hiệu đơn vị đo lường phổ biến nếu có
     for u in ['tấn', 'tan', 'kWh', 'kwh', 'kg/m3', 'kg/m³', 'VND', 'vnd', 'Lít', 'lit', '%', 'h', '/']:
         s = s.replace(u, '')
     s = s.strip()
-    if ',' in s or s.count('.') > 1:
-        s = s.replace('.', '').replace(',', '.')
-    elif s.count('.') == 1:
-        parts = s.split('.')
-        if len(parts[1]) == 3 and not (len(parts[0]) == 1 and parts[0] == '0'):
-            s = s.replace('.', '')
-        else:
-            pass
-    else:
-        s = s.replace('.', '').replace(',', '.')
-    try:
-        return float(s)
-    except Exception:
+
+    if not s or s in ['-', '--']:
         return 0.0
 
+    # Xử lý dấu âm nếu có
+    is_negative = False
+    if s.startswith('-'):
+        is_negative = True
+        s = s[1:].strip()
+
+    # Nhận diện định dạng số:
+    if '.' in s and ',' in s:
+        last_dot = s.rfind('.')
+        last_comma = s.rfind(',')
+        if last_comma > last_dot:
+            # Chuẩn VN: '.' hàng nghìn, ',' thập phân (vd: 16.415,10 -> 16415.10)
+            s = s.replace('.', '').replace(',', '.')
+        else:
+            # Chuẩn US: ',' hàng nghìn, '.' thập phân (vd: 16,415.10 -> 16415.10)
+            s = s.replace(',', '')
+    elif ',' in s:
+        if s.count(',') > 1:
+            s = s.replace(',', '')
+        else:
+            s = s.replace(',', '.')
+    elif '.' in s:
+        if s.count('.') > 1:
+            s = s.replace('.', '')
+        else:
+            parts = s.split('.')
+            if len(parts[1]) == 3 and len(parts[0]) > 0 and parts[0] != '0':
+                s = s.replace('.', '')
+    else:
+        s = s.replace(' ', '')
+
+    try:
+        res = float(s)
+        return -res if is_negative else res
+    except Exception:
+        m = re.search(r'[-+]?\d*\.?\d+', s)
+        if m:
+            try:
+                res = float(m.group(0))
+                return -res if is_negative else res
+            except Exception:
+                return 0.0
+        return 0.0
+
+
 clean_number = clean_numeric
+
+
+def clean_numeric_series(series: pd.Series) -> pd.Series:
+    """Chuyển đổi toàn bộ một pandas Series về float chuẩn bằng hàm clean_numeric"""
+    if series is None or len(series) == 0:
+        return pd.Series(dtype=float)
+    return series.apply(clean_numeric).astype(float)
+
+
+def clean_numeric_dataframe(df: pd.DataFrame, numeric_cols: Optional[List[str]] = None) -> pd.DataFrame:
+    """Chuẩn hóa các cột số liệu trong DataFrame về float chuẩn"""
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    if numeric_cols is None:
+        numeric_cols = [c for c in df.columns if c not in {
+            'id', 'date', 'date_str', 'shift_leader', 'ca', 'ca_truong', 'equipment', 
+            'machine_code', 'machine_code_510', 'status', 'description', 'activity'
+        }]
+    for c in numeric_cols:
+        if c in df.columns:
+            df[c] = clean_numeric_series(df[c])
+    return df
 
 
 # ==============================================================================
@@ -76,6 +139,27 @@ PE_MACHINE_MAPPING = {
     'PE8': 'PE8510'
 }
 PE_510_TO_PE = {v: k for k, v in PE_MACHINE_MAPPING.items()}
+
+
+def map_pe_code(code: str) -> str:
+    """Chuyển đổi giữa PE1-PE8 và PE1510-PE8510"""
+    c = str(code).strip().upper()
+    if c in PE_MACHINE_MAPPING:
+        return PE_MACHINE_MAPPING[c]
+    if c in PE_510_TO_PE:
+        return PE_510_TO_PE[c]
+    return str(code).strip()
+
+
+def get_pe_aliases(code: str) -> List[str]:
+    """Trả về danh sách mã tương đương của máy ép để lọc/tìm kiếm"""
+    c = str(code).strip().upper()
+    aliases = [c]
+    if c in PE_MACHINE_MAPPING:
+        aliases.append(PE_MACHINE_MAPPING[c])
+    if c in PE_510_TO_PE:
+        aliases.append(PE_510_TO_PE[c])
+    return list(set(aliases))
 
 # Danh mục thiết bị
 EQUIPMENT_INFO = {
@@ -300,7 +384,7 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
     total_nl_all = total_nl_tho + total_nl_dot
     processing_ratio = (total_nl_all / total_output) if total_output > 0 and total_nl_all > 0 else 0.0
 
-    # Nếu có df_daily, đối soát lấy thêm tỷ lệ chế biến, độ ẩm và tỷ trọng viên
+    # Nếu có df_daily, đối soát lấy thêm tỷ lệ chế biến, độ ẩm, tỷ trọng viên, sản lượng và suất điện
     daily_record = {}
     if df_daily is not None and not df_daily.empty:
         daily_match = df_daily[df_daily['date'].dt.date == target_date.date()]
@@ -308,6 +392,14 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
             daily_record = daily_match.iloc[0].to_dict()
             if daily_record.get('ty_le_che_bien', 0) > 0:
                 processing_ratio = float(daily_record.get('ty_le_che_bien', 0))
+            if daily_record.get('san_luong_tan', 0) > 0:
+                total_output = float(daily_record.get('san_luong_tan', 0))
+            if daily_record.get('dien_tb_kwh_tan', 0) > 0:
+                avg_electricity_kwh_ton = float(daily_record.get('dien_tb_kwh_tan', 0))
+            if daily_record.get('nang_suat_tb_tph', 0) > 0:
+                avg_productivity = float(daily_record.get('nang_suat_tb_tph', 0))
+            if daily_record.get('tong_gio_ep', 0) > 0 and total_pellet_hours == 0:
+                total_pellet_hours = float(daily_record.get('tong_gio_ep', 0))
 
     # Lấy độ ẩm trung bình và tỷ trọng viên từ df_daily
     do_am_tb = float(daily_record.get('do_am_tb_pct', 0.0))
@@ -449,6 +541,12 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
         'prod_shifts': prod_shifts,
         'maint_shifts': maint_shifts,
         'off_shifts': off_shifts,
+        'chi_tieu_tan': float(daily_record.get('chi_tieu_tan', 0.0)),
+        'so_su_co': int(daily_record.get('so_su_co', 0)),
+        'gio_dung_may': float(daily_record.get('gio_dung_may', 0.0)),
+        'thiet_bi_su_co': str(daily_record.get('thiet_bi_su_co', '')),
+        'diezen_lit': float(daily_record.get('diezen_lit', 0.0)),
+        'diezen_tb_lit_tan': float(daily_record.get('diezen_tb_lit_tan', 0.0)),
     }
 
 
