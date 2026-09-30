@@ -368,7 +368,7 @@ def clean_numeric_dataframe(df: pd.DataFrame, numeric_cols: Optional[List[str]] 
         'machine_code_510', 'machine_name', 'oil_type', 'pillar', 'objective', 'action',
         'pic', 'deadline', 'evaluation', 'material_status', 'leader', 'equipment_code',
         'priority', 'start_date', 'end_date', 'sensor_code', 'luoi_nghien_tho', 'luoi_nghien_tinh',
-        'chieu_dai_vien', 'ty_le_nl_dot', 'ty_le_phoi_tron', 'duration_str'
+        'chieu_dai_vien', 'ty_le_nl_dot', 'ty_le_phoi_tron', 'duration_str', 'month', 'year'
     }
 
     if numeric_cols is None:
@@ -976,9 +976,21 @@ class DataLoader:
                         if dur_col:
                             gio_dung_may = float(i_grp[dur_col].sum())
                         for _, ir in i_grp.iterrows():
-                            eq = str(ir.get('thiet_bi', ir.get('equipment_code', ir.get('vi_tri', '')))).strip()
-                            desc = str(ir.get('noi_dung', ir.get('mo_ta', ''))).strip()
-                            su_co_list.append(f"{eq}: {desc}" if eq else desc)
+                            eq = str(ir.get('equipment_raw') or ir.get('thiet_bi') or ir.get('equipment_code') or ir.get('vi_tri') or '').strip()
+                            desc = str(ir.get('description') or ir.get('noi_dung') or ir.get('mo_ta') or '').strip()
+                            dur = float(ir.get('duration_hours') if ir.get('duration_hours') is not None else (ir.get('thoi_gian_dung_gio') or 0.0))
+                            st_val = str(ir.get('status') or ir.get('trang_thai') or '').strip()
+                            parts = []
+                            if eq:
+                                parts.append(eq)
+                            if desc:
+                                parts.append(desc)
+                            if dur > 0:
+                                parts.append(f"({dur:.1f}h)")
+                            if st_val:
+                                parts.append(f"[{st_val}]")
+                            if parts:
+                                su_co_list.append(" - ".join(parts))
 
                 # Dầu diezen từ df_weekly
                 diezen_lit = 0.0
@@ -1015,7 +1027,7 @@ class DataLoader:
                     'so_ca_san_xuat': int(len(grp[grp['sl_thuc_te'] > 0])),
                     'so_su_co': so_su_co,
                     'gio_dung_may': round(gio_dung_may, 1),
-                    'thiet_bi_su_co': "; ".join(su_co_list[:3]),
+                    'thiet_bi_su_co': "; ".join(su_co_list[:5]),
                 }
                 for pcol, ph in pe_hours.items():
                     rec[pcol] = ph
@@ -1128,10 +1140,22 @@ class DataLoader:
     def load_monthly_report(self) -> pd.DataFrame:
         """
         Đọc và chuẩn hóa dữ liệu báo cáo tháng từ sheet 'Monthly report'.
+        Bao gồm cả Hàng 19: Đăng ký sản lượng (chỉ tiêu kế hoạch tháng).
         """
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_monthly_report.parquet"),
+            os.path.join("assets", "cache_monthly_report.parquet"),
+            os.path.join("deploy_files", "assets", "cache_monthly_report.parquet"),
+        ]
         try:
             rows = self.get_sheet_values('Monthly report')
-            if len(rows) < 17:
+            if not rows or len(rows) < 17:
+                for cp in cache_paths:
+                    if os.path.exists(cp):
+                        try:
+                            return clean_numeric_dataframe(pd.read_parquet(cp))
+                        except Exception:
+                            pass
                 return pd.DataFrame()
 
             month_row = rows[0]
@@ -1143,11 +1167,26 @@ class DataLoader:
                     continue
 
                 san_luong = clean_number(rows[1][col_idx]) if len(rows) > 1 and col_idx < len(rows[1]) else 0.0
-                if san_luong == 0:
+                dang_ky_sl = clean_number(rows[18][col_idx]) if len(rows) > 18 and col_idx < len(rows[18]) else 0.0
+                if 0 < dang_ky_sl < 50:
+                    dang_ky_sl = dang_ky_sl * 1000.0
+                if san_luong == 0 and dang_ky_sl == 0:
                     continue
+
+                m_val = 0
+                y_val = 2026
+                if '/' in m_str:
+                    parts = m_str.split('/')
+                    try:
+                        m_val = int(parts[0])
+                        y_val = int(parts[1]) if len(parts) > 1 else 2026
+                    except Exception:
+                        pass
 
                 record = {
                     'month_label': m_str,
+                    'month': m_val,
+                    'year': y_val,
                     'san_luong_tan': san_luong,
                     'gio_hoat_dong': clean_number(rows[2][col_idx]) if len(rows) > 2 and col_idx < len(rows[2]) else 0.0,
                     'nang_suat_ep_tph': clean_number(rows[3][col_idx]) if len(rows) > 3 and col_idx < len(rows[3]) else 0.0,
@@ -1165,12 +1204,32 @@ class DataLoader:
                     'ty_le_che_bien': clean_number(rows[15][col_idx]) if len(rows) > 15 and col_idx < len(rows[15]) else 0.0,
                     'nl_mua_tan': clean_number(rows[16][col_idx]) if len(rows) > 16 and col_idx < len(rows[16]) else 0.0,
                     'ton_kho_tan': clean_number(rows[17][col_idx]) if len(rows) > 17 and col_idx < len(rows[17]) else 0.0,
+                    'dang_ky_san_luong': dang_ky_sl,
+                    'chi_tieu_tan': dang_ky_sl,
+                    'chi_tieu_san_luong_tan': dang_ky_sl,
+                    'chi_tieu_dien_kwh_tan': clean_number(rows[19][col_idx]) if len(rows) > 19 and col_idx < len(rows[19]) else 175.0,
+                    'chi_tieu_nang_suat_tph': clean_number(rows[20][col_idx]) if len(rows) > 20 and col_idx < len(rows[20]) else 4.0,
+                    'chi_tieu_do_am_pct': clean_number(rows[21][col_idx]) if len(rows) > 21 and col_idx < len(rows[21]) else 8.5,
                 }
                 records.append(record)
 
-            return clean_numeric_dataframe(pd.DataFrame(records))
+            df = clean_numeric_dataframe(pd.DataFrame(records))
+            if not df.empty:
+                for cp in cache_paths:
+                    try:
+                        os.makedirs(os.path.dirname(cp), exist_ok=True)
+                        df.to_parquet(cp, index=False)
+                    except Exception:
+                        pass
+            return df
         except Exception as e:
             print(f"[-] Lỗi nạp Monthly report: {e}")
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        return clean_numeric_dataframe(pd.read_parquet(cp))
+                    except Exception:
+                        pass
             return pd.DataFrame()
 
     @staticmethod
@@ -1944,7 +2003,14 @@ class DataLoader:
         """
         Đọc và chuẩn hóa dữ liệu từ sheet 'Su co' trong file sản xuất.
         Gồm: ID Sự cố, Ngày, Trưởng ca, Mã thiết bị/zone, Hoạt động, Mô tả sự cố, Xử lý, Người làm, Thời gian dừng máy, Trạng thái.
+        Tự động lưu và đồng bộ bộ đệm cache_incidents.parquet.
         """
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_incidents.parquet"),
+            os.path.join("assets", "cache_incidents.parquet"),
+            os.path.join("deploy_files", "assets", "cache_incidents.parquet"),
+        ]
+
         rows = self.get_sheet_values('Su co')
         if not rows or len(rows) < 2:
             if self.maint_log_spreadsheet:
@@ -1953,7 +2019,14 @@ class DataLoader:
                     rows = ws_sc.get_all_values()
                 except Exception as e_sc:
                     print(f"[-] Lỗi đọc sheet Su co từ maint spreadsheet: {e_sc}")
+
         if not rows or len(rows) < 2:
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        return clean_numeric_dataframe(pd.read_parquet(cp))
+                    except Exception:
+                        pass
             return pd.DataFrame()
 
         records = []
@@ -1989,6 +2062,10 @@ class DataLoader:
                 duration_h = clean_number(r[9]) if len(r) > 9 else 0.0
                 status = r[10].strip() if len(r) > 10 else ''
 
+            # Bỏ qua các dòng trống ảo trên Google Sheets
+            if not date_raw and not equipment_raw and not description:
+                continue
+
             eq_list = [eq.strip() for eq in equipment_raw.replace(';', ',').split(',') if eq.strip()] if equipment_raw else []
             if not status and (description or equipment_raw):
                 status = 'Hoàn thành'
@@ -2006,17 +2083,35 @@ class DataLoader:
                 'month_label': f"Tháng {month_num}" if month_num > 0 else '',
                 'shift_leader': shift_leader,
                 'equipment_raw': equipment_raw,
+                'equipment': equipment_raw,
+                'equipment_code': equipment_raw,
+                'thiet_bi': equipment_raw,
+                'vi_tri': equipment_raw,
                 'equipment_list': eq_list,
                 'sensor_code': sensor_code,
                 'activity': activity,
                 'description': description,
+                'noi_dung': description,
+                'mo_ta': description,
                 'solution': solution,
+                'bien_phap': solution,
                 'performer': performer,
+                'nguoi_lam': performer,
                 'duration_hours': duration_h,
-                'status': status
+                'thoi_gian_dung_gio': duration_h,
+                'status': status,
+                'trang_thai': status
             })
 
         df = pd.DataFrame(records)
+        if not df.empty:
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+            for cp in cache_paths:
+                try:
+                    os.makedirs(os.path.dirname(cp), exist_ok=True)
+                    df.to_parquet(cp, index=False)
+                except Exception:
+                    pass
         return clean_numeric_dataframe(df)
 
     def load_maintenance_log(self) -> pd.DataFrame:

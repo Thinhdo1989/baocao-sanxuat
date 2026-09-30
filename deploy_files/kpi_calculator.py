@@ -341,7 +341,7 @@ def classify_shift_counts(df_subset: pd.DataFrame, num_days: Optional[int] = Non
     return prod_count, maint_count, off_count
 
 
-def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, df_kcs: pd.DataFrame = None, target_date: Any = None) -> Dict[str, Any]:
+def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, df_kcs: pd.DataFrame = None, target_date: Any = None, df_monthly: pd.DataFrame = None) -> Dict[str, Any]:
     """
     Tính toán toàn diện chỉ số KPI cho ngày gần nhất hoặc ngày được chọn.
     """
@@ -511,6 +511,58 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
 
     tot_xuat_day = float(day_shifts['xuat_hang_tan'].sum()) if (not day_shifts.empty and 'xuat_hang_tan' in day_shifts.columns) else 0.0
 
+    # Tính toán khối lượng sản xuất lũy kế từ đầu tháng tới ngày hiện tại (MTD) và chỉ tiêu tháng
+    target_year = target_date.year
+    target_month = target_date.month
+
+    month_output = 0.0
+    if df_shifts is not None and not df_shifts.empty and 'date' in df_shifts.columns:
+        m_mask = (
+            (df_shifts['date'].dt.year == target_year) & 
+            (df_shifts['date'].dt.month == target_month) & 
+            (df_shifts['date'].dt.date <= target_date.date())
+        )
+        month_output = float(df_shifts[m_mask]['san_luong_tan'].sum())
+
+    if df_daily is not None and not df_daily.empty and 'date' in df_daily.columns:
+        d_mask = (
+            (df_daily['date'].dt.year == target_year) & 
+            (df_daily['date'].dt.month == target_month) & 
+            (df_daily['date'].dt.date <= target_date.date())
+        )
+        d_m_out = float(df_daily[d_mask]['san_luong_tan'].sum())
+        if d_m_out > 0:
+            month_output = d_m_out
+
+    # Chỉ tiêu sản lượng cả tháng: Ưu tiên lấy từ Hàng 19 sheet 'Monthly report' (Đăng ký sản lượng)
+    month_target = 0.0
+    if df_monthly is not None and not df_monthly.empty:
+        col_tgt = 'dang_ky_san_luong' if 'dang_ky_san_luong' in df_monthly.columns else ('chi_tieu_tan' if 'chi_tieu_tan' in df_monthly.columns else '')
+        if col_tgt:
+            m_sub = pd.DataFrame()
+            if 'month' in df_monthly.columns and 'year' in df_monthly.columns:
+                m_sub = df_monthly[(df_monthly['month'] == target_month) & (df_monthly['year'] == target_year)]
+            if m_sub.empty and 'month_label' in df_monthly.columns:
+                m_str_1 = f"{target_month:02d}/{target_year}"
+                m_str_2 = f"{target_month}/{target_year}"
+                m_sub = df_monthly[df_monthly['month_label'].astype(str).str.contains(f"{m_str_1}|{m_str_2}", na=False)]
+            if not m_sub.empty:
+                val_tgt = float(m_sub.iloc[0][col_tgt])
+                if val_tgt > 0:
+                    month_target = val_tgt
+
+    # Fallback nếu df_monthly chưa có
+    if month_target == 0 and df_daily is not None and not df_daily.empty and 'date' in df_daily.columns and 'chi_tieu_tan' in df_daily.columns:
+        d_full_m = (df_daily['date'].dt.year == target_year) & (df_daily['date'].dt.month == target_month)
+        month_target = float(df_daily[d_full_m]['chi_tieu_tan'].sum())
+
+    if month_target == 0 and df_shifts is not None and not df_shifts.empty and 'date' in df_shifts.columns and 'chi_tieu_tan' in df_shifts.columns:
+        s_full_m = (df_shifts['date'].dt.year == target_year) & (df_shifts['date'].dt.month == target_month)
+        month_target = float(df_shifts[s_full_m]['chi_tieu_tan'].sum())
+
+    month_diff = round(month_target - month_output, 1) if month_target > 0 else 0.0
+    month_pct = round((month_output / month_target * 100.0), 1) if month_target > 0 else 0.0
+
     return {
         'date': target_date,
         'date_str': target_date.strftime('%d/%m/%Y'),
@@ -547,6 +599,11 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
         'thiet_bi_su_co': str(daily_record.get('thiet_bi_su_co', '')),
         'diezen_lit': float(daily_record.get('diezen_lit', 0.0)),
         'diezen_tb_lit_tan': float(daily_record.get('diezen_tb_lit_tan', 0.0)),
+        'month_output': round(month_output, 2),
+        'month_target': round(month_target, 2),
+        'month_diff': month_diff,
+        'month_pct': month_pct,
+        'target_month': target_month,
     }
 
 

@@ -360,14 +360,20 @@ if calculate_kpi_components is None:
             'diem_kpi': round(diem_sl + diem_am + diem_ns, 2)
         }
 
-@st.cache_data(ttl=600)
-def load_all_factory_data():
-    """Tải và lưu đệm dữ liệu từ các Google Sheets trong 600 giây (10 phút) để tối ưu hiệu năng và tránh quota limit"""
+@st.cache_resource
+def get_data_loader() -> DataLoader:
+    """Tạo và duy trì singleton kết nối DataLoader an toàn với st.cache_resource (không bị lỗi pickle của st.cache_data)"""
     loader = DataLoader()
     try:
         loader.connect()
     except Exception as e:
         print(f"[-] Loader connect warning: {e}")
+    return loader
+
+@st.cache_data(ttl=600)
+def load_all_factory_data():
+    """Tải và lưu đệm dữ liệu từ các Google Sheets trong 600 giây (10 phút) để tối ưu hiệu năng và tránh quota limit"""
+    loader = get_data_loader()
 
     try:
         df_shifts = loader.load_shift_data()
@@ -512,7 +518,6 @@ def load_all_factory_data():
         'grease_data': grease_data,
         'process_data': process_data,
         'oil_change_data': oil_change_data,
-        'loader': loader,
         'prod_title': loader.spreadsheet.title if (loader.spreadsheet and hasattr(loader.spreadsheet, 'title')) else "2026 BVN QB Nhật kí sản xuất",
         'kpi_title': loader.kpi_spreadsheet.title if (loader.kpi_spreadsheet and hasattr(loader.kpi_spreadsheet, 'title')) else "2026 Nhat ky KPI",
         'maint_log_title': loader.maint_log_spreadsheet.title if (loader.maint_log_spreadsheet and hasattr(loader.maint_log_spreadsheet, 'title')) else "Maninternance BVNQB",
@@ -534,6 +539,7 @@ df_chart_moist = pd.DataFrame()
 df_chart_dien = pd.DataFrame()
 df_chart_cap = pd.DataFrame()
 df_chart_sl = pd.DataFrame()
+df_kpi_shifts = pd.DataFrame()
 df_incidents = pd.DataFrame()
 df_maint_log = pd.DataFrame()
 df_maint_plan = pd.DataFrame()
@@ -557,6 +563,7 @@ if not check_viewer_authorization():
 # Load dữ liệu
 try:
     with st.spinner("Đang kết nối 6 Google Sheets và nạp dữ liệu sản xuất, KPI, bảo trì, quy trình & lịch thay nhớt..."):
+        app_loader = get_data_loader()
         data = load_all_factory_data()
         df_shifts = data.get('shifts', df_shifts)
         df_daily = data.get('daily', df_daily)
@@ -580,7 +587,7 @@ try:
         grease_data = data.get('grease_data', grease_data)
         process_data = data.get('process_data', process_data)
         oil_change_data = data.get('oil_change_data', oil_change_data)
-        app_loader = data.get('loader', None)
+        app_loader = app_loader or data.get('loader', None)
         sheet_title = data.get('prod_title', sheet_title)
         kpi_sheet_title = data.get('kpi_title', kpi_sheet_title)
         maint_log_title = data.get('maint_log_title', maint_log_title)
@@ -1032,6 +1039,7 @@ with st.sidebar:
     
     if st.button(t("🔄 Làm Mới Dữ Liệu (Refresh)", "🔄 Refresh Data"), key="sidebar_manual_refresh_btn", use_container_width=True, help=t("Xóa bộ nhớ đệm và tải lại dữ liệu mới nhất từ Google Sheets", "Clear cache and reload latest data from Google Sheets")):
         st.cache_data.clear()
+        st.cache_resource.clear()
         if 'hr_data' in st.session_state:
             del st.session_state['hr_data']
         st.rerun()
@@ -1355,16 +1363,78 @@ def render_factory_dashboard_cards(kpis_data, df_weekly_data):
 
         st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), f"{dz_disp_r:.1f}", t("Lít/tấn", "L/ton"), dz_disp_sub, "badge-info"), unsafe_allow_html=True)
 
-    # Hàng 3: Tồn Kho & Xuất Hàng Kho Thành Phẩm (Kho BVN Quảng Bình)
+    # Hàng 3: Khối lượng sản xuất lũy kế tháng, Chỉ tiêu tháng, Tồn kho & Xuất hàng (4 thẻ chuẩn công nghiệp)
+    m_out = float(kpis_data.get('month_output', 0.0))
+    m_tgt = float(kpis_data.get('month_target', 0.0))
+    m_diff = float(kpis_data.get('month_diff', 0.0))
+    m_pct = float(kpis_data.get('month_pct', 0.0))
+    m_num = int(kpis_data.get('target_month', 0))
+    m_suffix = f" (Tháng {m_num})" if m_num > 0 else ""
+    m_suffix_en = f" (M{m_num})" if m_num > 0 else ""
+
+    # Nếu kpis_data chưa có month_output, dự phòng lấy total_output
+    if m_out == 0 and 'total_output' in kpis_data:
+        m_out = float(kpis_data.get('total_output', 0.0))
+
+    # Ghi chú khối lượng còn thiếu so với chỉ tiêu của tháng
+    if m_tgt > 0:
+        if m_diff > 0:
+            m_badge_txt = t(f"⚠️ Còn thiếu {m_diff:,.1f} t so chỉ tiêu", f"⚠️ Short {m_diff:,.1f} t vs target")
+            m_badge_cls = "badge-warning"
+        else:
+            surplus = abs(m_diff)
+            pct_over = m_pct - 100.0
+            m_badge_txt = t(f"🎯 Vượt chỉ tiêu +{surplus:,.1f} t (+{pct_over:.1f}%)", f"🎯 Exceeded +{surplus:,.1f} t (+{pct_over:.1f}%)")
+            m_badge_cls = "badge-success"
+        
+        tgt_badge_txt = t(f"🟢 Đạt {m_pct:.1f}% kế hoạch", f"🟢 Reached {m_pct:.1f}% of plan") if m_pct >= 100 else t(f"📊 Đạt {m_pct:.1f}% kế hoạch", f"📊 Reached {m_pct:.1f}% of plan")
+        tgt_badge_cls = "badge-success" if m_pct >= 100 else "badge-info"
+    else:
+        m_badge_txt = t("Lũy kế đầu tháng đến nay", "Month to date")
+        m_badge_cls = "badge-info"
+        tgt_badge_txt = t("Chưa thiết lập chỉ tiêu", "No target set")
+        tgt_badge_cls = "badge-info"
+
     tk_val = float(kpis_data.get('ton_kho_tan', 0.0))
     xh_val = float(kpis_data.get('xuat_hang_tan', 0.0))
-    r3_c1, r3_c2 = st.columns(2)
+
+    r3_c1, r3_c2, r3_c3, r3_c4 = st.columns(4)
     with r3_c1:
-        st.markdown(render_kpi_card_html(t("Tồn Kho Viên Nén (Cuối Kỳ)", "Pellet Inventory (End of Period)"), f"{tk_val:,.1f}", t("Tấn", "Tons"), t("📦 Kho Thành Phẩm BVN Quảng Bình", "📦 BVN Quang Binh Finished Warehouse"), "badge-info"), unsafe_allow_html=True)
+        st.markdown(render_kpi_card_html(
+            t(f"Lũy Kế Sản Lượng{m_suffix}", f"Accumulated Output{m_suffix_en}"),
+            f"{m_out:,.1f}",
+            t("Tấn", "Tons"),
+            m_badge_txt,
+            m_badge_cls
+        ), unsafe_allow_html=True)
     with r3_c2:
+        tgt_disp = f"{m_tgt:,.1f}" if m_tgt > 0 else "--"
+        tgt_unit = t("Tấn", "Tons") if m_tgt > 0 else ""
+        st.markdown(render_kpi_card_html(
+            t(f"Chỉ Tiêu Sản Lượng{m_suffix}", f"Monthly Target{m_suffix_en}"),
+            tgt_disp,
+            tgt_unit,
+            tgt_badge_txt,
+            tgt_badge_cls
+        ), unsafe_allow_html=True)
+    with r3_c3:
+        st.markdown(render_kpi_card_html(
+            t("Tồn Kho Viên Nén (Cuối Kỳ)", "Pellet Inventory (End of Period)"),
+            f"{tk_val:,.1f}",
+            t("Tấn", "Tons"),
+            t("📦 Kho BVN Quảng Bình", "📦 BVN Finished Warehouse"),
+            "badge-info"
+        ), unsafe_allow_html=True)
+    with r3_c4:
         xh_badge = t(f"🚛 {xh_val:,.1f} Tấn xuất kho", f"🚛 {xh_val:,.1f} Tons shipped") if xh_val > 0 else t("Chưa phát sinh xuất hàng trong kỳ", "No shipments in period")
         xh_cls = "badge-success" if xh_val > 0 else "badge-info"
-        st.markdown(render_kpi_card_html(t("Lũy Kế Xuất Hàng (Trong Kỳ)", "Accumulated Shipments (In Period)"), f"{xh_val:,.1f}", t("Tấn", "Tons"), xh_badge, xh_cls), unsafe_allow_html=True)
+        st.markdown(render_kpi_card_html(
+            t("Lũy Kế Xuất Hàng (Trong Kỳ)", "Accumulated Shipments (In Period)"),
+            f"{xh_val:,.1f}",
+            t("Tấn", "Tons"),
+            xh_badge,
+            xh_cls
+        ), unsafe_allow_html=True)
 
 # Hàm hiển thị Vị trí 1: Dashboard Online trạng thái sản xuất của ngày trước đó / gần nhất
 def render_online_daily_dashboard(online_kpis: dict, df_weekly_data: pd.DataFrame, oil_change_data: dict, df_incidents_data: pd.DataFrame, df_daily_data: pd.DataFrame, df_shifts_data: pd.DataFrame = None):
@@ -1488,44 +1558,121 @@ def render_online_daily_dashboard(online_kpis: dict, df_weekly_data: pd.DataFram
         tb_su_co = str(online_kpis.get('thiet_bi_su_co', ''))
 
         day_incidents = []
-        if df_incidents_data is not None and not df_incidents_data.empty and 'date' in df_incidents_data.columns and online_date is not None:
-            o_d = online_date.date() if hasattr(online_date, 'date') else pd.to_datetime(online_date).date()
-            match_inc = df_incidents_data[df_incidents_data['date'].dt.date == o_d]
+        if df_incidents_data is not None and not df_incidents_data.empty and online_date is not None:
+            try:
+                o_d = online_date.date() if hasattr(online_date, 'date') else pd.to_datetime(online_date).date()
+                if 'date' in df_incidents_data.columns:
+                    inc_dates = pd.to_datetime(df_incidents_data['date'], errors='coerce').dt.date
+                    match_inc = df_incidents_data[inc_dates == o_d]
+                elif 'date_str' in df_incidents_data.columns:
+                    match_inc = df_incidents_data[df_incidents_data['date_str'].astype(str).str.strip() == online_date_str]
+                else:
+                    match_inc = pd.DataFrame()
+            except Exception:
+                match_inc = pd.DataFrame()
+
             for _, ir in match_inc.iterrows():
-                eq = str(ir.get('thiet_bi', ir.get('equipment_code', ir.get('vi_tri', '')))).strip()
-                desc = str(ir.get('noi_dung', ir.get('mo_ta', ''))).strip()
-                h_stop = float(ir.get('thoi_gian_dung_gio', ir.get('duration_hours', 0.0)))
-                status = str(ir.get('trang_thai', ir.get('status', 'Xử lý xong'))).strip()
-                day_incidents.append((eq, desc, h_stop, status))
+                eq = str(ir.get('equipment_raw') or ir.get('thiet_bi') or ir.get('equipment_code') or ir.get('vi_tri') or ir.get('equipment') or '').strip()
+                desc = str(ir.get('description') or ir.get('noi_dung') or ir.get('mo_ta') or '').strip()
+                dur_raw = ir.get('duration_hours') if ir.get('duration_hours') is not None else ir.get('thoi_gian_dung_gio')
+                try:
+                    h_stop = float(dur_raw) if dur_raw is not None else 0.0
+                except (ValueError, TypeError):
+                    h_stop = 0.0
+                status = str(ir.get('status') or ir.get('trang_thai') or '').strip()
+                solution = str(ir.get('solution') or ir.get('bien_phap') or '').strip()
+                performer = str(ir.get('performer') or ir.get('nguoi_lam') or '').strip()
+                if eq or desc or h_stop > 0:
+                    day_incidents.append((eq, desc, h_stop, status, solution, performer))
+
+        # Đồng bộ lại số lượng và tổng giờ dừng nếu có bản ghi chi tiết
+        if day_incidents:
+            so_su_co = len(day_incidents)
+            gio_dung_may = sum(item[2] for item in day_incidents)
+
+        # Kiểm tra xem có sự cố nào chưa khắc phục xong không
+        has_unresolved = False
+        for _, _, _, st_val, _, _ in day_incidents:
+            st_l = st_val.lower()
+            if any(w in st_l for w in ['chưa', 'chua', 'đang', 'dang', 'chờ', 'pending', 'chuyển ca', 'chuyen ca']):
+                has_unresolved = True
+                break
 
         if so_su_co > 0 or gio_dung_may > 0:
-            inc_color = "#f59e0b"
-            inc_status_badge = f"<span style='color: #fbbf24; font-weight: 800;'>⚠️ {so_su_co} vụ sự cố ({gio_dung_may:.1f}h dừng máy)</span>"
+            if has_unresolved:
+                inc_color = "#ef4444"
+                inc_status_badge = f"<span style='color: #f87171; font-weight: 800;'>🚨 {so_su_co} {t('vụ sự cố', 'incidents')} ({gio_dung_may:.1f}h {t('dừng máy', 'downtime')})</span>"
+            else:
+                inc_color = "#f59e0b"
+                inc_status_badge = f"<span style='color: #fbbf24; font-weight: 800;'>⚠️ {so_su_co} {t('vụ sự cố', 'incidents')} ({gio_dung_may:.1f}h {t('dừng máy', 'downtime')})</span>"
         else:
             inc_color = "#22c55e"
-            inc_status_badge = "<span style='color: #4ade80; font-weight: 700;'>🟢 Không có sự cố dừng máy</span>"
+            inc_status_badge = f"<span style='color: #4ade80; font-weight: 700;'>🟢 {t('Không có sự cố dừng máy', 'No breakdown reported')}</span>"
 
         inc_items_html = ""
         if day_incidents:
-            for eq, desc, hs, st_txt in day_incidents[:3]:
-                eq_str = eq if eq else "Thiết bị"
-                desc_str = (desc[:38] + "...") if len(desc) > 38 else desc
-                inc_items_html += f'<div style="font-size: 11px; background: rgba(255,255,255,0.06); border-left: 3px solid #f59e0b; padding: 4px 6px; margin-top: 4px; border-radius: 4px;"><strong style="color: #fde68a;">{eq_str}:</strong> {desc_str} <span style="color: #94a3b8;">({hs:.1f}h)</span></div>'
-        elif tb_su_co:
-            tb_str = (tb_su_co[:90] + "...") if len(tb_su_co) > 90 else tb_su_co
-            inc_items_html = f'<div style="font-size: 11px; color: #cbd5e1; margin-top: 4px;">{tb_str}</div>'
+            for eq, desc, hs, st_txt, sol, perf in day_incidents:
+                eq_str = eq if eq else t("Chưa rõ thiết bị", "Unknown Equipment")
+
+                # Xác định badge trạng thái: Đã khắc phục / Chưa khắc phục / Chuyển ca
+                st_lower = st_txt.lower() if st_txt else ""
+                if any(w in st_lower for w in ['chưa', 'chua', 'đang', 'dang', 'chờ', 'pending']):
+                    st_badge = f'<span style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.45); padding: 1.5px 7px; border-radius: 4px; font-weight: 700; font-size: 10px; white-space: nowrap;">🔴 {t("Chưa khắc phục", "Unresolved")}</span>'
+                    item_border = "#ef4444"
+                elif any(w in st_lower for w in ['chuyển ca', 'chuyen ca']):
+                    st_badge = f'<span style="background: rgba(249, 115, 22, 0.2); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.45); padding: 1.5px 7px; border-radius: 4px; font-weight: 700; font-size: 10px; white-space: nowrap;">🔄 {t("Chuyển ca tiếp", "Handed over")}</span>'
+                    item_border = "#f97316"
+                else:
+                    st_badge = f'<span style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.45); padding: 1.5px 7px; border-radius: 4px; font-weight: 700; font-size: 10px; white-space: nowrap;">✅ {t("Đã khắc phục", "Resolved")}</span>'
+                    item_border = "#22c55e"
+
+                # Badge số giờ bị dừng máy
+                if hs > 0:
+                    dur_badge = f'<span style="color: #38bdf8; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); padding: 1.5px 6px; border-radius: 4px; font-weight: 700; font-size: 10.5px; white-space: nowrap;">⏱️ {hs:.1f}h</span>'
+                else:
+                    dur_badge = f'<span style="color: #94a3b8; background: rgba(148, 163, 184, 0.1); border: 1px solid rgba(148, 163, 184, 0.25); padding: 1.5px 6px; border-radius: 4px; font-weight: 600; font-size: 10.5px; white-space: nowrap;">⏱️ 0.0h</span>'
+
+                # Mô tả sự cố & Biện pháp khắc phục
+                desc_html = f'<div style="font-size: 11px; color: #e2e8f0; margin-top: 3px; line-height: 1.35;">⚠️ <strong>{t("Sự cố:", "Issue:")}</strong> {desc}</div>' if desc else ""
+                sol_html = f'<div style="font-size: 10.5px; color: #94a3b8; margin-top: 2px; line-height: 1.35;">🔧 <strong>{t("Xử lý:", "Action:")}</strong> {sol}</div>' if sol else ""
+
+                inc_items_html += f"""
+                <div style="background: rgba(255,255,255,0.04); border: 1px solid #334155; border-left: 3.5px solid {item_border}; padding: 6px 9px; margin-top: 6px; border-radius: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <span style="font-weight: 800; color: #fde68a; font-size: 11.5px; letter-spacing: 0.2px;">⚙️ {eq_str}</span>
+                        <div style="display: flex; gap: 5px; align-items: center;">
+                            {dur_badge}
+                            {st_badge}
+                        </div>
+                    </div>
+                    {desc_html}
+                    {sol_html}
+                </div>
+                """
+        elif tb_su_co and tb_su_co.replace(';', '').strip():
+            raw_items = [s.strip() for s in tb_su_co.split(';') if s.strip()]
+            for itm in raw_items:
+                inc_items_html += f"""
+                <div style="background: rgba(255,255,255,0.04); border: 1px solid #334155; border-left: 3px solid #f59e0b; padding: 6px 9px; margin-top: 6px; border-radius: 6px;">
+                    <span style="font-weight: 700; color: #fde68a; font-size: 11.5px;">⚙️ {itm}</span>
+                </div>
+                """
+        elif so_su_co > 0 or gio_dung_may > 0:
+            inc_items_html = f'<div style="font-size: 11px; color: #facc15; margin-top: 6px;">⚠️ {t("Có phát sinh dừng máy nhưng chưa ghi nhận chi tiết mã máy.", "Downtime recorded without machine detail.")}</div>'
         else:
-            inc_items_html = '<div style="font-size: 11.5px; color: #86efac; margin-top: 6px;">✨ Dây chuyền hoạt động liên tục, ổn định trong cả 3 ca sản xuất.</div>'
+            inc_items_html = f'<div style="font-size: 11.5px; color: #86efac; margin-top: 6px;">✨ {t("Dây chuyền hoạt động liên tục, ổn định trong cả 3 ca sản xuất.", "Continuous operation across all 3 shifts.")}</div>'
 
         st.markdown(clean_html(f"""
-        <div style="background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid {inc_color}; border-radius: 10px; padding: 12px 14px; height: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-            <div style="font-size: 13.5px; font-weight: 800; color: #fbbf24; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+        <div style="background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid {inc_color}; border-radius: 10px; padding: 12px 14px; height: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; flex-direction: column;">
+            <div style="font-size: 13.5px; font-weight: 800; color: #fbbf24; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
                 <span style="display: flex; align-items: center; gap: 8px;"><span>🛠️</span> <span>{t("CHỈ SỐ SỰ CỐ TRONG NGÀY", "DAILY INCIDENTS")}</span></span>
-                <span style="font-size: 11px; background: #334155; padding: 1px 7px; border-radius: 10px; color: #94a3b8;">Dừng: {gio_dung_may:.1f}h</span>
+                <span style="font-size: 11px; background: #334155; padding: 2px 8px; border-radius: 10px; color: #94a3b8; font-weight: 700;">Dừng: {gio_dung_may:.1f}h</span>
             </div>
-            <div style="font-size: 11.5px; line-height: 1.8; color: #cbd5e1;">
+            <div style="font-size: 11.5px; line-height: 1.6; color: #cbd5e1; flex: 1;">
                 <div style="margin-bottom: 4px;">{inc_status_badge}</div>
-                {inc_items_html}
+                <div style="max-height: 250px; overflow-y: auto; padding-right: 2px;">
+                    {inc_items_html}
+                </div>
             </div>
         </div>
         """), unsafe_allow_html=True)
@@ -1625,7 +1772,7 @@ def render_online_daily_dashboard(online_kpis: dict, df_weekly_data: pd.DataFram
 
 # ================= VỊ TRÍ 1: TRẠNG THÁI SẢN XUẤT ONLINE TOÀN NHÀ MÁY (NGÀY GẦN NHẤT) =================
 latest_online_date = df_daily['date'].max() if (not df_daily.empty and 'date' in df_daily.columns) else (df_shifts['date'].max() if not df_shifts.empty else datetime.now())
-online_kpis = get_latest_day_kpis(df_shifts, df_daily, df_kcs=df_kcs, target_date=latest_online_date)
+online_kpis = get_latest_day_kpis(df_shifts, df_daily, df_kcs=df_kcs, df_monthly=df_monthly, target_date=latest_online_date)
 render_online_daily_dashboard(online_kpis, df_weekly, oil_change_data, df_incidents, df_daily, df_shifts)
 
 st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
@@ -1696,6 +1843,7 @@ with col_top_refresh:
         help=t("Xóa bộ nhớ đệm và tải lại số liệu mới nhất từ Google Sheets ngay lập tức (dành cho điện thoại & máy tính)", "Clear cache and reload latest data from Google Sheets immediately (for mobile & desktop)")
     ):
         st.cache_data.clear()
+        st.cache_resource.clear()
         if 'hr_data' in st.session_state:
             del st.session_state['hr_data']
         st.rerun()
@@ -1930,6 +2078,30 @@ if is_week_mode and selected_week_sidebar:
         output_badge_txt = t(f"Tuần {w_num}", f"Week {w_num}")
         output_badge_cls = "badge-info"
 
+    w_m_num = int(w_shifts['date'].dt.month.mode()[0]) if ('date' in w_shifts.columns and not w_shifts.empty) else 9
+    w_m_shifts = df_filtered_shifts[
+        (df_filtered_shifts['date'].dt.month == w_m_num) & 
+        (df_filtered_shifts['date'].dt.year == 2026)
+    ] if ('date' in df_filtered_shifts.columns and not df_filtered_shifts.empty) else pd.DataFrame()
+    w_m_out = float(w_m_shifts['san_luong_tan'].sum()) if not w_m_shifts.empty else 0.0
+    w_m_tgt = 0.0
+    if df_monthly is not None and not df_monthly.empty:
+        col_tgt = 'dang_ky_san_luong' if 'dang_ky_san_luong' in df_monthly.columns else ('chi_tieu_tan' if 'chi_tieu_tan' in df_monthly.columns else '')
+        if col_tgt:
+            m_sub = pd.DataFrame()
+            if 'month' in df_monthly.columns and 'year' in df_monthly.columns:
+                m_sub = df_monthly[(df_monthly['month'] == w_m_num) & (df_monthly['year'] == 2026)]
+            if m_sub.empty and 'month_label' in df_monthly.columns:
+                m_sub = df_monthly[df_monthly['month_label'].astype(str).str.contains(f"{w_m_num:02d}/2026|{w_m_num}/2026", na=False)]
+            if not m_sub.empty:
+                val_tgt = float(m_sub.iloc[0][col_tgt])
+                if val_tgt > 0:
+                    w_m_tgt = val_tgt
+    if w_m_tgt <= 0.0 and ('chi_tieu_tan' in w_m_shifts.columns and not w_m_shifts.empty):
+        w_m_tgt = float(w_m_shifts['chi_tieu_tan'].sum())
+    w_m_diff = round(w_m_tgt - w_m_out, 1) if w_m_tgt > 0 else 0.0
+    w_m_pct = round((w_m_out / w_m_tgt * 100.0), 1) if w_m_tgt > 0 else 0.0
+
     kpis = {
         'date_str': f"{selected_week_sidebar} (Năm 2026)",
         'num_shifts': len(w_shifts),
@@ -1958,6 +2130,11 @@ if is_week_mode and selected_week_sidebar:
         'equipment_hours': eq_w,
         'group_hours': group_h_w,
         'shift_details': w_shift_details,
+        'month_output': w_m_out,
+        'month_target': w_m_tgt,
+        'month_diff': w_m_diff,
+        'month_pct': w_m_pct,
+        'target_month': w_m_num,
     }
 elif is_month_mode and selected_month_sidebar:
     m_num, y_num = map(int, selected_month_sidebar.split('/'))
@@ -2065,6 +2242,25 @@ elif is_month_mode and selected_month_sidebar:
     if do_am_m == 0:
         do_am_m = 8.5
 
+    m_tgt_val = 0.0
+    if df_monthly is not None and not df_monthly.empty:
+        col_tgt = 'dang_ky_san_luong' if 'dang_ky_san_luong' in df_monthly.columns else ('chi_tieu_tan' if 'chi_tieu_tan' in df_monthly.columns else '')
+        if col_tgt:
+            m_sub = pd.DataFrame()
+            if 'month' in df_monthly.columns and 'year' in df_monthly.columns:
+                m_sub = df_monthly[(df_monthly['month'] == m_num) & (df_monthly['year'] == y_num)]
+            if m_sub.empty and 'month_label' in df_monthly.columns:
+                m_str_match = f"{m_num:02d}/{y_num}"
+                m_sub = df_monthly[df_monthly['month_label'].astype(str).str.contains(m_str_match, na=False)]
+            if not m_sub.empty:
+                val_tgt = float(m_sub.iloc[0][col_tgt])
+                if val_tgt > 0:
+                    m_tgt_val = val_tgt
+    if m_tgt_val <= 0.0 and ('chi_tieu_tan' in m_shifts.columns and not m_shifts.empty):
+        m_tgt_val = float(m_shifts['chi_tieu_tan'].sum())
+    m_diff_val = round(m_tgt_val - tot_out, 1) if m_tgt_val > 0 else 0.0
+    m_pct_val = round((tot_out / m_tgt_val * 100.0), 1) if m_tgt_val > 0 else 0.0
+
     kpis = {
         'date_str': f"{t('Tháng', 'Month')} {selected_month_sidebar}",
         'num_shifts': len(m_shifts),
@@ -2092,6 +2288,11 @@ elif is_month_mode and selected_month_sidebar:
         'equipment_hours': eq_m,
         'group_hours': group_h_m,
         'shift_details': m_shift_details,
+        'month_output': tot_out,
+        'month_target': m_tgt_val,
+        'month_diff': m_diff_val,
+        'month_pct': m_pct_val,
+        'target_month': m_num,
     }
 elif is_year_mode:
     y_num = 2026
@@ -2181,6 +2382,21 @@ elif is_year_mode:
     if do_am_y == 0:
         do_am_y = 8.5
 
+    y_tgt_val = 0.0
+    if df_monthly is not None and not df_monthly.empty:
+        col_tgt = 'dang_ky_san_luong' if 'dang_ky_san_luong' in df_monthly.columns else ('chi_tieu_tan' if 'chi_tieu_tan' in df_monthly.columns else '')
+        if col_tgt:
+            if 'year' in df_monthly.columns:
+                m_year = df_monthly[df_monthly['year'] == y_num]
+            else:
+                m_year = df_monthly
+            if not m_year.empty and col_tgt in m_year.columns:
+                y_tgt_val = float(m_year[col_tgt].sum())
+    if y_tgt_val <= 0.0 and ('chi_tieu_tan' in y_shifts.columns and not y_shifts.empty):
+        y_tgt_val = float(y_shifts['chi_tieu_tan'].sum())
+    y_diff_val = round(y_tgt_val - tot_out, 1) if y_tgt_val > 0 else 0.0
+    y_pct_val = round((tot_out / y_tgt_val * 100.0), 1) if y_tgt_val > 0 else 0.0
+
     kpis = {
         'date_str': f"{t('Năm', 'Year')} {y_num}",
         'num_shifts': len(y_shifts),
@@ -2208,6 +2424,11 @@ elif is_year_mode:
         'equipment_hours': eq_y,
         'group_hours': group_h_y,
         'shift_details': y_shift_details,
+        'month_output': tot_out,
+        'month_target': y_tgt_val,
+        'month_diff': y_diff_val,
+        'month_pct': y_pct_val,
+        'target_month': 0,
     }
 elif is_range_mode and date_range:
     r_start, r_end = date_range
@@ -2300,6 +2521,24 @@ elif is_range_mode and date_range:
     if do_am_r == 0:
         do_am_r = 8.5
 
+    r_m_tgt = 0.0
+    if r_start.month == r_end.month and r_start.year == r_end.year and df_monthly is not None and not df_monthly.empty:
+        col_tgt = 'dang_ky_san_luong' if 'dang_ky_san_luong' in df_monthly.columns else ('chi_tieu_tan' if 'chi_tieu_tan' in df_monthly.columns else '')
+        if col_tgt:
+            m_sub = pd.DataFrame()
+            if 'month' in df_monthly.columns and 'year' in df_monthly.columns:
+                m_sub = df_monthly[(df_monthly['month'] == r_start.month) & (df_monthly['year'] == r_start.year)]
+            if m_sub.empty and 'month_label' in df_monthly.columns:
+                m_sub = df_monthly[df_monthly['month_label'].astype(str).str.contains(f"{r_start.month:02d}/{r_start.year}|{r_start.month}/{r_start.year}", na=False)]
+            if not m_sub.empty:
+                val_tgt = float(m_sub.iloc[0][col_tgt])
+                if val_tgt > 0:
+                    r_m_tgt = val_tgt
+    if r_m_tgt <= 0.0 and ('chi_tieu_tan' in r_shifts.columns and not r_shifts.empty):
+        r_m_tgt = float(r_shifts['chi_tieu_tan'].sum())
+    r_diff = round(r_m_tgt - tot_out, 1) if r_m_tgt > 0 else 0.0
+    r_pct = round((tot_out / r_m_tgt * 100.0), 1) if r_m_tgt > 0 else 0.0
+
     kpis = {
         'date_str': f"{r_start.strftime('%d/%m/%Y')} - {r_end.strftime('%d/%m/%Y')}",
         'num_shifts': len(r_shifts),
@@ -2327,9 +2566,14 @@ elif is_range_mode and date_range:
         'equipment_hours': eq_r,
         'group_hours': group_h_r,
         'shift_details': r_shift_details,
+        'month_output': tot_out,
+        'month_target': r_m_tgt,
+        'month_diff': r_diff,
+        'month_pct': r_pct,
+        'target_month': r_start.month if r_start.month == r_end.month else 0,
     }
 else:
-    kpis = get_latest_day_kpis(df_filtered_shifts, df_daily, df_kcs=df_kcs, target_date=selected_date)
+    kpis = get_latest_day_kpis(df_filtered_shifts, df_daily, df_kcs=df_kcs, df_monthly=df_monthly, target_date=selected_date)
     if selected_date is not None:
         if kpis.get('delta_output', 0) != 0:
             kpis['output_badge_text'] = t(f"{kpis.get('delta_output', 0):+,.1f} t so hôm trước", f"{kpis.get('delta_output', 0):+,.1f} t vs yesterday")
@@ -3363,6 +3607,7 @@ elif task_num == 2:
     with c_kpi_btn:
         if st.button(t("🔄 Cập Nhật Lại Điểm KPI", "🔄 Refresh KPI Scores"), help=t("Xóa cache và tải lại dữ liệu điểm KPI mới nhất từ Google Sheets", "Clear cache and reload latest KPI scores from Google Sheets"), use_container_width=True):
             st.cache_data.clear()
+            st.cache_resource.clear()
             st.rerun()
 
     # 1. Bộ lọc chọn Tuần và Tháng cho Bảng Xếp Hạng Thi Đua (Toàn bộ 52 tuần & 12 tháng)
