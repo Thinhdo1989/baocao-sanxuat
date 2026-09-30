@@ -1294,8 +1294,16 @@ def render_factory_dashboard_cards(kpis_data, df_weekly_data):
     # Hàng 1: Vận hành & Năng suất (4 thẻ)
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     with r1_c1:
-        delta_txt = t(f"{kpis_data.get('delta_output', 0):+,.1f} t so hôm trước", f"{kpis_data.get('delta_output', 0):+,.1f} t vs yesterday") if kpis_data.get('delta_output', 0) != 0 else t("Hôm nay", "Today")
-        st.markdown(render_kpi_card_html(t("Sản Lượng Thực Tế", "Actual Output"), f"{kpis_data.get('total_output', 0):,.1f}", t("Tấn", "Tons"), delta_txt, "badge-info"), unsafe_allow_html=True)
+        if 'output_badge_text' in kpis_data and kpis_data['output_badge_text']:
+            delta_txt = kpis_data['output_badge_text']
+            b_out_cls = kpis_data.get('output_badge_cls', 'badge-info')
+        elif kpis_data.get('delta_output', 0) != 0:
+            delta_txt = t(f"{kpis_data.get('delta_output', 0):+,.1f} t so hôm trước", f"{kpis_data.get('delta_output', 0):+,.1f} t vs yesterday")
+            b_out_cls = "badge-info"
+        else:
+            delta_txt = t("Hôm nay", "Today")
+            b_out_cls = "badge-info"
+        st.markdown(render_kpi_card_html(t("Sản Lượng Thực Tế", "Actual Output"), f"{kpis_data.get('total_output', 0):,.1f}", t("Tấn", "Tons"), delta_txt, b_out_cls), unsafe_allow_html=True)
     with r1_c2:
         e_eval = kpis_data.get('electricity_eval', {})
         b_cls = "badge-success" if e_eval.get('status') == 'EXCELLENT' else ("badge-info" if e_eval.get('status') == 'STANDARD' else "badge-danger")
@@ -1787,12 +1795,32 @@ if is_week_mode and selected_week_sidebar:
     tot_nl_tho_w = float(w_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in w_shifts.columns else 0.0
     tot_nl_dot_w = float(w_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in w_shifts.columns else 0.0
     ratio_w = float((tot_nl_tho_w + tot_nl_dot_w) / tot_out) if tot_out > 0 else 0.0
+    w_target_output = 0.0
     if (selected_leader in ["Tất cả", "All"]) and df_weekly is not None and not df_weekly.empty and 'week' in df_weekly.columns:
         w_match = df_weekly[df_weekly['week'] == w_num]
-        if not w_match.empty and 'ty_le_che_bien' in w_match.columns:
-            w_ratio_sheet = float(w_match.iloc[0]['ty_le_che_bien'])
-            if w_ratio_sheet > 0:
-                ratio_w = w_ratio_sheet
+        if not w_match.empty:
+            row_w_official = w_match.iloc[0]
+            if float(row_w_official.get('san_luong_tan', 0)) > 0:
+                tot_out = float(row_w_official['san_luong_tan'])
+            if float(row_w_official.get('gio_hoat_dong', 0)) > 0:
+                tot_h = float(row_w_official['gio_hoat_dong'])
+            if float(row_w_official.get('dien_tb_kwh_tan', 0)) > 0:
+                avg_e = float(row_w_official['dien_tb_kwh_tan'])
+            elif float(row_w_official.get('dien_kwh', 0)) > 0 and tot_out > 0:
+                avg_e = float(row_w_official['dien_kwh']) / tot_out
+            if float(row_w_official.get('nang_suat_ep_tph', 0)) > 0:
+                avg_p = float(row_w_official['nang_suat_ep_tph'])
+            elif tot_h > 0:
+                avg_p = tot_out / tot_h
+            if 'ty_le_che_bien' in row_w_official and float(row_w_official['ty_le_che_bien']) > 0:
+                ratio_w = float(row_w_official['ty_le_che_bien'])
+            w_target_output = float(row_w_official.get('dang_ky_san_luong', 0.0))
+    elif (selected_leader not in ["Tất cả", "All"]) and leaders_kpi and isinstance(leaders_kpi, dict) and 'weekly' in leaders_kpi:
+        df_lw = leaders_kpi['weekly']
+        if not df_lw.empty and 'week' in df_lw.columns and 'ca_truong' in df_lw.columns:
+            l_row = df_lw[(df_lw['week'] == w_num) & (df_lw['ca_truong'].apply(lambda x: match_shift_leader(x, selected_leader)))]
+            if not l_row.empty and 'chi_tieu_sl' in l_row.columns:
+                w_target_output = float(l_row.iloc[0].get('chi_tieu_sl', 0.0))
 
     eq_w = {}
     for code, info in EQUIPMENT_INFO.items():
@@ -1887,6 +1915,21 @@ if is_week_mode and selected_week_sidebar:
     if do_am_w == 0:
         do_am_w = 8.5
 
+    if w_target_output > 0:
+        pct_completed = (tot_out / w_target_output) * 100.0
+        output_badge_txt = t(f"🎯 Đạt {pct_completed:.1f}% chỉ tiêu tuần ({w_target_output:,.0f} t)", f"🎯 {pct_completed:.1f}% weekly target ({w_target_output:,.0f} t)")
+        if pct_completed >= 100.0:
+            output_badge_cls = "badge-success"
+        elif pct_completed >= 85.0:
+            output_badge_cls = "badge-info"
+        elif pct_completed >= 70.0:
+            output_badge_cls = "badge-warning"
+        else:
+            output_badge_cls = "badge-danger"
+    else:
+        output_badge_txt = t(f"Tuần {w_num}", f"Week {w_num}")
+        output_badge_cls = "badge-info"
+
     kpis = {
         'date_str': f"{selected_week_sidebar} (Năm 2026)",
         'num_shifts': len(w_shifts),
@@ -1897,6 +1940,9 @@ if is_week_mode and selected_week_sidebar:
         'xuat_hang_tan': tot_xuat_w,
         'total_output': tot_out,
         'delta_output': 0.0,
+        'output_badge_text': output_badge_txt,
+        'output_badge_cls': output_badge_cls,
+        'target_output': w_target_output,
         'avg_electricity_kwh_ton': avg_e,
         'electricity_eval': evaluate_electricity(avg_e),
         'avg_productivity': avg_p,
@@ -2029,6 +2075,8 @@ elif is_month_mode and selected_month_sidebar:
         'xuat_hang_tan': tot_xuat_m,
         'total_output': tot_out,
         'delta_output': 0.0,
+        'output_badge_text': t(f"Tháng {selected_month_sidebar}", f"Month {selected_month_sidebar}"),
+        'output_badge_cls': "badge-info",
         'avg_electricity_kwh_ton': avg_e,
         'electricity_eval': evaluate_electricity(avg_e),
         'avg_productivity': avg_p,
@@ -2143,6 +2191,8 @@ elif is_year_mode:
         'xuat_hang_tan': tot_xuat_y,
         'total_output': tot_out,
         'delta_output': 0.0,
+        'output_badge_text': t("Cả năm 2026", "Full year 2026"),
+        'output_badge_cls': "badge-info",
         'avg_electricity_kwh_ton': avg_e,
         'electricity_eval': evaluate_electricity(avg_e),
         'avg_productivity': avg_p,
@@ -2260,6 +2310,8 @@ elif is_range_mode and date_range:
         'xuat_hang_tan': tot_xuat_r,
         'total_output': tot_out,
         'delta_output': 0.0,
+        'output_badge_text': t("Khoảng ngày", "Date range"),
+        'output_badge_cls': "badge-info",
         'avg_electricity_kwh_ton': avg_e,
         'electricity_eval': evaluate_electricity(avg_e),
         'avg_productivity': avg_p,
@@ -2278,6 +2330,14 @@ elif is_range_mode and date_range:
     }
 else:
     kpis = get_latest_day_kpis(df_filtered_shifts, df_daily, df_kcs=df_kcs, target_date=selected_date)
+    if selected_date is not None:
+        if kpis.get('delta_output', 0) != 0:
+            kpis['output_badge_text'] = t(f"{kpis.get('delta_output', 0):+,.1f} t so hôm trước", f"{kpis.get('delta_output', 0):+,.1f} t vs yesterday")
+        elif selected_date.date() == max_date.date():
+            kpis['output_badge_text'] = t("Hôm nay", "Today")
+        else:
+            kpis['output_badge_text'] = t(f"Ngày {selected_date.strftime('%d/%m')}", f"Date {selected_date.strftime('%d/%m')}")
+        kpis['output_badge_cls'] = "badge-info"
     # Đồng bộ số liệu dầu diezen từ sheet weekly report cho ngày đang chọn
     if selected_date is not None and df_weekly is not None and not df_weekly.empty:
         cur_w_num = selected_date.isocalendar()[1]

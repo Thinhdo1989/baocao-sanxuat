@@ -1047,9 +1047,20 @@ class DataLoader:
         Đọc và chuẩn hóa dữ liệu báo cáo tuần từ sheet 'weekly report'.
         Bao gồm: sản lượng, suất điện, dầu diezen, độ ẩm, độ tro, tỷ lệ chế biến.
         """
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_weekly_report.parquet"),
+            os.path.join("assets", "cache_weekly_report.parquet"),
+            os.path.join("deploy_files", "assets", "cache_weekly_report.parquet"),
+        ]
         try:
             rows = self.get_sheet_values('weekly report')
             if len(rows) < 17:
+                for cp in cache_paths:
+                    if os.path.exists(cp):
+                        try:
+                            return clean_numeric_dataframe(pd.read_parquet(cp))
+                        except Exception:
+                            pass
                 return pd.DataFrame()
 
             # Dòng 2 (index 1): Số tuần (Tuần 31, 32, ...)
@@ -1085,6 +1096,11 @@ class DataLoader:
                     'nguyen_lieu_tan': clean_number(rows[14][col_idx]) if len(rows) > 14 and col_idx < len(rows[14]) else 0.0,
                     'nl_dot_tan': clean_number(rows[15][col_idx]) if len(rows) > 15 and col_idx < len(rows[15]) else 0.0,
                     'ty_le_che_bien': clean_number(rows[16][col_idx]) if len(rows) > 16 and col_idx < len(rows[16]) else 0.0,
+                    'dang_ky_san_luong': clean_number(rows[17][col_idx]) if len(rows) > 17 and col_idx < len(rows[17]) else 0.0,
+                    'chi_tieu_dien_kwh_tan': clean_number(rows[18][col_idx]) if len(rows) > 18 and col_idx < len(rows[18]) else 0.0,
+                    'chi_tieu_nang_suat': clean_number(rows[19][col_idx]) if len(rows) > 19 and col_idx < len(rows[19]) else 0.0,
+                    'chi_tieu_do_am': clean_number(rows[20][col_idx]) if len(rows) > 20 and col_idx < len(rows[20]) else 0.0,
+                    'nguyen_lieu_nhap_tan': clean_number(rows[21][col_idx]) if len(rows) > 21 and col_idx < len(rows[21]) else 0.0,
                 }
                 records.append(record)
 
@@ -1092,9 +1108,21 @@ class DataLoader:
             if not df.empty:
                 df = df.sort_values('week').reset_index(drop=True)
                 df = clean_numeric_dataframe(df)
+                for cp in cache_paths:
+                    try:
+                        os.makedirs(os.path.dirname(cp), exist_ok=True)
+                        df.to_parquet(cp, index=False)
+                    except Exception:
+                        pass
             return df
         except Exception as e:
             print(f"[-] Lỗi nạp weekly report: {e}")
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        return clean_numeric_dataframe(pd.read_parquet(cp))
+                    except Exception:
+                        pass
             return pd.DataFrame()
 
     def load_monthly_report(self) -> pd.DataFrame:
