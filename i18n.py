@@ -91,17 +91,39 @@ DASHBOARD_CHOICES_EN = [
 EVAL_DICT = {
     # Tiết kiệm điện / suất điện
     "TIẾT KIỆM ĐIỆN": "POWER SAVING",
+    "Tiết kiệm điện": "Power Saving",
     "VƯỢT ĐỊNH MỨC": "OVER LIMIT",
+    "Vượt định mức": "Over Limit",
     "TRONG ĐỊNH MỨC": "WITHIN LIMIT",
+    "Trong định mức": "Within Limit",
     "ĐẠT CHUẨN": "STANDARD PASS",
+    "Đạt chuẩn": "Standard",
     "TIÊU THỤ CAO": "HIGH CONSUMPTION",
+    "Tiêu thụ cao": "High Consumption",
     "ĐẠT CHỈ TIÊU": "TARGET MET",
+    "Đạt chỉ tiêu": "On Target",
     "CHƯA ĐẠT CHỈ TIÊU": "BELOW TARGET",
+    "Chưa đạt chỉ tiêu": "Below Target",
+    "ĐẠT ĐỊNH MỨC": "ON STANDARD",
+    "Đạt định mức": "On Standard",
+    "DƯỚI ĐỊNH MỨC": "BELOW STANDARD",
+    "Dưới định mức": "Below Standard",
     "ĐẠT CHUẨN XUẤT KHẨU": "EXPORT COMPLIANT",
+    "ĐẠT CHUẨN XUẤT": "EXPORT COMPLIANT",
+    "Đạt chuẩn xuất": "Export Compliant",
+    "ĐẠT CHUẨN ISO": "ISO COMPLIANT",
+    "Đạt chuẩn ISO": "ISO Compliant",
     "ẨM CAO": "HIGH MOISTURE",
+    "Độ ẩm cao": "High Moisture",
     "ẨM THẤP": "LOW MOISTURE",
+    "Quá khô": "Too Dry",
     "ĐẠT CHUẨN ENplus": "ENplus COMPLIANT",
     "CHƯA ĐẠT CHUẨN": "NON-COMPLIANT",
+    "Chưa đạt chuẩn": "Non-Compliant",
+    "Chưa có dữ liệu": "No data available",
+    "Chưa có số liệu": "No data",
+    "Chưa ghi nhận": "Not recorded",
+    "Chưa đo": "Not measured",
     "Xuất sắc": "Excellent",
     "Khá tốt": "Good",
     "Cần cải thiện": "Needs Improvement",
@@ -124,6 +146,7 @@ EVAL_DICT = {
     "ĐẠT YÊU CẦU": "PASS",
     "CẦN CẢI THIỆN": "NEEDS IMPROVEMENT"
 }
+
 
 
 def get_lang() -> str:
@@ -175,38 +198,45 @@ def apply_language_change(new_lang: str):
         return
     set_lang(new_lang)
 
-    # Đồng bộ widget radio trong sidebar
-    st.session_state['lang_radio_select'] = "🇬🇧 English" if new_lang == 'en' else "🇻🇳 Tiếng Việt"
+    def safe_set_state(key, val):
+        try:
+            st.session_state[key] = val
+        except Exception:
+            # Nếu widget đã instantiated trong cycle này, lưu pending để áp dụng ở đầu run kế tiếp
+            st.session_state['pending_lang_change'] = new_lang
+
+    # Đồng bộ widget radio trong sidebar nếu có
+    safe_set_state('lang_radio_select', "🇬🇧 English" if new_lang == 'en' else "🇻🇳 Tiếng Việt")
 
     # Đồng bộ tên tác vụ hiện tại sang ngôn ngữ mới
     if 'active_task' in st.session_state:
-        st.session_state['active_task'] = map_task_name(st.session_state['active_task'], new_lang)
+        safe_set_state('active_task', map_task_name(st.session_state['active_task'], new_lang))
     if 'main_task_dropdown' in st.session_state:
-        st.session_state['main_task_dropdown'] = map_task_name(st.session_state['main_task_dropdown'], new_lang)
+        safe_set_state('main_task_dropdown', map_task_name(st.session_state['main_task_dropdown'], new_lang))
 
     # Đồng bộ chế độ xem thời gian
     if 'main_view_mode_radio' in st.session_state:
-        st.session_state['main_view_mode_radio'] = map_time_mode(st.session_state['main_view_mode_radio'], new_lang)
+        safe_set_state('main_view_mode_radio', map_time_mode(st.session_state['main_view_mode_radio'], new_lang))
     if 'top_view_mode' in st.session_state:
-        st.session_state['top_view_mode'] = map_time_mode(st.session_state['top_view_mode'], new_lang)
+        safe_set_state('top_view_mode', map_time_mode(st.session_state['top_view_mode'], new_lang))
 
     # Đồng bộ lựa chọn Dashboard
     if 'main_db_view_radio' in st.session_state:
-        st.session_state['main_db_view_radio'] = map_dashboard_choice(st.session_state['main_db_view_radio'], new_lang)
+        safe_set_state('main_db_view_radio', map_dashboard_choice(st.session_state['main_db_view_radio'], new_lang))
     if 'main_db_view_select' in st.session_state:
-        st.session_state['main_db_view_select'] = map_dashboard_choice(st.session_state['main_db_view_select'], new_lang)
+        safe_set_state('main_db_view_select', map_dashboard_choice(st.session_state['main_db_view_select'], new_lang))
     if 'main_db_view_choice' in st.session_state:
-        st.session_state['main_db_view_choice'] = map_dashboard_choice(st.session_state['main_db_view_choice'], new_lang)
+        safe_set_state('main_db_view_choice', map_dashboard_choice(st.session_state['main_db_view_choice'], new_lang))
 
     # Đồng bộ chế độ xem thi đua ca trưởng
     if 'leader_kpi_time_view_segmented' in st.session_state:
         cur_k = st.session_state['leader_kpi_time_view_segmented']
         if 'tuần' in str(cur_k).lower() or 'week' in str(cur_k).lower():
-            st.session_state['leader_kpi_time_view_segmented'] = "📅 Weekly" if new_lang == 'en' else "📅 Theo Tuần"
+            safe_set_state('leader_kpi_time_view_segmented', "📅 Weekly" if new_lang == 'en' else "📅 Theo Tuần")
         elif 'tháng' in str(cur_k).lower() or 'month' in str(cur_k).lower():
-            st.session_state['leader_kpi_time_view_segmented'] = "📆 Monthly" if new_lang == 'en' else "📆 Theo Tháng"
+            safe_set_state('leader_kpi_time_view_segmented', "📆 Monthly" if new_lang == 'en' else "📆 Theo Tháng")
         else:
-            st.session_state['leader_kpi_time_view_segmented'] = "☀️ Daily" if new_lang == 'en' else "☀️ Theo Ngày"
+            safe_set_state('leader_kpi_time_view_segmented', "☀️ Daily" if new_lang == 'en' else "☀️ Theo Ngày")
 
 
 def is_en() -> bool:
@@ -319,7 +349,55 @@ def translate_eval(text: str, lang: Optional[str] = None) -> str:
     if target != 'en' or not text:
         return text
     clean_txt = str(text).strip()
-    return EVAL_DICT.get(clean_txt, clean_txt)
+    if clean_txt in EVAL_DICT:
+        return EVAL_DICT[clean_txt]
+
+    res = clean_txt
+    replacements = [
+        ("Chưa có dữ liệu", "No data available"),
+        ("Chưa có số liệu", "No data"),
+        ("Chưa ghi nhận", "Not recorded"),
+        ("Chưa đo", "Not measured"),
+        ("Đạt chuẩn ISO", "ISO Compliant"),
+        ("ĐẠT CHUẨN ISO", "ISO COMPLIANT"),
+        ("Đạt chuẩn xuất", "Export Compliant"),
+        ("ĐẠT CHUẨN XUẤT", "EXPORT COMPLIANT"),
+        ("Đạt chỉ tiêu", "On Target"),
+        ("ĐẠT CHỈ TIÊU", "TARGET MET"),
+        ("Chưa đạt chỉ tiêu", "Below Target"),
+        ("CHƯA ĐẠT CHỈ TIÊU", "BELOW TARGET"),
+        ("Đạt định mức", "On Standard"),
+        ("ĐẠT ĐỊNH MỨC", "ON STANDARD"),
+        ("Vượt định mức", "Over Limit"),
+        ("VƯỢT ĐỊNH MỨC", "OVER LIMIT"),
+        ("Tiết kiệm điện", "Power Saving"),
+        ("TIẾT KIỆM ĐIỆN", "POWER SAVING"),
+        ("Đạt chuẩn", "Standard"),
+        ("ĐẠT CHUẨN", "STANDARD"),
+        ("Độ ẩm cao", "High Moisture"),
+        ("Độ tro cao", "High Ash"),
+        ("CAO", "HIGH"),
+        ("Quá khô", "Too Dry"),
+        ("THẤP", "LOW"),
+        ("Thấp", "Low"),
+        ("Tiêu hao cao", "High Consumption"),
+        ("TIÊU HAO CAO", "HIGH CONSUMPTION"),
+        ("Dưới định mức", "Below Standard"),
+        ("DƯỚI ĐỊNH MỨC", "BELOW STANDARD"),
+        ("Dưới 600", "Below 600"),
+        ("DƯỚI 600", "BELOW 600"),
+        ("Chuẩn:", "Std:"),
+        ("Định mức:", "Quota:"),
+        ("lần", "times"),
+        ("tấn/h", "t/h"),
+        ("tấn", "tons"),
+        ("giờ", "hours"),
+    ]
+    for vi_sub, en_sub in replacements:
+        if vi_sub in res:
+            res = res.replace(vi_sub, en_sub)
+    return res
+
 
 
 def strip_accents(text: str) -> str:

@@ -3108,6 +3108,197 @@ class DataLoader:
             return True, f"Đã lưu thành công báo cáo ca băm dăm ({team} - {shift_choice}) ngày {d_str}!"
         return False, "Không thể lưu dữ liệu ca băm. Vui lòng kiểm tra lại."
 
+    def get_next_incident_id(self) -> int:
+        """
+        Lấy mã ID sự cố tiếp theo dựa trên dữ liệu hiện có trong sheet 'Su co' hoặc cache_incidents.parquet.
+        """
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_incidents.parquet"),
+            os.path.join("assets", "cache_incidents.parquet"),
+            os.path.join("deploy_files", "assets", "cache_incidents.parquet"),
+        ]
+        max_id = 0
+        for cp in cache_paths:
+            if os.path.exists(cp):
+                try:
+                    df = pd.read_parquet(cp)
+                    if 'id_su_co' in df.columns:
+                        num_ids = pd.to_numeric(df['id_su_co'].astype(str).str.extract(r'(\d+)')[0], errors='coerce').dropna()
+                        if not num_ids.empty:
+                            max_id = max(max_id, int(num_ids.max()))
+                except Exception:
+                    pass
+
+        if self.spreadsheet:
+            try:
+                ws_sc = None
+                try:
+                    ws_sc = self.spreadsheet.worksheet('Su co')
+                except Exception:
+                    pass
+                if not ws_sc and self.maint_log_spreadsheet:
+                    try:
+                        ws_sc = self.maint_log_spreadsheet.worksheet('Su co')
+                    except Exception:
+                        pass
+                if ws_sc:
+                    all_ids = ws_sc.col_values(1)
+                    for id_val in all_ids[1:]:
+                        m = re.search(r'(\d+)', str(id_val))
+                        if m:
+                            max_id = max(max_id, int(m.group(1)))
+            except Exception:
+                pass
+
+        return (max_id + 1) if max_id > 0 else 593
+
+    def save_incident_records(self, records: List[Dict[str, Any]]) -> Tuple[bool, str]:
+        """
+        Ghi danh sách sự cố thiết bị vào Google Sheets sheet 'Su co' (13 cột chuẩn)
+        và cập nhật đồng thời vào cache_incidents.parquet cục bộ.
+        """
+        if not records:
+            return True, "Không có sự cố phát sinh cần lưu."
+
+        if not self.client:
+            self.connect()
+
+        ws_sc = None
+        if self.spreadsheet:
+            try:
+                ws_sc = self.spreadsheet.worksheet('Su co')
+            except Exception:
+                pass
+        if not ws_sc and self.maint_log_spreadsheet:
+            try:
+                ws_sc = self.maint_log_spreadsheet.worksheet('Su co')
+            except Exception:
+                pass
+
+        rows_to_append = []
+        new_records_for_df = []
+        curr_next_id = self.get_next_incident_id()
+
+        for rec in records:
+            eq = str(rec.get('Mã thiết bị/ zone') or rec.get('equipment') or '').strip()
+            desc = str(rec.get('Mô tả hoạt động') or rec.get('description') or '').strip()
+            if not eq and not desc:
+                continue
+
+            r_id = str(rec.get('ID Sự cố') or rec.get('id_su_co') or '').strip()
+            if not r_id:
+                r_id = str(curr_next_id)
+                curr_next_id += 1
+
+            d_val = rec.get('Ngày') or rec.get('date') or datetime.now().strftime('%d/%m/%Y')
+            if isinstance(d_val, (datetime, pd.Timestamp)):
+                d_str = d_val.strftime('%d/%m/%Y')
+                d_dt = d_val
+            else:
+                d_str = str(d_val)
+                d_dt = parse_vn_date(d_str) or datetime.now()
+
+            w_val = rec.get('Tuần') or rec.get('week') or d_dt.isocalendar()[1]
+            m_val = rec.get('Tháng') or rec.get('month') or d_dt.month
+            s_ldr = str(rec.get('Trưởng ca') or rec.get('shift_leader') or 'Ca A').strip()
+            sensor = str(rec.get('Mã điện/ sensor') or rec.get('sensor_code') or '').strip()
+            act = str(rec.get('Hoạt động') or rec.get('activity') or 'bảo trì sự cố').strip()
+            solution = str(rec.get('Xử lí') or rec.get('solution') or '').strip()
+            perf = str(rec.get('Người thực hiện') or rec.get('performer') or '').strip()
+            duration = rec.get('Thời gian') or rec.get('Thời gian (h)') or rec.get('duration_hours') or 0.0
+            status = str(rec.get('Trạng thái') or rec.get('status') or 'Hoàn thành').strip()
+
+            row_data = [
+                r_id,
+                d_str,
+                str(w_val),
+                str(m_val),
+                s_ldr,
+                eq,
+                sensor,
+                act,
+                desc,
+                solution,
+                perf,
+                str(duration).replace('.', ','),
+                status
+            ]
+            rows_to_append.append(row_data)
+
+            eq_list = [e.strip() for e in eq.replace(';', ',').split(',') if e.strip()]
+            new_records_for_df.append({
+                'id_su_co': r_id,
+                'date': pd.to_datetime(d_dt),
+                'date_str': d_str,
+                'week': int(w_val),
+                'week_label': f"Tuần {w_val}",
+                'month': int(m_val),
+                'month_label': f"Tháng {m_val}",
+                'shift_leader': s_ldr,
+                'equipment_raw': eq,
+                'equipment': eq,
+                'equipment_code': eq,
+                'thiet_bi': eq,
+                'vi_tri': eq,
+                'equipment_list': eq_list,
+                'sensor_code': sensor,
+                'activity': act,
+                'description': desc,
+                'noi_dung': desc,
+                'mo_ta': desc,
+                'solution': solution,
+                'bien_phap': solution,
+                'performer': perf,
+                'nguoi_lam': perf,
+                'duration_hours': float(duration) if duration else 0.0,
+                'thoi_gian_dung_gio': float(duration) if duration else 0.0,
+                'status': status,
+                'trang_thai': status
+            })
+
+        if not rows_to_append:
+            return True, "Không có sự cố nào cần lưu."
+
+        # Ghi lên Google Sheets nếu kết nối được
+        if ws_sc:
+            try:
+                for row_d in rows_to_append:
+                    ws_sc.append_row(row_d, value_input_option='USER_ENTERED')
+            except Exception as e_ws:
+                print(f"[-] Lỗi append_row sheet Su co: {e_ws}")
+
+        # Cập nhật cache Parquet
+        cache_paths = [
+            os.path.join(os.path.dirname(__file__), "assets", "cache_incidents.parquet"),
+            os.path.join("assets", "cache_incidents.parquet"),
+            os.path.join("deploy_files", "assets", "cache_incidents.parquet"),
+        ]
+        try:
+            old_df = pd.DataFrame()
+            for cp in cache_paths:
+                if os.path.exists(cp):
+                    try:
+                        old_df = pd.read_parquet(cp)
+                        break
+                    except Exception:
+                        pass
+            if not old_df.empty:
+                new_df = pd.concat([old_df, pd.DataFrame(new_records_for_df)], ignore_index=True)
+            else:
+                new_df = pd.DataFrame(new_records_for_df)
+
+            new_df['date'] = pd.to_datetime(new_df['date'], errors='coerce')
+            for cp in cache_paths:
+                os.makedirs(os.path.dirname(cp), exist_ok=True)
+                new_df.to_parquet(cp, index=False)
+        except Exception as e_cp:
+            print(f"[-] Lỗi cập nhật cache_incidents.parquet: {e_cp}")
+
+        return True, f"Đã lưu thành công {len(rows_to_append)} sự cố thiết bị vào sổ theo dõi Sự cố!"
+
+    def save_incident_record(self, record: Dict[str, Any]) -> Tuple[bool, str]:
+        return self.save_incident_records([record])
+
     def load_oil_change_data(self, df_shifts: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
         """
         Nạp dữ liệu Lịch thay nhớt hộp số máy ép PE1 - PE8 (Mobil Glygoyle 460).

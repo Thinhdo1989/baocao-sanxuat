@@ -1553,8 +1553,49 @@ def get_all_leaders_dashboard_summary(
             month_kpi_score = round(m_sc_sl + m_sc_moist + m_sc_tph, 2)
         month_kpi_eval = evaluate_kpi_score(month_kpi_score)
 
+        # D. Kỳ NĂM của ca trưởng
+        y_shifts = df_ldr[(ldr_dates.dt.year == ref_y) & (df_ldr['san_luong_tan'] > 0)]
+        y_out = float(y_shifts['san_luong_tan'].sum())
+        y_hours = float(y_shifts['tong_gio_ep'].sum())
+        y_kwh = float(y_shifts['dien_kwh'].sum())
+        y_kwh_ton = (y_kwh / y_out) if y_out > 0 else 0.0
+        y_tph = (y_out / y_hours) if y_hours > 0 else 0.0
+        y_count = len(y_shifts)
+        y_nl_tho = float(y_shifts['nghien_tho_tan'].sum()) if 'nghien_tho_tan' in y_shifts.columns else 0.0
+        y_nl_dot = float(y_shifts['nl_dot_tan'].sum()) if 'nl_dot_tan' in y_shifts.columns else 0.0
+        y_ratio = float((y_nl_tho + y_nl_dot) / y_out) if y_out > 0 else 0.0
+        y_label = f"{ref_y}"
+        y_moist = d_moist
+
+        # Truy vết Năm từ 'Data KPI'
+        if not kpi_ldr.empty:
+            kpi_dates = pd.to_datetime(kpi_ldr['date'], errors='coerce')
+            kpi_year = kpi_ldr[(kpi_dates.dt.year == ref_y) & (kpi_ldr['sl_thuc_te'] > 0)]
+            if not kpi_year.empty:
+                y_out = float(kpi_year['sl_thuc_te'].sum())
+                if (kpi_year['nang_suat_tb'] > 0).any():
+                    y_tph = float(kpi_year[kpi_year['nang_suat_tb'] > 0]['nang_suat_tb'].mean())
+                if (kpi_year['do_am_tb'] > 0).any():
+                    y_moist = float(kpi_year[kpi_year['do_am_tb'] > 0]['do_am_tb'].mean())
+                if (kpi_year['dien_tb'] > 0).any():
+                    y_kwh_ton = float(kpi_year[kpi_year['dien_tb'] > 0]['dien_tb'].mean())
+                y_count = len(kpi_year)
+
+        year_kpi_score = round(month_kpi_score, 2)
+        year_kpi_eval = evaluate_kpi_score(year_kpi_score)
+
         # 4. Xác định số liệu trọng tâm hiển thị trên thẻ theo bộ lọc sidebar
-        if month_num is not None:
+        if year_num is not None:
+            output = y_out
+            tph = y_tph
+            moist_val = y_moist
+            kwh_ton = y_kwh_ton
+            kpi_score = year_kpi_score
+            kpi_eval = year_kpi_eval
+            if y_out > 0:
+                duty_type = 'PROD'
+                has_active_shift = True
+        elif month_num is not None:
             output = m_out
             tph = m_tph
             moist_val = m_moist
@@ -1675,6 +1716,19 @@ def get_all_leaders_dashboard_summary(
             'month_label': m_label,
             'month_kpi_score': month_kpi_score,
             'month_kpi_eval': month_kpi_eval,
+
+            # Thống kê chi tiết Năm
+            'year_output': round(y_out, 1),
+            'year_hours': round(y_hours, 1),
+            'year_kwh_ton': round(y_kwh_ton, 1),
+            'year_tph': round(y_tph, 2),
+            'year_moist': round(y_moist, 2),
+            'year_shifts': y_count,
+            'year_ratio': round(y_ratio, 2),
+            'year_nl_dot': round(y_nl_dot, 1),
+            'year_label': y_label,
+            'year_kpi_score': year_kpi_score,
+            'year_kpi_eval': year_kpi_eval,
 
             'kpi_score': round(kpi_score, 2),
             'kpi_eval': kpi_eval,

@@ -471,7 +471,142 @@ def render_shift_production_form(dl, current_user: Dict[str, Any]):
         with c_nl4:
             nghien_tan = st.number_input("Dăm nghiền (Tấn = muỗng x 1.8):", min_value=0.0, max_value=500.0, value=round(nghien_spoon * 1.8, 1), step=0.5)
 
-        note_ca = st.text_area("📝 Ghi chú ca (Sự cố thiết bị, chất lượng nguyên liệu, lý do dừng máy nếu có):", placeholder="Ghi chú tóm tắt...")
+        st.markdown("---")
+        st.markdown("##### 5️⃣ 🛠️ Không Gian Nhập Liệu Sự Cố & Bảo Trì Thiết Bị Trong Ca")
+        st.caption("Nhập các sự cố thiết bị hoặc công tác bảo dưỡng phát sinh trong ca sản xuất (Dữ liệu sẽ được tự động lưu vào sheet `Su co` trên Google Sheets). Bấm dấu ➕ ở cuối bảng để thêm dòng nếu có nhiều sự cố.")
+
+        # Chuẩn bị dữ liệu ban đầu cho bảng nhập sự cố
+        next_sc_id = dl.get_next_incident_id() if hasattr(dl, 'get_next_incident_id') else 593
+        d_str_val = report_date.strftime('%d/%m/%Y') if hasattr(report_date, 'strftime') else datetime.now().strftime('%d/%m/%Y')
+        week_num_val = int(report_date.isocalendar()[1]) if hasattr(report_date, 'isocalendar') else int(datetime.now().isocalendar()[1])
+        month_num_val = int(report_date.month) if hasattr(report_date, 'month') else int(datetime.now().month)
+
+        raw_ldr_text = str(shift_leader_input).strip()
+        default_leader_choice = "Ca A"
+        if "ca b" in raw_ldr_text.lower() or "tài" in raw_ldr_text.lower():
+            default_leader_choice = "Ca B"
+        elif "ca c" in raw_ldr_text.lower() or "long" in raw_ldr_text.lower():
+            default_leader_choice = "Ca C"
+        elif "ca a" in raw_ldr_text.lower() or "sắc" in raw_ldr_text.lower():
+            default_leader_choice = "Ca A"
+        elif "bt" in raw_ldr_text.lower():
+            default_leader_choice = "BT_VS"
+        elif "off" in raw_ldr_text.lower():
+            default_leader_choice = "OFF"
+        elif "xh" in raw_ldr_text.lower():
+            default_leader_choice = "XH"
+
+        init_incident_df = pd.DataFrame([
+            {
+                "ID Sự cố": str(next_sc_id),
+                "Ngày": d_str_val,
+                "Tuần": week_num_val,
+                "Tháng": month_num_val,
+                "Trưởng ca": default_leader_choice,
+                "Mã thiết bị/ zone": "",
+                "Mã điện/ sensor": "",
+                "Hoạt động": "bảo trì sự cố",
+                "Mô tả hoạt động": "",
+                "Xử lí": "",
+                "Người thực hiện": "",
+                "Thời gian": 0.0,
+                "Trạng thái": "Hoàn thành"
+            }
+        ])
+
+        incident_editor_df = st.data_editor(
+            init_incident_df,
+            column_config={
+                "ID Sự cố": st.column_config.TextColumn(
+                    "ID Sự cố",
+                    help="Mã sự cố tự động tăng",
+                    width="small"
+                ),
+                "Ngày": st.column_config.TextColumn(
+                    "Ngày",
+                    help="Ngày phát sinh sự cố (dd/mm/yyyy)",
+                    width="small"
+                ),
+                "Tuần": st.column_config.NumberColumn(
+                    "Tuần",
+                    help="Tuần trong năm",
+                    width="small",
+                    format="%d"
+                ),
+                "Tháng": st.column_config.NumberColumn(
+                    "Tháng",
+                    help="Tháng trong năm",
+                    width="small",
+                    format="%d"
+                ),
+                "Trưởng ca": st.column_config.SelectboxColumn(
+                    "Trưởng ca",
+                    help="Ca Trưởng đang phụ trách",
+                    options=["Ca A", "Ca B", "Ca C", "BT_VS", "OFF", "XH"],
+                    width="small"
+                ),
+                "Mã thiết bị/ zone": st.column_config.TextColumn(
+                    "Mã thiết bị/ zone",
+                    help="Mã thiết bị hoặc zone máy (VD: PE1510, HM118, DR124, HM247, BURNER 1...)",
+                    width="medium"
+                ),
+                "Mã điện/ sensor": st.column_config.TextColumn(
+                    "Mã điện/ sensor",
+                    help="Mã sensor / cảm biến hoặc thiết bị điện (nếu có)",
+                    width="small"
+                ),
+                "Hoạt động": st.column_config.SelectboxColumn(
+                    "Hoạt động",
+                    help="Loại hoạt động kỹ thuật",
+                    options=[
+                        "bảo trì sự cố",
+                        "Bảo trì chủ động",
+                        "Sửa chữa",
+                        "Vệ sinh",
+                        "Thay thế phụ tùng",
+                        "Khởi động",
+                        "Theo dõi",
+                        "Khác"
+                    ],
+                    width="medium"
+                ),
+                "Mô tả hoạt động": st.column_config.TextColumn(
+                    "Mô tả hoạt động",
+                    help="Mô tả hiện tượng sự cố, nguyên nhân chi tiết",
+                    width="large"
+                ),
+                "Xử lí": st.column_config.TextColumn(
+                    "Xử lí",
+                    help="Biện pháp xử lý, khắc phục sự cố kỹ thuật",
+                    width="large"
+                ),
+                "Người thực hiện": st.column_config.TextColumn(
+                    "Người thực hiện",
+                    help="Họ tên thợ cơ khí / điện / kỹ thuật viên thực hiện",
+                    width="medium"
+                ),
+                "Thời gian": st.column_config.NumberColumn(
+                    "Thời gian",
+                    help="Thời gian dừng máy / xử lý (giờ)",
+                    min_value=0.0,
+                    max_value=24.0,
+                    step=0.5,
+                    format="%.1f h",
+                    width="small"
+                ),
+                "Trạng thái": st.column_config.SelectboxColumn(
+                    "Trạng thái",
+                    help="Tình trạng xử lý",
+                    options=["Hoàn thành", "Đang xử lý", "Chờ vật tư"],
+                    width="small"
+                ),
+            },
+            num_rows="dynamic",
+            use_container_width=True,
+            key="incident_editor_in_shift"
+        )
+
+        note_ca = st.text_area("📝 Ghi chú ca chung khác (nếu có):", placeholder="Ghi chú thêm về chất lượng nguyên liệu dăm, giao ban hoặc lưu ý khác...", height=68)
 
         submitted = st.form_submit_button("🚀 GỬI BÁO CÁO CA LÊN HỆ THỐNG", type="primary", use_container_width=True)
 
@@ -507,6 +642,7 @@ def render_shift_production_form(dl, current_user: Dict[str, Any]):
             'nl_dot_tan': nl_dot_tan,
             'nghien_tho_spoon': nghien_spoon,
             'nghien_tho_tan': nghien_tan,
+            'note': note_ca,
             'h_HM118': h_hm118,
             'h_HM218': h_hm218,
             'h_HM318': h_hm318,
@@ -528,8 +664,34 @@ def render_shift_production_form(dl, current_user: Dict[str, Any]):
         with st.spinner("⏳ Đang đồng bộ số liệu lên Google Sheets và cập nhật hệ thống..."):
             success, message = dl.save_shift_record(record_data)
 
+        extra_sc_msg = ""
+        if success and incident_editor_df is not None and not incident_editor_df.empty:
+            valid_sc_rows = []
+            for _, r in incident_editor_df.iterrows():
+                eq_val = str(r.get("Mã thiết bị/ zone") or "").strip()
+                desc_val = str(r.get("Mô tả hoạt động") or "").strip()
+                if eq_val or desc_val:
+                    r_dict = r.to_dict()
+                    if not r_dict.get("Ngày"):
+                        r_dict["Ngày"] = report_date.strftime('%d/%m/%Y')
+                    if not r_dict.get("Tuần"):
+                        r_dict["Tuần"] = report_date.isocalendar()[1]
+                    if not r_dict.get("Tháng"):
+                        r_dict["Tháng"] = report_date.month
+                    if not r_dict.get("Trưởng ca"):
+                        r_dict["Trưởng ca"] = s_ldr_code
+                    valid_sc_rows.append(r_dict)
+
+            if valid_sc_rows:
+                with st.spinner(f"⏳ Đang đồng bộ {len(valid_sc_rows)} sự cố thiết bị vào sổ theo dõi Sự cố (Google Sheets)..."):
+                    ok_sc, msg_sc = dl.save_incident_records(valid_sc_rows)
+                    if ok_sc:
+                        extra_sc_msg = f" • Đã ghi nhận {len(valid_sc_rows)} sự cố thiết bị vào sheet 'Su co'!"
+                    else:
+                        st.warning(f"⚠️ {msg_sc}")
+
         if success:
-            st.session_state['flash_success_msg'] = f"🎉 **{message}**"
+            st.session_state['flash_success_msg'] = f"🎉 **{message}**{extra_sc_msg}"
             st.cache_data.clear()
             st.rerun()
         else:
@@ -549,6 +711,34 @@ def render_shift_production_form(dl, current_user: Dict[str, Any]):
                 st.rerun()
             else:
                 st.error(f"❌ {del_msg}")
+
+    # ================= NHẬT KÝ SỰ CỐ GẦN NHẤT TRÊN HỆ THỐNG =================
+    st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
+    try:
+        df_recent_sc = dl.load_incident_data()
+        if not df_recent_sc.empty:
+            with st.expander("📋 Xem Danh Sách Sự Cố Thiết Bị Đã Ghi Nhận Gần Đây (Sheet `Su co`)", expanded=False):
+                disp_cols = ['id_su_co', 'date_str', 'week', 'month', 'shift_leader', 'equipment_raw', 'sensor_code', 'activity', 'description', 'solution', 'performer', 'duration_hours', 'status']
+                col_rename = {
+                    'id_su_co': 'ID Sự cố',
+                    'date_str': 'Ngày',
+                    'week': 'Tuần',
+                    'month': 'Tháng',
+                    'shift_leader': 'Trưởng ca',
+                    'equipment_raw': 'Mã thiết bị/ zone',
+                    'sensor_code': 'Mã điện/ sensor',
+                    'activity': 'Hoạt động',
+                    'description': 'Mô tả hoạt động',
+                    'solution': 'Xử lí',
+                    'performer': 'Người thực hiện',
+                    'duration_hours': 'Thời gian (h)',
+                    'status': 'Trạng thái'
+                }
+                avail_sc_cols = [c for c in disp_cols if c in df_recent_sc.columns]
+                df_show_sc = df_recent_sc[avail_sc_cols].tail(10).iloc[::-1].rename(columns=col_rename)
+                st.dataframe(df_show_sc, use_container_width=True, hide_index=True)
+    except Exception:
+        pass
 
 
 def render_kcs_entry_form(dl, current_user: Dict[str, Any]):
