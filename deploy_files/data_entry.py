@@ -1326,6 +1326,10 @@ def render_viewer_lock_screen(logo_b64: str = ""):
             if matched_user:
                 st.session_state["authenticated_user"] = matched_user
                 st.session_state["viewer_authorized_email"] = matched_user.get("id", "authorized")
+                try:
+                    st.query_params["pin"] = pin_clean
+                except Exception:
+                    pass
                 if submit_entry:
                     st.session_state["active_task"] = t("📝 14. Nhập Số Liệu", "📝 14. Data Entry")
                 else:

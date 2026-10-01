@@ -3,6 +3,15 @@ Module kết nối và chuẩn hóa dữ liệu từ Google Sheets cho Nhà máy
 """
 import os
 import sys
+
+# Đảm bảo hiển thị tiếng Việt UTF-8 chuẩn trên Windows Console tránh lỗi charmap / cp1252
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 import re
 import json
 import time
@@ -503,7 +512,16 @@ class DataLoader:
         self.process_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.hr_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.oil_spreadsheet: Optional[gspread.Spreadsheet] = None
+        self._sheet_cache: Dict[str, List[List[str]]] = {}
+        self._kpi_daily_shifts_cache: Optional[pd.DataFrame] = None
+        self._cached_kcs: Optional[pd.DataFrame] = None
         self._ensure_credentials()
+
+    def clear_cache(self):
+        """Xóa toàn bộ bộ đệm trong bộ nhớ để ép buộc tải lại từ Google Sheets"""
+        self._sheet_cache.clear()
+        self._kpi_daily_shifts_cache = None
+        self._cached_kcs = None
 
     def _ensure_credentials(self):
         """Tìm file credentials nếu đường dẫn mặc định không tồn tại"""
@@ -594,15 +612,20 @@ class DataLoader:
                             sys.stdout.buffer.flush()
                         except Exception:
                             pass
+                        break  # Tránh thử lại nếu lỗi phân quyền 403 / 404
             if not opened:
                 setattr(self, attr, None)
-            time.sleep(0.1)
+            time.sleep(0.05)
 
         return True
 
-    def get_sheet_values(self, sheet_name: str) -> List[List[str]]:
-        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính sản xuất với retry 4 lần kèm exponential backoff và chuẩn hóa ngay dòng tiêu đề"""
-        for attempt in range(4):
+    def get_sheet_values(self, sheet_name: str, use_cache: bool = True) -> List[List[str]]:
+        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính sản xuất có đệm bộ nhớ tránh đọc lại nhiều lần"""
+        cache_key = f"prod_{sheet_name}"
+        if use_cache and cache_key in self._sheet_cache:
+            return self._sheet_cache[cache_key]
+
+        for attempt in range(3):
             try:
                 if not self.spreadsheet:
                     self.connect()
@@ -612,17 +635,23 @@ class DataLoader:
                 rows = ws.get_all_values()
                 if rows and len(rows) > 0:
                     rows[0] = normalize_headers(rows[0])
+                if rows:
+                    self._sheet_cache[cache_key] = rows
                 return rows
             except Exception as e:
-                print(f"[-] Lỗi đọc sheet '{sheet_name}' (lần {attempt+1}/4): {e}")
-                if attempt < 3:
+                print(f"[-] Lỗi đọc sheet '{sheet_name}' (lần {attempt+1}/3): {e}")
+                if attempt < 2:
                     wait_sec = (1.5 ** attempt) + (2.0 if '429' in str(e) else 0.5)
                     time.sleep(wait_sec)
         return []
 
-    def get_kpi_sheet_values(self, sheet_name: str) -> List[List[str]]:
-        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính đánh giá KPI với retry 4 lần kèm exponential backoff và chuẩn hóa ngay dòng tiêu đề"""
-        for attempt in range(4):
+    def get_kpi_sheet_values(self, sheet_name: str, use_cache: bool = True) -> List[List[str]]:
+        """Đọc toàn bộ dữ liệu của một sheet từ bảng tính đánh giá KPI có đệm bộ nhớ tránh đọc lại nhiều lần"""
+        cache_key = f"kpi_{sheet_name}"
+        if use_cache and cache_key in self._sheet_cache:
+            return self._sheet_cache[cache_key]
+
+        for attempt in range(3):
             try:
                 if not self.kpi_spreadsheet:
                     self.connect()
@@ -632,10 +661,12 @@ class DataLoader:
                 rows = ws.get_all_values()
                 if rows and len(rows) > 0:
                     rows[0] = normalize_headers(rows[0])
+                if rows:
+                    self._sheet_cache[cache_key] = rows
                 return rows
             except Exception as e:
-                print(f"[-] Lỗi đọc KPI sheet '{sheet_name}' (lần {attempt+1}/4): {e}")
-                if attempt < 3:
+                print(f"[-] Lỗi đọc KPI sheet '{sheet_name}' (lần {attempt+1}/3): {e}")
+                if attempt < 2:
                     wait_sec = (1.5 ** attempt) + (2.0 if '429' in str(e) else 0.5)
                     time.sleep(wait_sec)
         return []
@@ -1237,10 +1268,6 @@ class DataLoader:
         """
         Mô phỏng chính xác công thức Google Sheets:
         =IFERROR(AVERAGEIFS('Data KCS'!$N:$N; 'Data KCS'!$B:$B; A2; 'Data KCS'!$F:$F; D2); "")
-        Trong đó:
-        - 'Data KCS'!$N:$N: am_vien_pct (Cột 14 / index 13)
-        - 'Data KCS'!$B:$B: date (Cột 2 / index 1)
-        - 'Data KCS'!$F:$F: shift_leader / Trưởng ca (Cột 6 / index 5)
         """
         if df_kcs is None or df_kcs.empty or 'am_vien_pct' not in df_kcs.columns:
             return 0.0
@@ -1252,10 +1279,24 @@ class DataLoader:
         if not t_date:
             return 0.0
 
-        mask_date = df_kcs['date'].dt.date == t_date
         s_clean = str(shift_name).strip().lower()
-        
-        # Ánh xạ ca tương đương theo danh mục mã hóa chính thức
+        norm_key = 'ca a' if any(x in s_clean for x in ['ca a', 'sắc', 'sac', 'hải', 'hai']) else (
+            'ca b' if any(x in s_clean for x in ['ca b', 'tài', 'tai', 'lâm', 'lam']) else (
+                'ca c' if any(x in s_clean for x in ['ca c', 'long']) else s_clean
+            )
+        )
+
+        lookup = df_kcs.attrs.get('moisture_lookup') if (hasattr(df_kcs, 'attrs') and isinstance(df_kcs.attrs, dict)) else getattr(df_kcs, '_moisture_lookup', None)
+        if lookup:
+            val = lookup.get((t_date, norm_key))
+            if val is not None and val > 0:
+                return float(val)
+            val_all = lookup.get((t_date, 'all'))
+            if val_all is not None and val_all > 0:
+                return float(val_all)
+            return 0.0
+
+        mask_date = df_kcs['date'].dt.date == t_date
         shift_aliases = {
             'ca a': ['ca a', 'sắc', 'sac', 'hải', 'hai'],
             'ca b': ['ca b', 'tài', 'tai', 'lâm', 'lam'],
@@ -1271,7 +1312,6 @@ class DataLoader:
         filtered = df_kcs[mask_date & mask_shift]
         
         if filtered.empty:
-            # Tìm kiếm chứa chuỗi
             mask_like = df_kcs['shift_leader'].astype(str).str.contains(s_clean, case=False, na=False)
             filtered = df_kcs[mask_date & mask_like]
 
@@ -1400,7 +1440,28 @@ class DataLoader:
                     df.to_parquet(cp, index=False)
                 except Exception:
                     pass
-        return clean_numeric_dataframe(df)
+        res_df = clean_numeric_dataframe(df)
+        if not res_df.empty and 'am_vien_pct' in res_df.columns:
+            try:
+                sub_valid = res_df[res_df['am_vien_pct'] > 0].copy()
+                if not sub_valid.empty:
+                    sub_valid['d_date'] = pd.to_datetime(sub_valid['date'], errors='coerce').dt.date
+                    def _norm_s_item(s):
+                        sl = str(s).strip().lower()
+                        if any(x in sl for x in ['ca a', 'sắc', 'sac', 'hải', 'hai']): return 'ca a'
+                        if any(x in sl for x in ['ca b', 'tài', 'tai', 'lâm', 'lam']): return 'ca b'
+                        if any(x in sl for x in ['long', 'ca c']): return 'ca c'
+                        return sl
+                    sub_valid['norm_s'] = sub_valid['shift_leader'].apply(_norm_s_item)
+                    lookup = sub_valid.groupby(['d_date', 'norm_s'])['am_vien_pct'].mean().round(2).to_dict()
+                    lookup_all = sub_valid.groupby('d_date')['am_vien_pct'].mean().round(2).to_dict()
+                    for d_k, v_k in lookup_all.items():
+                        lookup[(d_k, 'all')] = v_k
+                    res_df.attrs['moisture_lookup'] = lookup
+            except Exception:
+                pass
+        self._cached_kcs = res_df
+        return res_df
 
     def load_diezen_data(self) -> pd.DataFrame:
         """
@@ -1770,15 +1831,15 @@ class DataLoader:
 
         return {'weekly': clean_numeric_dataframe(df_all_w), 'monthly': clean_numeric_dataframe(df_all_m)}
 
-    def load_kpi_chart_data(self, sheet_name: str) -> pd.DataFrame:
+    def load_kpi_chart_data(self, sheet_name: str, df_shifts: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Đọc dữ liệu so sánh 3 ca theo ngày từ sheet 'chart capacity' hoặc tạo động từ 'Data KPI'.
         Hỗ trợ: 'Chart moisture', 'Chart dien', 'Chart capacity'
         """
         try:
             s_lower = sheet_name.strip().lower()
-            if 'cap' in s_lower:
-                for s_try in ['chart capacity', 'Chart capacity', sheet_name]:
+            if 'cap' in s_lower and self.kpi_spreadsheet is not None and (df_shifts is None or df_shifts.empty):
+                for s_try in ['chart capacity', 'Chart capacity']:
                     rows = self.get_kpi_sheet_values(s_try)
                     if rows and len(rows) >= 3:
                         records = []
@@ -1808,7 +1869,8 @@ class DataLoader:
                             return clean_numeric_dataframe(df.sort_values('date').reset_index(drop=True))
 
             # 2. Tạo động từ Data KPI
-            df_shifts = self.load_kpi_daily_shifts()
+            if df_shifts is None or df_shifts.empty:
+                df_shifts = self.load_kpi_daily_shifts()
             if df_shifts.empty:
                 return pd.DataFrame()
 
@@ -1862,12 +1924,13 @@ class DataLoader:
             print(f"[-] Lỗi nạp KPI chart data '{sheet_name}': {e}")
             return pd.DataFrame()
 
-    def load_kpi_sl_chart_data(self) -> pd.DataFrame:
+    def load_kpi_sl_chart_data(self, df_shifts: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Đọc/tạo dữ liệu so sánh sản lượng thực tế và chỉ tiêu của các ca theo ngày từ Data KPI.
         """
         try:
-            df_shifts = self.load_kpi_daily_shifts()
+            if df_shifts is None or df_shifts.empty:
+                df_shifts = self.load_kpi_daily_shifts()
             if df_shifts.empty:
                 return pd.DataFrame()
 
@@ -1921,6 +1984,9 @@ class DataLoader:
         Các cột gồm: Ngày, Tuần, Tháng, Ca Trưởng, Thành phẩm (tấn), Chỉ tiêu (tấn), Điện năng TB, Năng suất, Độ ẩm viên %.
         Tự động tính toán độ ẩm trung bình từ df_kcs theo công thức AVERAGEIFS nếu ô độ ẩm rỗng.
         """
+        if self._kpi_daily_shifts_cache is not None and (df_kcs is None or df_kcs.empty):
+            return self._kpi_daily_shifts_cache
+
         cache_paths = [
             os.path.join(os.path.dirname(__file__), "assets", "cache_kpi_daily_shifts.parquet"),
             os.path.join("assets", "cache_kpi_daily_shifts.parquet"),
@@ -1936,17 +2002,21 @@ class DataLoader:
                     try:
                         df_cached = pd.read_parquet(cp)
                         if not df_cached.empty and 'sl_thuc_te' in df_cached.columns:
-                            return df_cached
+                            self._kpi_daily_shifts_cache = clean_numeric_dataframe(df_cached)
+                            return self._kpi_daily_shifts_cache
                     except Exception:
                         pass
             return pd.DataFrame()
 
         # Nạp kcs nếu cần để đối soát tính độ ẩm
         if df_kcs is None or df_kcs.empty:
-            try:
-                df_kcs = self.load_kcs_data()
-            except Exception:
-                df_kcs = pd.DataFrame()
+            if self._cached_kcs is not None:
+                df_kcs = self._cached_kcs
+            else:
+                try:
+                    df_kcs = self.load_kcs_data()
+                except Exception:
+                    df_kcs = pd.DataFrame()
 
         records = []
         for r in rows[1:]:
@@ -1997,7 +2067,9 @@ class DataLoader:
                     df.to_parquet(cp, index=False)
                 except Exception:
                     pass
-        return clean_numeric_dataframe(df)
+        res_df = clean_numeric_dataframe(df)
+        self._kpi_daily_shifts_cache = res_df
+        return res_df
 
     def load_incident_data(self) -> pd.DataFrame:
         """
@@ -3489,6 +3561,155 @@ class DataLoader:
             'details': details,
             'title': title
         }
+
+    def load_all_from_local_cache(self) -> Optional[Dict[str, Any]]:
+        """
+        Nạp tức thì toàn bộ dữ liệu từ bộ đệm parquet cục bộ (dưới 0.2 giây).
+        Dùng khi khởi động ứng dụng để mở khóa và hiển thị Dashboard tức thì mà không cần chờ nạp mạng.
+        Nếu thiếu file bộ đệm quan trọng, trả về None để hệ thống tự động tải từ Google Sheets.
+        """
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_dirs = [
+            os.path.join(base_dir, "assets"),
+            "assets",
+            os.path.join(base_dir, "deploy_files", "assets"),
+            os.path.join("deploy_files", "assets")
+        ]
+        
+        def _find_parquet(fname: str) -> Optional[str]:
+            for d in candidate_dirs:
+                p = os.path.join(d, fname)
+                if os.path.exists(p) and os.path.getsize(p) > 100:
+                    return p
+            return None
+
+        # Kiểm tra các file tối quan trọng bắt buộc phải có
+        sh_path = _find_parquet("cache_shifts.parquet")
+        da_path = _find_parquet("cache_daily_summary.parquet")
+        if not sh_path or not da_path:
+            return None
+
+        try:
+            df_shifts = clean_numeric_dataframe(pd.read_parquet(sh_path))
+            df_daily = clean_numeric_dataframe(pd.read_parquet(da_path))
+            if df_shifts.empty or df_daily.empty:
+                return None
+
+            we_path = _find_parquet("cache_weekly_report.parquet")
+            df_weekly = clean_numeric_dataframe(pd.read_parquet(we_path)) if we_path else pd.DataFrame()
+
+            mo_path = _find_parquet("cache_monthly_report.parquet")
+            df_monthly = clean_numeric_dataframe(pd.read_parquet(mo_path)) if mo_path else pd.DataFrame()
+
+            kc_path = _find_parquet("cache_kcs.parquet")
+            df_kcs = pd.read_parquet(kc_path) if kc_path else pd.DataFrame()
+            if not df_kcs.empty and 'am_vien_pct' in df_kcs.columns:
+                try:
+                    sub_v = df_kcs[df_kcs['am_vien_pct'] > 0].copy()
+                    if not sub_v.empty:
+                        sub_v['d_date'] = pd.to_datetime(sub_v['date'], errors='coerce').dt.date
+                        def _n_s(s):
+                            sl = str(s).strip().lower()
+                            if any(x in sl for x in ['ca a', 'sắc', 'sac', 'hải', 'hai']): return 'ca a'
+                            if any(x in sl for x in ['ca b', 'tài', 'tai', 'lâm', 'lam']): return 'ca b'
+                            if any(x in sl for x in ['long', 'ca c']): return 'ca c'
+                            return sl
+                        sub_v['norm_s'] = sub_v['shift_leader'].apply(_n_s)
+                        lookup = sub_v.groupby(['d_date', 'norm_s'])['am_vien_pct'].mean().round(2).to_dict()
+                        lookup_all = sub_v.groupby('d_date')['am_vien_pct'].mean().round(2).to_dict()
+                        for d_k, v_k in lookup_all.items():
+                            lookup[(d_k, 'all')] = v_k
+                        df_kcs.attrs['moisture_lookup'] = lookup
+                except Exception:
+                    pass
+            self._cached_kcs = df_kcs
+
+            ww_path = _find_parquet("cache_kpi_wm_weekly.parquet")
+            df_wm_weekly = clean_numeric_dataframe(pd.read_parquet(ww_path)) if ww_path else pd.DataFrame()
+
+            wm_path = _find_parquet("cache_kpi_wm_monthly.parquet")
+            df_wm_monthly = clean_numeric_dataframe(pd.read_parquet(wm_path)) if wm_path else pd.DataFrame()
+
+            lw_path = _find_parquet("cache_kpi_leaders_weekly.parquet")
+            df_lw = clean_numeric_dataframe(pd.read_parquet(lw_path)) if lw_path else pd.DataFrame()
+
+            lm_path = _find_parquet("cache_kpi_leaders_monthly.parquet")
+            df_lm = clean_numeric_dataframe(pd.read_parquet(lm_path)) if lm_path else pd.DataFrame()
+            leaders_kpi = {'weekly': df_lw, 'monthly': df_lm}
+
+            ks_path = _find_parquet("cache_kpi_daily_shifts.parquet")
+            df_kpi_shifts = clean_numeric_dataframe(pd.read_parquet(ks_path)) if ks_path else pd.DataFrame()
+            self._kpi_daily_shifts_cache = df_kpi_shifts
+
+            inc_path = _find_parquet("cache_incidents.parquet")
+            df_incidents = clean_numeric_dataframe(pd.read_parquet(inc_path)) if inc_path else pd.DataFrame()
+
+            oil_path = _find_parquet("cache_oil_summary.parquet")
+            df_oil_sum = clean_numeric_dataframe(pd.read_parquet(oil_path)) if oil_path else pd.DataFrame()
+            oil_change_data = {
+                'summary': df_oil_sum,
+                'details': {},
+                'title': "Lịch thay nhớt hộp số máy ép"
+            }
+
+            # Tạo động các biểu đồ KPI so sánh từ df_kpi_shifts (rất nhanh trong bộ nhớ)
+            df_chart_moist = self.load_kpi_chart_data('Chart moisture', df_shifts=df_kpi_shifts)
+            df_chart_dien = self.load_kpi_chart_data('Chart dien', df_shifts=df_kpi_shifts)
+            df_chart_cap = self.load_kpi_chart_data('Chart capacity', df_shifts=df_kpi_shifts)
+            df_chart_sl = self.load_kpi_sl_chart_data(df_shifts=df_kpi_shifts)
+
+            # Quy trình chế biến từ cache cục bộ (hoàn toàn ngoại tuyến)
+            process_data = {
+                'status': 'LOCAL_CACHE',
+                'sheet_id': self.process_spreadsheet_id,
+                'sheet_url': f"https://docs.google.com/spreadsheets/d/{self.process_spreadsheet_id}/edit?gid=0#gid=0",
+                'service_email': 'bvn-reporter@boxwood-dynamo-508304-t4.iam.gserviceaccount.com',
+                'title': 'Quy Trình Chế Biến Viên Nén Gỗ (Bản Lưu Cục Bộ)',
+                'sheets_data': {},
+                'error_message': ''
+            }
+            local_proc_cache = os.path.join(base_dir, "assets", "cache_process_sheets.xlsx")
+            if os.path.exists(local_proc_cache):
+                try:
+                    excel_data = pd.read_excel(local_proc_cache, sheet_name=None)
+                    if excel_data:
+                        process_data['sheets_data'] = excel_data
+                except Exception:
+                    pass
+
+            return {
+                'shifts': df_shifts,
+                'daily': df_daily,
+                'weekly': df_weekly,
+                'monthly': df_monthly,
+                'kcs': df_kcs,
+                'diezen': pd.DataFrame(),
+                'wm_weekly': df_wm_weekly,
+                'wm_monthly': df_wm_monthly,
+                'leaders_kpi': leaders_kpi,
+                'chart_moist': df_chart_moist,
+                'chart_dien': df_chart_dien,
+                'chart_cap': df_chart_cap,
+                'chart_sl': df_chart_sl,
+                'kpi_shifts': df_kpi_shifts,
+                'incidents': df_incidents,
+                'maint_log': pd.DataFrame(),
+                'maint_plan': pd.DataFrame(),
+                'maint_4m': pd.DataFrame(),
+                'tpm_data': {'summary': {}, 'tasks': pd.DataFrame()},
+                'grease_data': pd.DataFrame(),
+                'process_data': process_data,
+                'oil_change_data': oil_change_data,
+                'prod_title': "2026 BVN QB Nhật kí sản xuất",
+                'kpi_title': "2026 Nhat ky KPI",
+                'maint_log_title': "Maninternance BVNQB",
+                'maint_plan_title': "Mainternance BVN QB",
+                'oil_title': "Lịch thay nhớt hộp số máy ép",
+                'is_cached': True
+            }
+        except Exception as e:
+            print(f"[-] Lỗi đọc toàn bộ local cache: {e}")
+            return None
 
 
 # ==============================================================================

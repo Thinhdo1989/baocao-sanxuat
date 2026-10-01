@@ -5,6 +5,14 @@ Chạy bằng lệnh: streamlit run app.py
 import os
 import sys
 
+# Đảm bảo hiển thị tiếng Việt UTF-8 chuẩn trên Windows Console tránh lỗi charmap / cp1252
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 # Đảm bảo đường dẫn thư mục hiện tại và deploy_files luôn nằm ở đầu sys.path
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _parent_dir = os.path.dirname(_current_dir)
@@ -761,10 +769,17 @@ def get_data_loader() -> DataLoader:
     return loader
 
 @st.cache_data(ttl=600)
-def load_all_factory_data():
+def load_all_factory_data(force_reload: bool = False):
     """Tải và lưu đệm dữ liệu từ các Google Sheets trong 600 giây (10 phút) để tối ưu hiệu năng và tránh quota limit"""
     loader = get_data_loader()
 
+    # 1. Ưu tiên nạp tức thì từ bộ đệm cục bộ (< 0.5 giây) để mở Dashboard ngay
+    if not force_reload:
+        cached_data = loader.load_all_from_local_cache()
+        if cached_data is not None:
+            return cached_data
+
+    # 2. Tải trực tiếp từ Google Sheets và tự động cập nhật local parquet cache
     try:
         df_shifts = loader.load_shift_data()
     except Exception as e:
@@ -841,11 +856,11 @@ def load_all_factory_data():
         print(f"[-] Lỗi đồng bộ leaders kpi: {e}")
 
     try:
-        df_chart_moist = loader.load_kpi_chart_data('Chart moisture')
-        df_chart_dien = loader.load_kpi_chart_data('Chart dien')
-        df_chart_cap = loader.load_kpi_chart_data('Chart capacity')
-        df_chart_sl = loader.load_kpi_sl_chart_data()
         df_kpi_shifts = loader.load_kpi_daily_shifts(df_kcs=df_kcs)
+        df_chart_moist = loader.load_kpi_chart_data('Chart moisture', df_shifts=df_kpi_shifts)
+        df_chart_dien = loader.load_kpi_chart_data('Chart dien', df_shifts=df_kpi_shifts)
+        df_chart_cap = loader.load_kpi_chart_data('Chart capacity', df_shifts=df_kpi_shifts)
+        df_chart_sl = loader.load_kpi_sl_chart_data(df_shifts=df_kpi_shifts)
     except Exception as e:
         print(f"[-] Lỗi nạp chart data: {e}")
         df_chart_moist = pd.DataFrame()
@@ -952,9 +967,19 @@ if not check_viewer_authorization():
 
 # Load dữ liệu
 try:
-    with st.spinner("Đang kết nối 6 Google Sheets và nạp dữ liệu sản xuất, KPI, bảo trì, quy trình & lịch thay nhớt..."):
+    force_reload_flag = st.session_state.pop('force_reload_sheets', False)
+    if force_reload_flag:
+        try:
+            load_all_factory_data.clear()
+        except Exception:
+            pass
+        spinner_msg = "Đang kết nối 6 Google Sheets và đồng bộ dữ liệu mới nhất..."
+    else:
+        spinner_msg = "Đang khởi tạo giao diện điều hành..."
+
+    with st.spinner(spinner_msg):
         app_loader = get_data_loader()
-        data = load_all_factory_data()
+        data = load_all_factory_data(force_reload=force_reload_flag)
         df_shifts = data.get('shifts', df_shifts)
         df_daily = data.get('daily', df_daily)
         df_weekly = data.get('weekly', df_weekly)
@@ -1813,6 +1838,7 @@ def render_top_sticky_brand_header(logo_b64_str: str = "", is_entry_space: bool 
             if st.button("🔄", key="top_hdr_refresh_btn", help=t("Làm mới dữ liệu từ Google Sheets (Xóa cache)", "Refresh data from Google Sheets (Clear cache)"), use_container_width=True):
                 st.cache_data.clear()
                 st.cache_resource.clear()
+                st.session_state['force_reload_sheets'] = True
                 if 'hr_data' in st.session_state:
                     del st.session_state['hr_data']
                 st.rerun()
@@ -4154,6 +4180,7 @@ elif task_num == 2:
         if st.button(t("🔄 Cập Nhật Lại Điểm KPI", "🔄 Refresh KPI Scores"), help=t("Xóa cache và tải lại dữ liệu điểm KPI mới nhất từ Google Sheets", "Clear cache and reload latest KPI scores from Google Sheets"), use_container_width=True):
             st.cache_data.clear()
             st.cache_resource.clear()
+            st.session_state['force_reload_sheets'] = True
             st.rerun()
 
     # 1. Bộ lọc chọn Tuần và Tháng cho Bảng Xếp Hạng Thi Đua (Toàn bộ 52 tuần & 12 tháng)
