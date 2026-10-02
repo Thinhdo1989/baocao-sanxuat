@@ -768,24 +768,27 @@ def get_data_loader() -> DataLoader:
         print(f"[-] Loader connect warning: {e}")
     return loader
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=300)
 def load_all_factory_data(force_reload: bool = False):
-    """Tải và lưu đệm dữ liệu từ các Google Sheets trong 600 giây (10 phút) để tối ưu hiệu năng và tránh quota limit"""
+    """Tải và lưu đệm dữ liệu từ các Google Sheets trong 300 giây (5 phút), tự động fallback bộ đệm nếu mất mạng"""
     loader = get_data_loader()
 
-    # 1. Ưu tiên nạp tức thì từ bộ đệm cục bộ (< 0.5 giây) để mở Dashboard ngay
-    if not force_reload:
-        cached_data = loader.load_all_from_local_cache()
-        if cached_data is not None:
-            return cached_data
-
-    # 2. Tải trực tiếp từ Google Sheets và tự động cập nhật local parquet cache
+    # 1. Tải trực tiếp dữ liệu từ Google Sheets
+    live_success = False
     try:
         df_shifts = loader.load_shift_data()
+        if df_shifts is not None and not df_shifts.empty:
+            live_success = True
     except Exception as e:
-        print(f"[-] Lỗi nạp shift data: {e}")
+        print(f"[-] Lỗi nạp trực tuyến shift data từ Google Sheets: {e}")
         df_shifts = pd.DataFrame(columns=DEFAULT_SHIFT_COLUMNS)
 
+    # 2. Nếu không kết nối được Google Sheets (mất mạng / quota), chuyển sang bộ đệm cục bộ
+    if not live_success and not force_reload:
+        cached_data = loader.load_all_from_local_cache()
+        if cached_data is not None:
+            print("[i] Sử dụng dữ liệu bộ đệm offline do mất kết nối tới Google Sheets.")
+            return cached_data
     try:
         df_daily = loader.load_daily_summary()
     except Exception as e:
@@ -1385,17 +1388,20 @@ ALL_WEEKS_52 = [f"Tuần {i}" for i in range(1, 53)]
 ALL_MONTHS_12 = [f"Tháng {i}" for i in range(1, 13)]
 ALL_MONTHS_CODE_12 = [f"{i:02d}/2026" for i in range(1, 13)]
 
-# Tìm tuần và tháng mới nhất có dữ liệu thực tế để chọn làm mặc định
-latest_kpi_w_str = df_wm_weekly['week_label'].iloc[-1] if (not df_wm_weekly.empty and 'week_label' in df_wm_weekly.columns) else "Tuần 38"
-default_w_idx = ALL_WEEKS_52.index(latest_kpi_w_str) if latest_kpi_w_str in ALL_WEEKS_52 else 37
+today_now = datetime.now()
+# Tìm tuần và tháng mới nhất có dữ liệu thực tế hoặc theo ngày hiện tại
+latest_kpi_w_str = df_wm_weekly['week_label'].iloc[-1] if (not df_wm_weekly.empty and 'week_label' in df_wm_weekly.columns) else f"Tuần {today_now.isocalendar()[1]}"
+default_w_idx = ALL_WEEKS_52.index(latest_kpi_w_str) if latest_kpi_w_str in ALL_WEEKS_52 else min(51, max(0, today_now.isocalendar()[1] - 1))
 
-latest_kpi_m_str = df_wm_monthly['month_label'].iloc[-1] if (not df_wm_monthly.empty and 'month_label' in df_wm_monthly.columns) else "Tháng 9"
-default_m_idx = ALL_MONTHS_12.index(latest_kpi_m_str) if latest_kpi_m_str in ALL_MONTHS_12 else 8
-default_m_code_idx = 8 # Tháng 09/2026
+latest_kpi_m_str = df_wm_monthly['month_label'].iloc[-1] if (not df_wm_monthly.empty and 'month_label' in df_wm_monthly.columns) else f"Tháng {today_now.month}"
+default_m_idx = ALL_MONTHS_12.index(latest_kpi_m_str) if latest_kpi_m_str in ALL_MONTHS_12 else min(11, max(0, today_now.month - 1))
+default_m_code_idx = min(11, max(0, today_now.month - 1)) # Tự động chuyển sang tháng hiện tại (Tháng 10/2026)
 
 # ================= BỘ LỌC THỜI GIAN THEO KỲ SẢN XUẤT =================
-max_date = df_shifts['date'].max() if ('date' in df_shifts.columns and not df_shifts.empty) else datetime.now()
-min_date = df_shifts['date'].min() if ('date' in df_shifts.columns and not df_shifts.empty) else (datetime.now() - timedelta(days=30))
+max_date = df_shifts['date'].max() if ('date' in df_shifts.columns and not df_shifts.empty) else today_now
+min_date = df_shifts['date'].min() if ('date' in df_shifts.columns and not df_shifts.empty) else (today_now - timedelta(days=30))
+# Luôn cho phép lịch mở rộng tới ngày hôm nay (real-time) để người dùng theo dõi số liệu trực tuyến
+calendar_max_date = max(max_date.date(), today_now.date())
 
 curr_lang = get_lang()
 time_modes = get_time_modes(curr_lang)
@@ -1478,14 +1484,16 @@ with st.sidebar:
 
         if is_day_mode:
             avail_dates = sorted(df_shifts['date'].dt.date.unique(), reverse=True) if ('date' in df_shifts.columns and not df_shifts.empty) else [max_date.date()]
-            default_d = st.session_state.get('top_target_date', max_date.date())
+            if today_now.date() not in avail_dates:
+                avail_dates = [today_now.date()] + avail_dates
+            default_d = st.session_state.get('top_target_date', calendar_max_date)
             if default_d not in avail_dates and len(avail_dates) > 0:
                 default_d = avail_dates[0]
             picked_date = st.date_input(
                 t("Chọn ngày làm việc:", "Select Working Date:"),
                 value=default_d,
                 min_value=min_date.date(),
-                max_value=max_date.date(),
+                max_value=calendar_max_date,
                 key="main_date_picker"
             )
             selected_date = datetime.combine(picked_date, datetime.min.time())
@@ -1530,9 +1538,9 @@ with st.sidebar:
         elif is_range_mode:
             date_range_input = st.date_input(
                 t("Chọn khoảng ngày:", "Select Date Range:"),
-                value=(max_date.date() - timedelta(days=14), max_date.date()),
+                value=(max_date.date() - timedelta(days=14), calendar_max_date),
                 min_value=min_date.date(),
-                max_value=max_date.date(),
+                max_value=calendar_max_date,
                 key="main_range_picker"
             )
             if isinstance(date_range_input, tuple) and len(date_range_input) == 2:
@@ -2076,8 +2084,21 @@ def render_online_daily_dashboard(online_kpis: dict, df_weekly_data: pd.DataFram
                 🏢 {t("Nhà Máy Viên Nén Gỗ Năng Lượng BVN Quảng Bình", "BVN Quang Binh Wood Pellet Plant")} | 📊 {t("Dữ liệu tự động đồng bộ từ sheet Data KPI", "Auto-synced from sheet Data KPI")}
             </div>
         </div>
-    </div>
     """), unsafe_allow_html=True)
+
+    today_dt = datetime.now().date()
+    if online_date and hasattr(online_date, 'date') and online_date.date() < today_dt:
+        days_diff = (today_dt - online_date.date()).days
+        if days_diff == 1:
+            st.info(t(
+                f"ℹ️ **Thông tin hôm nay ({today_dt.strftime('%d/%m/%Y')}):** Ca sản xuất đang diễn ra trong ngày. Hệ thống sẽ tự động đồng bộ ngay khi ca trưởng hoàn tất nhập số liệu lên Google Sheets. Số liệu đang hiển thị bên dưới là ngày sản xuất gần nhất ({online_date_str}).",
+                f"ℹ️ **Today's Status ({today_dt.strftime('%d/%m/%Y')}):** Production shift is ongoing. System will auto-sync as soon as shift data is entered in Google Sheets. Displayed data below is from the latest recorded day ({online_date_str})."
+            ))
+        elif days_diff >= 2:
+            st.info(t(
+                f"ℹ️ **Thông tin vận hành ({today_dt.strftime('%d/%m/%Y')}):** Ngày 01/10 nhà máy bảo trì vệ sinh (BT_VS). Ca hôm nay ({today_dt.strftime('%d/%m/%Y')}) đang chạy và sẽ tự động đồng bộ khi có số liệu trên Google Sheets. Số liệu đang hiển thị bên dưới là ngày sản xuất gần nhất ({online_date_str}).",
+                f"ℹ️ **Operational Status ({today_dt.strftime('%d/%m/%Y')}):** Oct 1st was dedicated to maintenance/cleaning (BT_VS). Today ({today_dt.strftime('%d/%m/%Y')}) is in progress. Displayed data below is from the latest recorded day ({online_date_str})."
+            ))
 
     # 2. Thẻ KPI tổng hợp ngày gần nhất
     render_factory_dashboard_cards(online_kpis, df_weekly_data)
