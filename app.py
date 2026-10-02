@@ -1926,55 +1926,86 @@ def render_kpi_card_html(title, value, unit, badge_text, badge_cls="badge-info")
 
 # Hàm hiển thị 8 thẻ KPI của Toàn Nhà Máy
 def render_factory_dashboard_cards(kpis_data, df_weekly_data):
+    tot_out_val = float(kpis_data.get('total_output', 0.0))
+    is_zero_prod = (tot_out_val == 0.0)
+
     # Hàng 1: Vận hành & Năng suất (4 thẻ)
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     with r1_c1:
         if 'output_badge_text' in kpis_data and kpis_data['output_badge_text']:
             delta_txt = kpis_data['output_badge_text']
             b_out_cls = kpis_data.get('output_badge_cls', 'badge-info')
+        elif is_zero_prod and kpis_data.get('maint_shifts', 0) > 0:
+            delta_txt = t("Bảo trì (BT_VS)", "Maintenance (BT_VS)")
+            b_out_cls = "badge-info"
         elif kpis_data.get('delta_output', 0) != 0:
             delta_txt = t(f"{kpis_data.get('delta_output', 0):+,.1f} t so hôm trước", f"{kpis_data.get('delta_output', 0):+,.1f} t vs yesterday")
             b_out_cls = "badge-info"
         else:
             delta_txt = t("Hôm nay", "Today")
             b_out_cls = "badge-info"
-        st.markdown(render_kpi_card_html(t("Sản Lượng Thực Tế", "Actual Output"), f"{kpis_data.get('total_output', 0):,.1f}", t("Tấn", "Tons"), delta_txt, b_out_cls), unsafe_allow_html=True)
+        st.markdown(render_kpi_card_html(t("Sản Lượng Thực Tế", "Actual Output"), f"{tot_out_val:,.1f}", t("Tấn", "Tons"), delta_txt, b_out_cls), unsafe_allow_html=True)
     with r1_c2:
-        e_eval = kpis_data.get('electricity_eval', {})
-        b_cls = "badge-success" if e_eval.get('status') == 'EXCELLENT' else ("badge-info" if e_eval.get('status') == 'STANDARD' else "badge-danger")
-        e_badge = f"{e_eval.get('icon', '')} {translate_eval(e_eval.get('label', ''))}"
-        st.markdown(render_kpi_card_html(t("Suất Điện Tiêu Hao", "Specific Power"), f"{kpis_data.get('avg_electricity_kwh_ton', 0):.1f}", "kWh/t", e_badge, b_cls), unsafe_allow_html=True)
+        if is_zero_prod:
+            st.markdown(render_kpi_card_html(t("Suất Điện Tiêu Hao", "Specific Power"), "--", "kWh/t", t("⚪ Không sản xuất", "⚪ No production"), "badge-info"), unsafe_allow_html=True)
+        else:
+            e_eval = kpis_data.get('electricity_eval', {})
+            b_cls = "badge-success" if e_eval.get('status') == 'EXCELLENT' else ("badge-info" if e_eval.get('status') == 'STANDARD' else "badge-danger")
+            e_badge = f"{e_eval.get('icon', '')} {translate_eval(e_eval.get('label', ''))}"
+            st.markdown(render_kpi_card_html(t("Suất Điện Tiêu Hao", "Specific Power"), f"{kpis_data.get('avg_electricity_kwh_ton', 0):.1f}", "kWh/t", e_badge, b_cls), unsafe_allow_html=True)
     with r1_c3:
-        p_eval = kpis_data.get('productivity_eval', {})
-        b_cls = "badge-success" if p_eval.get('status') == 'PASS' else "badge-warning"
-        p_badge = f"{p_eval.get('icon', '')} {translate_eval(p_eval.get('label', ''))}"
-        st.markdown(render_kpi_card_html(t("Năng Suất Ép TB", "Avg Pellet Mill Rate"), f"{kpis_data.get('avg_productivity', 0):.2f}", t("Tấn/h", "Ton/h"), p_badge, b_cls), unsafe_allow_html=True)
+        if is_zero_prod:
+            st.markdown(render_kpi_card_html(t("Năng Suất Ép TB", "Avg Pellet Mill Rate"), "--", t("Tấn/h", "Ton/h"), t("⚪ Máy dừng/Bảo trì", "⚪ Mills Stopped/Maint"), "badge-info"), unsafe_allow_html=True)
+        else:
+            p_eval = kpis_data.get('productivity_eval', {})
+            b_cls = "badge-success" if p_eval.get('status') == 'PASS' else "badge-warning"
+            p_badge = f"{p_eval.get('icon', '')} {translate_eval(p_eval.get('label', ''))}"
+            st.markdown(render_kpi_card_html(t("Năng Suất Ép TB", "Avg Pellet Mill Rate"), f"{kpis_data.get('avg_productivity', 0):.2f}", t("Tấn/h", "Ton/h"), p_badge, b_cls), unsafe_allow_html=True)
     with r1_c4:
-        st.markdown(render_kpi_card_html(t("Tổng Giờ Máy Ép", "Total Mill Hours"), f"{kpis_data.get('total_pellet_hours', 0):.1f}", t("Giờ", "Hours"), t("8 Máy Ép Viên", "8 Pellet Mills"), "badge-info"), unsafe_allow_html=True)
+        tot_pe_h = float(kpis_data.get('total_pellet_hours', 0.0))
+        pe_sub = t("8 Máy Dừng/BT", "8 Mills Stopped/Maint") if (is_zero_prod or tot_pe_h == 0) else t("8 Máy Ép Viên", "8 Pellet Mills")
+        st.markdown(render_kpi_card_html(t("Tổng Giờ Máy Ép", "Total Mill Hours"), f"{tot_pe_h:.1f}", t("Giờ", "Hours"), pe_sub, "badge-info"), unsafe_allow_html=True)
 
     # Hàng 2: Chất Lượng & Tiêu Hao (4 thẻ)
     r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
     with r2_c1:
-        a_val = kpis_data.get('do_am_tb_pct', 0)
-        m_eval = kpis_data.get('moisture_eval', evaluate_moisture(a_val))
-        b_cls = "badge-success" if m_eval.get('status') == 'PASS' else ("badge-warning" if m_eval.get('status') == 'WARN' else "badge-danger")
-        m_badge = f"{m_eval.get('icon', '💧')} {translate_eval(m_eval.get('label', t('Chuẩn: 8.0 - 9.5%', 'Std: 8.0 - 9.5%')))}"
-        st.markdown(render_kpi_card_html(t("Độ Ẩm TB Viên (Ngày)", "Avg Pellet Moisture"), f"{a_val:.2f}", "%", m_badge, b_cls), unsafe_allow_html=True)
+        a_val = float(kpis_data.get('do_am_tb_pct', 0))
+        if is_zero_prod:
+            st.markdown(render_kpi_card_html(t("Độ Ẩm TB Viên (Ngày)", "Avg Pellet Moisture"), "--", "%", t("⚪ Không sản xuất", "⚪ No production"), "badge-info"), unsafe_allow_html=True)
+        elif a_val == 0:
+            st.markdown(render_kpi_card_html(t("Độ Ẩm TB Viên (Ngày)", "Avg Pellet Moisture"), "--", "%", t("⚪ Chưa có mẫu đo", "⚪ No QC sample"), "badge-info"), unsafe_allow_html=True)
+        else:
+            m_eval = kpis_data.get('moisture_eval', evaluate_moisture(a_val))
+            b_cls = "badge-success" if m_eval.get('status') == 'PASS' else ("badge-warning" if m_eval.get('status') == 'WARN' else "badge-danger")
+            m_badge = f"{m_eval.get('icon', '💧')} {translate_eval(m_eval.get('label', t('Chuẩn: 8.0 - 9.5%', 'Std: 8.0 - 9.5%')))}"
+            st.markdown(render_kpi_card_html(t("Độ Ẩm TB Viên (Ngày)", "Avg Pellet Moisture"), f"{a_val:.2f}", "%", m_badge, b_cls), unsafe_allow_html=True)
     with r2_c2:
-        ty_val = kpis_data.get('ty_trong_vien', 0)
-        d_eval = kpis_data.get('density_eval', evaluate_density(ty_val))
-        b_cls = "badge-success" if d_eval.get('status') == 'PASS' else ("badge-warning" if d_eval.get('status') == 'WARN' else "badge-info")
-        d_badge = f"{d_eval.get('icon', '⚖️')} {translate_eval(d_eval.get('label', t('Chuẩn: ≥ 600 kg/m³', 'Std: ≥ 600 kg/m³')))}"
-        st.markdown(render_kpi_card_html(t("Tỷ Trọng Viên Nén", "Bulk Density"), f"{ty_val:,.1f}", "kg/m³", d_badge, b_cls), unsafe_allow_html=True)
+        ty_val = float(kpis_data.get('ty_trong_vien', 0))
+        if is_zero_prod:
+            st.markdown(render_kpi_card_html(t("Tỷ Trọng Viên Nén", "Bulk Density"), "--", "kg/m³", t("⚪ Không sản xuất", "⚪ No production"), "badge-info"), unsafe_allow_html=True)
+        elif ty_val == 0:
+            st.markdown(render_kpi_card_html(t("Tỷ Trọng Viên Nén", "Bulk Density"), "--", "kg/m³", t("⚪ Chưa đo tỷ trọng", "⚪ No density test"), "badge-info"), unsafe_allow_html=True)
+        else:
+            d_eval = kpis_data.get('density_eval', evaluate_density(ty_val))
+            b_cls = "badge-success" if d_eval.get('status') == 'PASS' else ("badge-warning" if d_eval.get('status') == 'WARN' else "badge-info")
+            d_badge = f"{d_eval.get('icon', '⚖️')} {translate_eval(d_eval.get('label', t('Chuẩn: ≥ 600 kg/m³', 'Std: ≥ 600 kg/m³')))}"
+            st.markdown(render_kpi_card_html(t("Tỷ Trọng Viên Nén", "Bulk Density"), f"{ty_val:,.1f}", "kg/m³", d_badge, b_cls), unsafe_allow_html=True)
     with r2_c3:
-        st.markdown(render_kpi_card_html(t("Tỷ Lệ Chế Biến", "Processing Ratio"), f"{kpis_data.get('processing_ratio', 0):.2f}", t("lần", "x"), t("Định mức: 1.8 - 2.1", "Standard: 1.8 - 2.1"), "badge-info"), unsafe_allow_html=True)
+        cb_val = float(kpis_data.get('processing_ratio', 0.0))
+        if is_zero_prod or cb_val == 0:
+            st.markdown(render_kpi_card_html(t("Tỷ Lệ Chế Biến", "Processing Ratio"), "--", t("lần", "x"), t("⚪ Không sản xuất", "⚪ No production"), "badge-info"), unsafe_allow_html=True)
+        else:
+            st.markdown(render_kpi_card_html(t("Tỷ Lệ Chế Biến", "Processing Ratio"), f"{cb_val:.2f}", t("lần", "x"), t("Định mức: 1.8 - 2.1", "Standard: 1.8 - 2.1"), "badge-info"), unsafe_allow_html=True)
     with r2_c4:
         k_dz = float(kpis_data.get('diezen_lit', 0.0))
         k_dz_r = float(kpis_data.get('diezen_tb_lit_tan', 0.0))
-        if k_dz > 0 and k_dz_r > 0:
+        if is_zero_prod:
+            st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), "--", t("Lít/tấn", "L/ton"), t("⚪ Không sản xuất", "⚪ No production"), "badge-info"), unsafe_allow_html=True)
+        elif k_dz > 0 and k_dz_r > 0:
             dz_disp_r = k_dz_r
             dz_disp_sub = t(f"{k_dz:,.0f} Lít/kỳ", f"{k_dz:,.0f} L/period")
-        elif df_weekly_data is not None and not df_weekly_data.empty and 'diezen_lit' in df_weekly_data.columns:
+            st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), f"{dz_disp_r:.1f}", t("Lít/tấn", "L/ton"), dz_disp_sub, "badge-info"), unsafe_allow_html=True)
+        elif df_weekly_data is not None and not df_weekly_data.empty and 'diezen_lit' in df_weekly_data.columns and tot_out_val > 0:
             valid_dz_weeks = df_weekly_data[df_weekly_data['diezen_lit'] > 0]
             if not valid_dz_weeks.empty:
                 last_valid_row = valid_dz_weeks.iloc[-1]
@@ -1984,11 +2015,9 @@ def render_factory_dashboard_cards(kpis_data, df_weekly_data):
             else:
                 dz_disp_r = 0.0
                 dz_disp_sub = t("Chưa có số liệu", "No data")
+            st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), f"{dz_disp_r:.1f}", t("Lít/tấn", "L/ton"), dz_disp_sub, "badge-info"), unsafe_allow_html=True)
         else:
-            dz_disp_r = 0.0
-            dz_disp_sub = t("Chưa có số liệu", "No data")
-
-        st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), f"{dz_disp_r:.1f}", t("Lít/tấn", "L/ton"), dz_disp_sub, "badge-info"), unsafe_allow_html=True)
+            st.markdown(render_kpi_card_html(t("Dầu Diezen Tiêu Thụ", "Diesel Consumption"), "--", t("Lít/tấn", "L/ton"), t("Chưa có số liệu", "No data"), "badge-info"), unsafe_allow_html=True)
 
     # Hàng 3: Khối lượng sản xuất lũy kế tháng, Chỉ tiêu tháng, Tồn kho & Xuất hàng (4 thẻ chuẩn công nghiệp)
     m_out = float(kpis_data.get('month_output', 0.0))
@@ -2449,7 +2478,14 @@ if is_entry_space:
 
 
 # ================= VỊ TRÍ 1: TRẠNG THÁI SẢN XUẤT ONLINE TOÀN NHÀ MÁY (NGÀY GẦN NHẤT) =================
-latest_online_date = df_daily['date'].max() if (not df_daily.empty and 'date' in df_daily.columns) else (df_shifts['date'].max() if not df_shifts.empty else datetime.now())
+# Ưu tiên lấy ngày có sản lượng thực tế gần nhất (> 0) để hiển thị đầy đủ KPI sản xuất
+df_daily_has_prod = df_daily[df_daily['san_luong_tan'] > 0] if (not df_daily.empty and 'san_luong_tan' in df_daily.columns) else pd.DataFrame()
+if not df_daily_has_prod.empty:
+    latest_online_date = df_daily_has_prod['date'].max()
+else:
+    df_shifts_has_prod = df_shifts[df_shifts['san_luong_tan'] > 0] if (not df_shifts.empty and 'san_luong_tan' in df_shifts.columns) else pd.DataFrame()
+    latest_online_date = df_shifts_has_prod['date'].max() if not df_shifts_has_prod.empty else (df_daily['date'].max() if not df_daily.empty else datetime.now())
+
 online_kpis = get_latest_day_kpis(df_shifts, df_daily, df_kcs=df_kcs, df_monthly=df_monthly, target_date=latest_online_date)
 render_online_daily_dashboard(online_kpis, df_weekly, oil_change_data, df_incidents, df_daily, df_shifts)
 
@@ -3143,6 +3179,8 @@ else:
     if selected_date is not None:
         if kpis.get('delta_output', 0) != 0:
             kpis['output_badge_text'] = t(f"{kpis.get('delta_output', 0):+,.1f} t so hôm trước", f"{kpis.get('delta_output', 0):+,.1f} t vs yesterday")
+        elif kpis.get('maint_shifts', 0) > 0 and kpis.get('total_output', 0) == 0:
+            kpis['output_badge_text'] = t("Bảo trì (BT_VS)", "Maintenance (BT_VS)")
         elif selected_date.date() == max_date.date():
             kpis['output_badge_text'] = t("Hôm nay", "Today")
         else:
@@ -3154,13 +3192,16 @@ else:
         w_match = df_weekly[df_weekly['week'] == cur_w_num]
         if not w_match.empty and float(w_match.iloc[0].get('diezen_lit', 0)) > 0:
             kpis['diezen_lit'] = float(w_match.iloc[0].get('diezen_lit', 0.0))
-            kpis['diezen_tb_lit_tan'] = float(w_match.iloc[0].get('diezen_tb_lit_tan', 0.0))
-        else:
+            kpis['diezen_tb_lit_tan'] = float(w_match.iloc[0].get('diezen_tb_lit_tan', 0.0)) if kpis.get('total_output', 0) > 0 else 0.0
+        elif kpis.get('total_output', 0) > 0:
             valid_dz = df_weekly[df_weekly['diezen_lit'] > 0]
             if not valid_dz.empty:
                 last_dz = valid_dz.iloc[-1]
                 kpis['diezen_lit'] = float(last_dz.get('diezen_lit', 0.0))
                 kpis['diezen_tb_lit_tan'] = float(last_dz.get('diezen_tb_lit_tan', 0.0))
+        else:
+            kpis['diezen_lit'] = 0.0
+            kpis['diezen_tb_lit_tan'] = 0.0
 
     if selected_leader not in ["Tất cả", "All"] and 'date' in df_filtered_shifts.columns and not df_filtered_shifts.empty and 'date' in kpis:
         k_dt = pd.to_datetime(kpis['date']).date()

@@ -992,14 +992,14 @@ class DataLoader:
                         if not valid_tr.empty:
                             do_tro = float(valid_tr.mean())
 
-                # Nếu chưa có tỷ trọng ngày đó, lấy gần nhất trước đó
-                if ty_trong == 0 and not df_kcs.empty and 'density_vien' in df_kcs.columns:
+                # Nếu chưa có tỷ trọng ngày đó, lấy gần nhất trước đó (CHỈ KHI CÓ SẢN XUẤT)
+                if sl > 0 and ty_trong == 0 and not df_kcs.empty and 'density_vien' in df_kcs.columns:
                     past_tt = df_kcs[(df_kcs['date'].dt.date <= d_date) & (df_kcs['density_vien'] > 0)]
                     if not past_tt.empty:
                         ty_trong = float(past_tt.iloc[-1]['density_vien'])
                     else:
                         ty_trong = 640.0
-                elif ty_trong == 0:
+                elif sl > 0 and ty_trong == 0:
                     ty_trong = 640.0
 
                 # Liên kết từ df_incidents
@@ -1038,10 +1038,10 @@ class DataLoader:
                     w_match = df_weekly[df_weekly['week'] == w_num]
                     if not w_match.empty:
                         diezen_lit = float(w_match.iloc[0].get('diezen_lit', 0.0))
-                        diezen_tb = float(w_match.iloc[0].get('diezen_tb_lit_tan', 0.0))
+                        diezen_tb = float(w_match.iloc[0].get('diezen_tb_lit_tan', 0.0)) if sl > 0 else 0.0
 
                 tong_nl = nl_tho + nl_dot
-                ty_le_cb = (tong_nl / sl) if sl > 0 and tong_nl > 0 else 1.98
+                ty_le_cb = (tong_nl / sl) if sl > 0 and tong_nl > 0 else 0.0
 
                 rec = {
                     'date': d,

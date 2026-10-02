@@ -390,8 +390,10 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
         daily_match = df_daily[df_daily['date'].dt.date == target_date.date()]
         if not daily_match.empty:
             daily_record = daily_match.iloc[0].to_dict()
-            if daily_record.get('ty_le_che_bien', 0) > 0:
+            if daily_record.get('ty_le_che_bien', 0) > 0 and total_output > 0:
                 processing_ratio = float(daily_record.get('ty_le_che_bien', 0))
+            elif total_output == 0:
+                processing_ratio = 0.0
             if daily_record.get('san_luong_tan', 0) > 0:
                 total_output = float(daily_record.get('san_luong_tan', 0))
             if daily_record.get('dien_tb_kwh_tan', 0) > 0:
@@ -418,27 +420,37 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
                 if not d_vals.empty:
                     ty_trong = float(d_vals.mean())
 
-        # Nếu ngày đó chưa kịp đo tỷ trọng, lấy mẫu đo tỷ trọng gần nhất trước đó từ df_kcs
-        if ty_trong == 0 and 'density_vien' in df_kcs.columns:
-            past_density = df_kcs[(df_kcs['date'].dt.date <= target_date.date()) & (df_kcs['density_vien'] > 0)]
-            if not past_density.empty:
-                ty_trong = float(past_density.iloc[-1]['density_vien'])
-            else:
-                all_density = df_kcs[df_kcs['density_vien'] > 0]
-                if not all_density.empty:
-                    ty_trong = float(all_density.iloc[-1]['density_vien'])
+        # CHỈ lấy mẫu đo gần nhất trước đó NẾU ngày đó CÓ SẢN LƯỢNG (total_output > 0)
+        if total_output > 0:
+            if ty_trong == 0 and 'density_vien' in df_kcs.columns:
+                past_density = df_kcs[(df_kcs['date'].dt.date <= target_date.date()) & (df_kcs['density_vien'] > 0)]
+                if not past_density.empty:
+                    ty_trong = float(past_density.iloc[-1]['density_vien'])
                 else:
-                    ty_trong = 645.0
+                    all_density = df_kcs[df_kcs['density_vien'] > 0]
+                    if not all_density.empty:
+                        ty_trong = float(all_density.iloc[-1]['density_vien'])
+                    else:
+                        ty_trong = 645.0
 
-        if do_am_tb == 0 and 'am_vien_pct' in df_kcs.columns:
-            past_am = df_kcs[(df_kcs['date'].dt.date <= target_date.date()) & (df_kcs['am_vien_pct'] > 0)]
-            if not past_am.empty:
-                do_am_tb = float(past_am.iloc[-1]['am_vien_pct'])
-            else:
-                do_am_tb = 8.5
+            if do_am_tb == 0 and 'am_vien_pct' in df_kcs.columns:
+                past_am = df_kcs[(df_kcs['date'].dt.date <= target_date.date()) & (df_kcs['am_vien_pct'] > 0)]
+                if not past_am.empty:
+                    do_am_tb = float(past_am.iloc[-1]['am_vien_pct'])
+                else:
+                    do_am_tb = 8.5
+        else:
+            # Ngày không sản xuất: nếu không có mẫu đo thực tế trong ngày thì gán 0.0
+            if kcs_day.empty:
+                do_am_tb = 0.0
+                ty_trong = 0.0
     else:
-        if ty_trong == 0: ty_trong = 645.0
-        if do_am_tb == 0: do_am_tb = 8.5
+        if total_output == 0:
+            do_am_tb = 0.0
+            ty_trong = 0.0
+        else:
+            if ty_trong == 0: ty_trong = 645.0
+            if do_am_tb == 0: do_am_tb = 8.5
 
     # Tính delta so với ngày hôm trước
     prev_output = float(prev_shifts['san_luong_tan'].sum()) if not prev_shifts.empty else 0.0
@@ -597,8 +609,8 @@ def get_latest_day_kpis(df_shifts: pd.DataFrame, df_daily: pd.DataFrame = None, 
         'so_su_co': int(daily_record.get('so_su_co', 0)),
         'gio_dung_may': float(daily_record.get('gio_dung_may', 0.0)),
         'thiet_bi_su_co': str(daily_record.get('thiet_bi_su_co', '')),
-        'diezen_lit': float(daily_record.get('diezen_lit', 0.0)),
-        'diezen_tb_lit_tan': float(daily_record.get('diezen_tb_lit_tan', 0.0)),
+        'diezen_lit': float(daily_record.get('diezen_lit', 0.0)) if total_output > 0 else 0.0,
+        'diezen_tb_lit_tan': float(daily_record.get('diezen_tb_lit_tan', 0.0)) if total_output > 0 else 0.0,
         'month_output': round(month_output, 2),
         'month_target': round(month_target, 2),
         'month_diff': month_diff,
@@ -1404,13 +1416,13 @@ def get_all_leaders_dashboard_summary(
             if moist_val == 0 and not kcs_ldr.empty and (kcs_ldr['am_vien_pct'] > 0).any():
                 moist_val = float(kcs_ldr['am_vien_pct'][kcs_ldr['am_vien_pct'] > 0].tail(10).mean())
         
-        if moist_val == 0 and kpis_tong:
-            moist_val = float(kpis_tong.get('do_am_tb_pct', 8.5))
-        if moist_val == 0:
-            moist_val = 8.5
+        if moist_val == 0 and kpis_tong and float(kpis_tong.get('total_output', 0)) > 0:
+            moist_val = float(kpis_tong.get('do_am_tb_pct', 0.0))
+        elif moist_val == 0 and (not kpis_tong or float(kpis_tong.get('total_output', 0)) == 0):
+            moist_val = 0.0
 
         # Tỷ trọng viên
-        density_val = float(kpis_tong.get('ty_trong_vien', 640.0)) if kpis_tong else 640.0
+        density_val = float(kpis_tong.get('ty_trong_vien', 0.0)) if (kpis_tong and float(kpis_tong.get('total_output', 0)) > 0) else 0.0
 
         # 2. Ca trực gần nhất (nếu ngày này không trực)
         all_active_shifts = df_ldr[df_ldr['san_luong_tan'] > 0].sort_values('date')
