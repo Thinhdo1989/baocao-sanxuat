@@ -790,7 +790,7 @@ def load_all_factory_data(force_reload: bool = False):
             print("[i] Sử dụng dữ liệu bộ đệm offline do mất kết nối tới Google Sheets.")
             return cached_data
     try:
-        df_daily = loader.load_daily_summary()
+        df_daily = loader.load_daily_summary(df_shifts=df_shifts)
     except Exception as e:
         print(f"[-] Lỗi nạp daily summary: {e}")
         df_daily = pd.DataFrame()
@@ -2099,6 +2099,14 @@ def render_online_daily_dashboard(online_kpis: dict, df_weekly_data: pd.DataFram
     if hasattr(online_date, 'strftime'):
         online_date_str = online_date.strftime('%d/%m/%Y')
 
+    today_dt = datetime.now().date()
+    is_today = (online_date and hasattr(online_date, 'date') and online_date.date() == today_dt)
+
+    if is_today:
+        header_date_label = t(f"🔴 TRẠNG THÁI SẢN XUẤT ONLINE (HÔM NAY: {online_date_str})", f"🔴 ONLINE PRODUCTION STATUS (TODAY: {online_date_str})")
+    else:
+        header_date_label = t(f"🔴 TRẠNG THÁI SẢN XUẤT ONLINE (NGÀY GẦN NHẤT: {online_date_str})", f"🔴 ONLINE PRODUCTION STATUS (LATEST RECORDED DAY: {online_date_str})")
+
     # 1. Header Banner Online với hiệu ứng Live Feed
     st.markdown(clean_html(f"""
     <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); border: 1px solid #334155; border-left: 6px solid #ef4444; border-radius: 12px; padding: 12px 18px; margin: 6px 0 14px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.25);">
@@ -2106,18 +2114,32 @@ def render_online_daily_dashboard(online_kpis: dict, df_weekly_data: pd.DataFram
             <div style="display: flex; align-items: center; gap: 10px;">
                 <span style="display: inline-block; width: 13px; height: 13px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 10px #22c55e;"></span>
                 <span style="font-size: 17px; font-weight: 900; color: #ffffff; letter-spacing: 0.3px;">
-                    {t(f"🔴 TRẠNG THÁI SẢN XUẤT ONLINE (NGÀY GẦN NHẤT: {online_date_str})", f"🔴 ONLINE PRODUCTION STATUS (LATEST RECORDED DAY: {online_date_str})")}
+                    {header_date_label}
                 </span>
                 <span style="background: rgba(34, 197, 94, 0.2); border: 1px solid #22c55e; color: #86efac; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px;">ONLINE</span>
             </div>
             <div style="font-size: 12px; color: #94a3b8; font-weight: 600;">
-                🏢 {t("Nhà Máy Viên Nén Gỗ Năng Lượng BVN Quảng Bình", "BVN Quang Binh Wood Pellet Plant")} | 📊 {t("Dữ liệu tự động đồng bộ từ sheet Data KPI", "Auto-synced from sheet Data KPI")}
+                🏢 {t("Nhà Máy Viên Nén Gỗ Năng Lượng BVN Quảng Bình", "BVN Quang Binh Wood Pellet Plant")} | 📊 {t("Dữ liệu tự động đồng bộ từ Google Sheets", "Auto-synced from Google Sheets")}
             </div>
         </div>
+    </div>
     """), unsafe_allow_html=True)
 
-    today_dt = datetime.now().date()
-    if online_date and hasattr(online_date, 'date') and online_date.date() < today_dt:
+    if is_today:
+        out_today = float(online_kpis.get('total_output', 0.0))
+        shifts_today = online_kpis.get('shift_details', [])
+        sh_names = ", ".join([str(s.get('ca_truong')) for s in shifts_today if s.get('ca_truong')])
+        if out_today > 0:
+            st.info(t(
+                f"ℹ️ **Cập nhật trực tuyến hôm nay ({today_dt.strftime('%d/%m/%Y')}):** Đã ghi nhận số liệu ca sản xuất từ Google Sheets ({sh_names} - sản lượng {out_today:,.1f} tấn). Hệ thống tự động đồng bộ theo thời gian thực.",
+                f"ℹ️ **Live Online Today ({today_dt.strftime('%d/%m/%Y')}):** Production shift data recorded from Google Sheets ({sh_names} - output {out_today:,.1f} tons). Real-time auto-sync active."
+            ))
+        else:
+            st.info(t(
+                f"ℹ️ **Thông tin trực tuyến hôm nay ({today_dt.strftime('%d/%m/%Y')}):** Ca sản xuất đang diễn ra trong ngày. Hệ thống sẽ tự động cập nhật ngay khi tổ trưởng chốt số liệu trên Google Sheets.",
+                f"ℹ️ **Today's Status ({today_dt.strftime('%d/%m/%Y')}):** Production shift is in progress today. System will auto-update as soon as shift data is finalized in Google Sheets."
+            ))
+    elif online_date and hasattr(online_date, 'date') and online_date.date() < today_dt:
         days_diff = (today_dt - online_date.date()).days
         if days_diff == 1:
             st.info(t(
@@ -2477,15 +2499,10 @@ if is_entry_space:
     st.stop()
 
 
-# ================= VỊ TRÍ 1: TRẠNG THÁI SẢN XUẤT ONLINE TOÀN NHÀ MÁY (NGÀY GẦN NHẤT) =================
-# Ưu tiên lấy ngày có sản lượng thực tế gần nhất (> 0) để hiển thị đầy đủ KPI sản xuất
-df_daily_has_prod = df_daily[df_daily['san_luong_tan'] > 0] if (not df_daily.empty and 'san_luong_tan' in df_daily.columns) else pd.DataFrame()
-if not df_daily_has_prod.empty:
-    latest_online_date = df_daily_has_prod['date'].max()
-else:
-    df_shifts_has_prod = df_shifts[df_shifts['san_luong_tan'] > 0] if (not df_shifts.empty and 'san_luong_tan' in df_shifts.columns) else pd.DataFrame()
-    latest_online_date = df_shifts_has_prod['date'].max() if not df_shifts_has_prod.empty else (df_daily['date'].max() if not df_daily.empty else datetime.now())
-
+# ================= VỊ TRÍ 1: TRẠNG THÁI SẢN XUẤT ONLINE TOÀN NHÀ MÁY (HÔM NAY / LIVE) =================
+# Luôn luôn hiển thị trạng thái của HÔM NAY theo thời gian thực (Live Online)
+now_dt = datetime.now()
+latest_online_date = now_dt
 online_kpis = get_latest_day_kpis(df_shifts, df_daily, df_kcs=df_kcs, df_monthly=df_monthly, target_date=latest_online_date)
 render_online_daily_dashboard(online_kpis, df_weekly, oil_change_data, df_incidents, df_daily, df_shifts)
 
