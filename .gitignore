@@ -22,3 +22,5 @@ test_*.py
 inspect_*.py
 
 secrets_for_streamlit_cloud.txt
+*.zip
+

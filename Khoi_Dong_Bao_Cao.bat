@@ -21,12 +21,23 @@ echo Trinh duyet web se tu dong mo khi ung dung san sang!
 echo (Vui long giu nguyen cua so nay trong qua trinh su dung)
 echo.
 
-if not exist ".venv\Scripts\streamlit.exe" (
-    echo [LOI] Khong tim thay moi truong ao .venv!
-    echo Vui long lien he ho tro ky thuat.
-    pause
-    exit /b 1
+set NEED_SETUP=0
+if not exist ".venv\Scripts\streamlit.exe" set NEED_SETUP=1
+if %NEED_SETUP% EQU 0 (
+    ".venv\Scripts\python.exe" -c "import streamlit" >nul 2>&1
+    if errorlevel 1 set NEED_SETUP=1
 )
+
+if %NEED_SETUP% EQU 1 (
+    echo =====================================================================
+    echo [THONG BAO] Phat hien moi truong ao chua co hoac da thay doi o dia!
+    echo Dang tu dong khoi phuc moi truong .venv (khoang 5 - 10 giay)...
+    echo =====================================================================
+    echo.
+    call "%~dp0Khoi_Phuc_Moi_Truong.bat"
+    echo.
+)
+
 
 :: Khoi chay Streamlit ho tro ket noi mang noi bo 0.0.0.0
 ".venv\Scripts\streamlit.exe" run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless false
