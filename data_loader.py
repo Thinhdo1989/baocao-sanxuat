@@ -41,6 +41,7 @@ DEFAULT_PROCESS_SPREADSHEET_ID = "1ruzLoVB_LOqmwkkz4iR_1uwVyUr0A4aykl_zdXuwluw"
 DEFAULT_HR_SPREADSHEET_ID = "1enwVBuwwFK7k6r4i_xcg_7oJgckLaOfzNUkHPRZfY6s"
 DEFAULT_HR_GID = "987654321"
 DEFAULT_OIL_CHANGE_SPREADSHEET_ID = "1DRHrUPkLk7650XbxW1zZ73dp0k0Dcg4FZeKZriUKRso"
+DEFAULT_KPI_TOTAL_SPREADSHEET_ID = "1hP7YOkbZM9cJEPSR9rOLKgFXtssIp0Ssozv9Y2OXfJ8"
 DEFAULT_CREDENTIALS_FILE = "credentials.json"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -488,7 +489,8 @@ class DataLoader:
         maint_plan_spreadsheet_id: str = DEFAULT_MAINT_PLAN_SPREADSHEET_ID,
         process_spreadsheet_id: str = DEFAULT_PROCESS_SPREADSHEET_ID,
         hr_spreadsheet_id: str = DEFAULT_HR_SPREADSHEET_ID,
-        oil_spreadsheet_id: str = DEFAULT_OIL_CHANGE_SPREADSHEET_ID
+        oil_spreadsheet_id: str = DEFAULT_OIL_CHANGE_SPREADSHEET_ID,
+        kpi_total_spreadsheet_id: str = DEFAULT_KPI_TOTAL_SPREADSHEET_ID
     ):
         self.credentials_path = credentials_path
 
@@ -503,6 +505,7 @@ class DataLoader:
         self.process_spreadsheet_id = sheet_sec.get("process", process_spreadsheet_id)
         self.hr_spreadsheet_id = sheet_sec.get("hr", hr_spreadsheet_id)
         self.oil_spreadsheet_id = sheet_sec.get("oil_change", oil_spreadsheet_id)
+        self.kpi_total_spreadsheet_id = sheet_sec.get("kpi_total", kpi_total_spreadsheet_id)
 
         self.client: Optional[gspread.Client] = None
         self.spreadsheet: Optional[gspread.Spreadsheet] = None
@@ -512,9 +515,11 @@ class DataLoader:
         self.process_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.hr_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.oil_spreadsheet: Optional[gspread.Spreadsheet] = None
+        self.kpi_total_spreadsheet: Optional[gspread.Spreadsheet] = None
         self._sheet_cache: Dict[str, List[List[str]]] = {}
         self._kpi_daily_shifts_cache: Optional[pd.DataFrame] = None
         self._cached_kcs: Optional[pd.DataFrame] = None
+        self._kpi_total_prod_cache: Optional[pd.DataFrame] = None
         self._ensure_credentials()
 
     def clear_cache(self):
@@ -522,6 +527,7 @@ class DataLoader:
         self._sheet_cache.clear()
         self._kpi_daily_shifts_cache = None
         self._cached_kcs = None
+        self._kpi_total_prod_cache = None
 
     def _ensure_credentials(self):
         """Tìm file credentials nếu đường dẫn mặc định không tồn tại"""
@@ -595,6 +601,7 @@ class DataLoader:
             ('maint_plan_spreadsheet', self.maint_plan_spreadsheet_id, 'kế hoạch bảo trì & 4M'),
             ('process_spreadsheet', self.process_spreadsheet_id, 'quy trình chế biến'),
             ('oil_spreadsheet', self.oil_spreadsheet_id, 'lịch thay nhớt máy ép'),
+            ('kpi_total_spreadsheet', self.kpi_total_spreadsheet_id, 'KPI tổng khối sản xuất'),
         ]:
             opened = False
             for open_att in range(2):
@@ -3562,6 +3569,114 @@ class DataLoader:
             'title': title
         }
 
+    def load_kpi_total_production(self) -> pd.DataFrame:
+        """
+        Nạp bảng điểm KPI tổng khối sản xuất (từ file Google Sheets 'KPI total production'
+        ID: 1hP7YOkbZM9cJEPSR9rOLKgFXtssIp0Ssozv9Y2OXfJ8 hoặc bộ đệm cục bộ)
+        """
+        if self._kpi_total_prod_cache is not None and not self._kpi_total_prod_cache.empty:
+            return self._kpi_total_prod_cache
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        c_path = os.path.join(base_dir, "assets", "cache_kpi_total_production.parquet")
+        if os.path.exists(c_path):
+            try:
+                df = clean_numeric_dataframe(pd.read_parquet(c_path))
+                if not df.empty:
+                    self._kpi_total_prod_cache = df
+                    return df
+            except Exception:
+                pass
+
+        # Nạp trực tiếp từ Google Sheets nếu chưa có cache
+        try:
+            self._ensure_credentials()
+            if self.client is None:
+                creds = Credentials.from_service_account_file(self.credentials_path, scopes=SCOPES)
+                self.client = gspread.authorize(creds)
+            ss = self.client.open_by_key(self.kpi_total_spreadsheet_id)
+            ws_kpi = ss.worksheet('KPI total production')
+            vals_kpi = ws_kpi.get_all_values()
+
+            ws_imp = ss.worksheet('import monthly report')
+            vals_imp = ws_imp.get_all_values()
+
+            imp_dict = {}
+            months_imp = vals_imp[0][2:]
+            for r in vals_imp[1:]:
+                metric_name = r[0].strip()
+                for col_idx, m_str in enumerate(months_imp):
+                    m_str = m_str.strip()
+                    if not m_str: continue
+                    val_str = r[2 + col_idx] if (2 + col_idx) < len(r) else ''
+                    if m_str not in imp_dict: imp_dict[m_str] = {}
+                    imp_dict[m_str][metric_name] = clean_numeric(val_str)
+
+            rows = []
+            for r in vals_kpi[1:]:
+                if not r or not r[0].strip() or r[0].strip() == '-': continue
+                m_str = r[0].strip()
+                m_num_match = re.search(r'(\d+)', m_str)
+                m_num = int(m_num_match.group(1)) if m_num_match else 0
+                if m_num == 0 or m_num > 12: continue
+
+                sl = clean_numeric(r[1]) if len(r) > 1 else 0.0
+                ct_sl = clean_numeric(r[2]) if len(r) > 2 else 0.0
+                ts_sl = clean_numeric(r[3]) if len(r) > 3 else 50.0
+                diem_sl = clean_numeric(r[4]) if len(r) > 4 else 0.0
+
+                am = clean_numeric(r[5]) if len(r) > 5 else 0.0
+                ct_am = clean_numeric(r[6]) if len(r) > 6 else 9.0
+                ts_am = clean_numeric(r[7]) if len(r) > 7 else 30.0
+                diem_am = clean_numeric(r[8]) if len(r) > 8 else 0.0
+
+                pe = clean_numeric(r[9]) if len(r) > 9 else 0.0
+                ct_pe = clean_numeric(r[10]) if len(r) > 10 else 4.0
+                ts_pe = clean_numeric(r[11]) if len(r) > 11 else 20.0
+                diem_pe = clean_numeric(r[12]) if len(r) > 12 else 0.0
+
+                tong_kpi = clean_numeric(r[13]) if len(r) > 13 else 0.0
+
+                imp = imp_dict.get(m_str, {})
+                suat_dien = imp.get('Điện năng tb', 0.0)
+                gio_ep = imp.get('Giờ hoạt động', 0.0)
+                ton_kho = imp.get('Tồn kho viên nén', imp.get('Tồn kho viên nén ', 0.0))
+                diezen = imp.get('Lượng diezen tb', 0.0)
+                ty_le_cb = imp.get('Tỷ lệ chế biến', 0.0)
+
+                rows.append({
+                    'month': m_num,
+                    'month_code': m_str,
+                    'month_label': f'Tháng {m_num}',
+                    'san_luong': sl,
+                    'chi_tieu_sl': ct_sl,
+                    'diem_sl': diem_sl,
+                    'do_am': am,
+                    'chi_tieu_am': ct_am,
+                    'diem_am': diem_am,
+                    'nang_suat_pe': pe,
+                    'chi_tieu_pe': ct_pe,
+                    'diem_pe': diem_pe,
+                    'tong_kpi': tong_kpi,
+                    'suat_dien': suat_dien,
+                    'gio_ep': gio_ep,
+                    'ton_kho': ton_kho,
+                    'diezen_tb': diezen,
+                    'ty_le_cb': ty_le_cb
+                })
+
+            df_kpi_total = pd.DataFrame(rows)
+            try:
+                os.makedirs(os.path.join(base_dir, "assets"), exist_ok=True)
+                df_kpi_total.to_parquet(c_path, index=False)
+            except Exception:
+                pass
+            self._kpi_total_prod_cache = df_kpi_total
+            return df_kpi_total
+        except Exception as e:
+            print(f"[-] Lỗi nạp KPI total production: {e}")
+            return pd.DataFrame()
+
     def load_all_from_local_cache(self) -> Optional[Dict[str, Any]]:
         """
         Nạp tức thì toàn bộ dữ liệu từ bộ đệm parquet cục bộ (dưới 0.2 giây).
@@ -3677,6 +3792,9 @@ class DataLoader:
                 except Exception:
                     pass
 
+            kt_path = _find_parquet("cache_kpi_total_production.parquet")
+            df_kpi_total = clean_numeric_dataframe(pd.read_parquet(kt_path)) if kt_path else pd.DataFrame()
+
             return {
                 'shifts': df_shifts,
                 'daily': df_daily,
@@ -3700,6 +3818,7 @@ class DataLoader:
                 'grease_data': pd.DataFrame(),
                 'process_data': process_data,
                 'oil_change_data': oil_change_data,
+                'kpi_total_prod': df_kpi_total,
                 'prod_title': "2026 BVN QB Nhật kí sản xuất",
                 'kpi_title': "2026 Nhat ky KPI",
                 'maint_log_title': "Maninternance BVNQB",

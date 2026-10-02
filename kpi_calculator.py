@@ -1004,22 +1004,37 @@ def get_incident_statistics(
     total_incidents = len(df_filt)
     total_hours = round(float(df_filt['duration_hours'].sum()), 1)
     
-    breakdown_count = int(df_filt['activity'].str.lower().str.contains('sự cố').sum())
-    proactive_count = int(df_filt['activity'].str.lower().str.contains('chủ động').sum())
-    completed_count = int(df_filt['status'].str.lower().str.contains('hoàn thành').sum())
+    breakdown_count = int(df_filt['activity'].astype(str).str.lower().str.contains('sự cố', na=False).sum()) if not df_filt.empty and 'activity' in df_filt.columns else 0
+    proactive_count = int(df_filt['activity'].astype(str).str.lower().str.contains('chủ động', na=False).sum()) if not df_filt.empty and 'activity' in df_filt.columns else 0
+    completed_count = int(df_filt['status'].astype(str).str.lower().str.contains('hoàn thành', na=False).sum()) if not df_filt.empty and 'status' in df_filt.columns else 0
     pending_count = total_incidents - completed_count
     completion_rate = round((completed_count / total_incidents * 100), 1) if total_incidents > 0 else 100.0
 
     # Bóc tách từng thiết bị từ equipment_list
     eq_rows = []
     for _, row in df_filt.iterrows():
-        eqs = row.get('equipment_list', [])
+        eqs = row.get('equipment_list')
         dur = row.get('duration_hours', 0.0)
-        if eqs:
-            for eq in eqs:
-                eq_rows.append({'equipment': eq, 'duration_hours': dur / len(eqs)})
+        try:
+            dur = float(dur)
+            if pd.isna(dur):
+                dur = 0.0
+        except (ValueError, TypeError):
+            dur = 0.0
+
+        safe_eqs = []
+        if isinstance(eqs, (list, tuple)):
+            safe_eqs = [str(x).strip() for x in eqs if str(x).strip()]
+        elif isinstance(eqs, np.ndarray):
+            safe_eqs = [str(x).strip() for x in eqs.tolist() if str(x).strip()]
+        elif isinstance(eqs, str) and eqs.strip():
+            safe_eqs = [x.strip() for x in eqs.split(',') if x.strip()]
+
+        if safe_eqs:
+            for eq in safe_eqs:
+                eq_rows.append({'equipment': eq, 'duration_hours': dur / len(safe_eqs)})
         elif row.get('equipment_raw'):
-            eq_rows.append({'equipment': row['equipment_raw'], 'duration_hours': dur})
+            eq_rows.append({'equipment': str(row['equipment_raw']).strip(), 'duration_hours': dur})
 
     if eq_rows:
         df_eq = pd.DataFrame(eq_rows)
@@ -1101,15 +1116,30 @@ def get_equipment_incident_alerts(
 
     eq_dict: Dict[str, Dict[str, Any]] = {}
     for _, r in df_filt.iterrows():
-        eqs = r.get('equipment_list', [])
-        if not eqs and r.get('equipment_raw'):
-            eqs = [r['equipment_raw']]
-        dur = r.get('duration_hours', 0.0)
-        desc = r.get('description', '')
-        status = r.get('status', '')
-        d_str = r.get('date_str', '')
+        eqs = r.get('equipment_list')
+        safe_eqs = []
+        if isinstance(eqs, (list, tuple)):
+            safe_eqs = [str(x).strip() for x in eqs if str(x).strip()]
+        elif isinstance(eqs, np.ndarray):
+            safe_eqs = [str(x).strip() for x in eqs.tolist() if str(x).strip()]
+        elif isinstance(eqs, str) and eqs.strip():
+            safe_eqs = [x.strip() for x in eqs.split(',') if x.strip()]
 
-        for eq in eqs:
+        if not safe_eqs and r.get('equipment_raw'):
+            safe_eqs = [str(r['equipment_raw']).strip()]
+
+        dur = r.get('duration_hours', 0.0)
+        try:
+            dur = float(dur)
+            if pd.isna(dur):
+                dur = 0.0
+        except (ValueError, TypeError):
+            dur = 0.0
+        desc = str(r.get('description', '') or '')
+        status = str(r.get('status', '') or '')
+        d_str = str(r.get('date_str', '') or '')
+
+        for eq in safe_eqs:
             eq = eq.strip()
             if not eq:
                 continue
