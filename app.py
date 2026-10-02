@@ -1400,16 +1400,19 @@ default_m_code_idx = min(11, max(0, today_now.month - 1)) # Tự động chuyể
 # ================= BỘ LỌC THỜI GIAN THEO KỲ SẢN XUẤT =================
 max_date = df_shifts['date'].max() if ('date' in df_shifts.columns and not df_shifts.empty) else today_now
 min_date = df_shifts['date'].min() if ('date' in df_shifts.columns and not df_shifts.empty) else (today_now - timedelta(days=30))
-# Luôn cho phép lịch mở rộng tới ngày hôm nay (real-time) để người dùng theo dõi số liệu trực tuyến
-calendar_max_date = max(max_date.date(), today_now.date())
+# Luôn cho phép lịch mở rộng tới hết năm 2026 để người dùng thoải mái chọn tháng 10, 11, 12 mà không bị khóa
+calendar_min_date = datetime(2026, 1, 1).date()
+calendar_max_date = datetime(2026, 12, 31).date()
 
 curr_lang = get_lang()
 time_modes = get_time_modes(curr_lang)
 
 if 'top_view_mode' not in st.session_state:
     st.session_state['top_view_mode'] = time_modes[0]
-if 'top_target_date' not in st.session_state:
-    st.session_state['top_target_date'] = max_date.date()
+if 'top_target_date' not in st.session_state or st.session_state.get('top_target_date') == max_date.date():
+    # Mặc định chọn ngày hôm nay
+    st.session_state['top_target_date'] = today_now.date()
+
 
 curr_mode = st.session_state.get('top_view_mode', time_modes[0])
 curr_mode = map_time_mode(curr_mode, curr_lang)
@@ -1486,13 +1489,11 @@ with st.sidebar:
             avail_dates = sorted(df_shifts['date'].dt.date.unique(), reverse=True) if ('date' in df_shifts.columns and not df_shifts.empty) else [max_date.date()]
             if today_now.date() not in avail_dates:
                 avail_dates = [today_now.date()] + avail_dates
-            default_d = st.session_state.get('top_target_date', calendar_max_date)
-            if default_d not in avail_dates and len(avail_dates) > 0:
-                default_d = avail_dates[0]
+            default_d = st.session_state.get('top_target_date', today_now.date())
             picked_date = st.date_input(
                 t("Chọn ngày làm việc:", "Select Working Date:"),
                 value=default_d,
-                min_value=min_date.date(),
+                min_value=calendar_min_date,
                 max_value=calendar_max_date,
                 key="main_date_picker"
             )
@@ -1538,8 +1539,8 @@ with st.sidebar:
         elif is_range_mode:
             date_range_input = st.date_input(
                 t("Chọn khoảng ngày:", "Select Date Range:"),
-                value=(max_date.date() - timedelta(days=14), calendar_max_date),
-                min_value=min_date.date(),
+                value=(max_date.date() - timedelta(days=14), today_now.date()),
+                min_value=calendar_min_date,
                 max_value=calendar_max_date,
                 key="main_range_picker"
             )
