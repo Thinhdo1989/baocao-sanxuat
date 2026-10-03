@@ -1,0 +1,62 @@
+========================================================================================
+           HƯỚNG DẪN CHI TIẾT KHI THAY Ổ ĐĨA MỚI HOẶC CHUYỂN DỮ LIỆU SANG MÁY KHÁC
+========================================================================================
+
+Xin chào! Toàn bộ hệ thống Dashboard Báo cáo sản xuất và Lịch sử làm việc của bạn
+đã được đóng gói an toàn 100% thành 2 gói nén:
+
+  1. "Sao_Luu_Antigravity_Day_Du.zip"       (~7 MB) : Toàn bộ mã nguồn, giao diện, dữ liệu đệm,
+                                                       tệp chứng thực Google Sheets, file bat...
+  2. "Sao_Luu_Lich_Su_Chat_Antigravity.zip" (~106 MB): Toàn bộ cơ sở dữ liệu lịch sử hội thoại
+                                                       làm việc với AI Antigravity từ trước đến nay.
+
+Các tệp này đã được lưu tự động tại:
+  - Màn hình Desktop (C:\Users\HP-PC\Desktop\)
+  - Ổ đĩa D:\
+  - Ổ đĩa E:\ và E:\1.Antigravity\
+
+----------------------------------------------------------------------------------------
+TRƯỜNG HỢP 1: BẠN THAY Ổ ĐĨA PHỤ (Ổ DỮ LIỆU E:\) BẰNG Ổ ĐĨA MỚI (Ổ C: GIỮ NGUYÊN)
+----------------------------------------------------------------------------------------
+(Đây là trường hợp phổ biến nhất khi bạn chỉ nâng cấp ổ cứng lưu trữ tài liệu)
+
+BƯỚC 1:
+- Gắn ổ đĩa mới vào máy tính.
+- Copy thư mục "1.Antigravity" (hoặc giải nén "Sao_Luu_Antigravity_Day_Du.zip") sang ổ đĩa mới.
+- Dù ổ mới mang ký tự nào (E:\, F:\, D:\, G:\...), hệ thống đều chạy được!
+
+BƯỚC 2:
+- Khởi động Antigravity IDE.
+- Chọn Menu: File -> Open Folder... -> Trỏ tới thư mục "1.Antigravity" trên ổ đĩa mới.
+- (Toàn bộ lịch sử trò chuyện vẫn nằm nguyên trên ổ C: nên Antigravity IDE sẽ tự động
+   hiển thị đầy đủ mọi phiên chat cũ).
+
+BƯỚC 3:
+- Vào thư mục con "1.Báo cáo sản xuất", nhấp đúp vào file:
+    "Khoi_Dong_Bao_Cao.bat" hoặc "Chay_Ung_Dung.bat"
+- Cơ chế tự phục hồi (Self-Healing) sẽ tự động phát hiện đường dẫn ổ đĩa mới,
+  tự tạo lại môi trường Python .venv trong vòng 5 - 10 giây và tự động mở Dashboard trên trình duyệt!
+
+----------------------------------------------------------------------------------------
+TRƯỜNG HỢP 2: BẠN THAY Ổ CỨNG HỆ ĐIỀU HÀNH (Ổ C:) HOẶC CHUYỂN TOÀN BỘ SANG MÁY TÍNH MỚI
+----------------------------------------------------------------------------------------
+BƯỚC 1:
+- Cài đặt Antigravity IDE trên máy mới.
+- Copy 2 tệp zip ra máy mới và giải nén thư mục "1.Antigravity".
+
+BƯỚC 2: KHÔI PHỤC LỊCH SỬ CHAT VỚI ANTIGRAVITY:
+- Nhấp đúp vào tệp "Khoi_Phuc_Lich_Su_Chat.bat" (trong thư mục 1.Antigravity).
+- Script sẽ tự động đưa toàn bộ dữ liệu lịch sử hội thoại vào hệ thống Antigravity của máy mới!
+
+BƯỚC 3: KHỞI ĐỘNG HỆ THỐNG:
+- Mở thư mục dự án trong Antigravity IDE.
+- Nhấp đúp "Khoi_Dong_Bao_Cao.bat" để cài đặt môi trường và chạy ứng dụng.
+
+----------------------------------------------------------------------------------------
+DANH SÁCH FILE VẬN HÀNH QUAN TRỌNG:
+  - Chay_Ung_Dung.bat        : Nhấp đúp để mở Dashboard Báo Cáo Sản Xuất.
+  - Khoi_Dong_Bao_Cao.bat    : Bộ khởi động chính (có tính năng tự sửa lỗi và dựng lại môi trường).
+  - Cap_Nhat_Len_Web.bat     : Đẩy phiên bản mới lên GitHub & Streamlit Cloud.
+  - DONG_GOI_SAO_LUU.bat     : Đóng gói lại dự án bất cứ khi nào bạn muốn sao lưu thêm.
+  - LICHSU_LAM_VIEC_DU_AN.md : Nhật ký chi tiết toàn bộ yêu cầu, nghiệp vụ và các tính năng đã làm.
+========================================================================================

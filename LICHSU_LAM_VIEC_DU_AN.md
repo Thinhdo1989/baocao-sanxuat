@@ -81,6 +81,10 @@
   - Nén file an toàn `Sao_Luu_Antigravity_Day_Du.zip` (15.2 MB) và lưu đồng bộ sang Desktop, ổ D, ổ E.
   - Tích hợp cơ chế **tự phục hồi môi trường ảo (Self-healing)** vào [Khoi_Dong_Bao_Cao.bat](file:///e:/1.Antigravity/1.Báo%20cáo%20sản%20xuất/Khoi_Dong_Bao_Cao.bat).
   - Tạo file [Khoi_Phuc_Moi_Truong.bat](file:///e:/1.Antigravity/1.Báo%20cáo%20sản%20xuất/Khoi_Phuc_Moi_Truong.bat) dùng công cụ UV tốc độ cao để dựng lại môi trường trong 5-10 giây bất cứ khi nào đổi ổ đĩa.
+  - **Mở khóa toàn diện Lịch Tháng 10 & Năm 2026:** Gỡ bỏ giới hạn chặn trên, cho phép chọn và xem mọi ngày trong tháng 10 và cả năm 2026.
+  - **Chuẩn hóa hiển thị Ngày Không Sản Xuất / Bảo trì (01/10/2026):** Loại bỏ cơ chế lấy số liệu quá khứ hoặc gán mặc định. Khi ngày có sản lượng = 0 (như ca bảo trì BT_VS), các thẻ Độ ẩm, Tỷ trọng, Tỷ lệ chế biến, Dầu diezen hiển thị rõ `--` và nhãn `⚪ Không sản xuất`.
+  - **Nâng cấp Dashboard Online Thời Gian Thực (Hôm nay 02/10/2026):** Chuyển Vị trí 1 sang chế độ Live Online: hiển thị trực tiếp ca sản xuất vừa nhập chiều nay (Ca B: 78.6 tấn, 20 giờ máy ép, tồn kho 13,795.8 tấn).
+  - **Đóng gói toàn diện phiên bản hoàn chỉnh:** Cập nhật lại gói sao lưu đầy đủ sang Desktop, D:\, E:\ sẵn sàng cho việc thay ổ đĩa mới.
 
 ---
 
